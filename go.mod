@@ -276,6 +276,8 @@ require (
 
 replace github.com/charmbracelet/lipgloss => github.com/buztard/lipgloss v0.5.1-0.20220823122745-a075bfc93171
 
+replace github.com/tdakkota/asciicheck => github.com/golangci/asciicheck v0.4.1
+
 tool (
 	github.com/golangci/golangci-lint/cmd/golangci-lint
 	github.com/kisielk/errcheck
