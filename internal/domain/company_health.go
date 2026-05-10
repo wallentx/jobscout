@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -100,10 +101,13 @@ func CompanyHealthWithDataSources(identity CompanyHealthContext, ticker string, 
 				"entity_url":                   facts.EntityURL,
 				"founded_year_claims":          fmt.Sprintf("%d", facts.FoundedYearClaimCount),
 				"employee_count_claims":        fmt.Sprintf("%d", facts.EmployeeCountClaimCount),
+				"ticker_claims":                fmt.Sprintf("%d", facts.TickerClaimCount),
 				"selected_founded_year":        optionalIntString(facts.FoundedYear),
 				"selected_employee_count":      optionalIntString(facts.EmployeeCount),
+				"selected_ticker":              optionalStringString(facts.TickerSymbol),
 				"founded_year_claims_accepted": fmt.Sprintf("%t", facts.FoundedYear != nil),
 				"employee_claims_accepted":     fmt.Sprintf("%t", facts.EmployeeCount != nil),
+				"ticker_claims_accepted":       fmt.Sprintf("%t", facts.TickerSymbol != nil),
 			}
 			if facts.FoundedYear != nil {
 				if observeFoundedYear(result, *facts.FoundedYear, "wikidata_entity", facts.EntityURL, "medium", "Founded year extracted from Wikidata inception data.") {
@@ -116,7 +120,11 @@ func CompanyHealthWithDataSources(identity CompanyHealthContext, ticker string, 
 					result.Notes = append(result.Notes, fmt.Sprintf("Estimated size: ~%d employees (Wikidata).", *facts.EmployeeCount))
 				}
 			}
-			if facts.FoundedYear != nil || facts.EmployeeCount != nil {
+			if result.DiscoveredTicker == "" && facts.TickerSymbol != nil {
+				result.DiscoveredTicker = strings.ToUpper(strings.TrimSpace(*facts.TickerSymbol))
+				result.SignalsUsed = append(result.SignalsUsed, "wikidata_ticker")
+			}
+			if facts.FoundedYear != nil || facts.EmployeeCount != nil || facts.TickerSymbol != nil {
 				result.SignalsUsed = append(result.SignalsUsed, "wikidata_company_facts")
 			}
 			if facts.FoundedYearClaimCount > 0 && facts.FoundedYear == nil {
@@ -153,7 +161,11 @@ func CompanyHealthWithDataSources(identity CompanyHealthContext, ticker string, 
 	}
 
 	// SEC EDGAR lookup
-	cik10, foundTicker, foundName, err := secLookupCIK(company, ticker)
+	secLookupTicker := ticker
+	if strings.TrimSpace(secLookupTicker) == "" {
+		secLookupTicker = result.DiscoveredTicker
+	}
+	cik10, foundTicker, foundName, err := secLookupCIK(company, secLookupTicker)
 	secRiskTerms := 0
 	if err == nil {
 		result.Public = new(true)
@@ -201,9 +213,11 @@ func CompanyHealthWithDataSources(identity CompanyHealthContext, ticker string, 
 				result.Score += 3
 			}
 		}
-	} else {
+	} else if errors.Is(err, errSECCompanyNotFound) {
 		result.Public = new(false)
 		result.Notes = append(result.Notes, "No SEC CIK match found (likely private).")
+	} else {
+		result.Notes = append(result.Notes, "SEC lookup unavailable; public-company signals may be incomplete.")
 	}
 
 	if ShouldUseBrowserCompanyProfile(result) && sources.FetchCompanySiteProfile != nil {
@@ -363,4 +377,11 @@ func optionalIntString(value *int) string {
 		return ""
 	}
 	return fmt.Sprintf("%d", *value)
+}
+
+func optionalStringString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }

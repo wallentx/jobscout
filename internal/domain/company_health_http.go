@@ -12,7 +12,7 @@ func doHTTPGet(urlStr string, headers map[string]string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", companyHealthUserAgent())
 	for key, value := range headers {
 		req.Header.Set(key, value)
 	}

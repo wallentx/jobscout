@@ -1,11 +1,14 @@
 package domain
 
 import (
+	"os"
+	"strings"
 	"time"
 )
 
 const (
-	userAgent            = "jobscout (+https://github.com/wallentx/jobscout)"
+	defaultUserAgent     = "JobScout wallentx@linux.com"
+	userAgentEnv         = "JOBSCOUT_USER_AGENT"
 	secTickersURL        = "https://www.sec.gov/files/company_tickers.json"
 	secSubmissionsURL    = "https://data.sec.gov/submissions/CIK%s.json"
 	wikiTitleSearchURL   = "https://en.wikipedia.org/w/rest.php/v1/search/title"
@@ -17,3 +20,10 @@ const (
 	secDocumentURL       = "https://www.sec.gov/Archives/edgar/data/%s/%s/%s"
 	requestTimeout       = 20 * time.Second
 )
+
+func companyHealthUserAgent() string {
+	if value := strings.TrimSpace(os.Getenv(userAgentEnv)); value != "" {
+		return value
+	}
+	return defaultUserAgent
+}

@@ -2,10 +2,13 @@ package domain
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
 )
+
+var errSECCompanyNotFound = errors.New("company not found in SEC database")
 
 // SECCompanyTicker represents an entry in the SEC tickers JSON
 type SECCompanyTicker struct {
@@ -79,7 +82,7 @@ func secLookupCIK(company string, ticker string) (cik10, foundTicker, foundName 
 		}
 	}
 
-	return "", "", "", fmt.Errorf("company not found in SEC database")
+	return "", "", "", errSECCompanyNotFound
 }
 
 // secGetSubmissions fetches SEC submissions for a CIK

@@ -49,8 +49,10 @@ type WikidataCompanyFacts struct {
 	EntityURL               string
 	FoundedYear             *int
 	EmployeeCount           *int
+	TickerSymbol            *string
 	FoundedYearClaimCount   int
 	EmployeeCountClaimCount int
+	TickerClaimCount        int
 }
 
 // validateWikiRelevance checks if the found page is likely the correct tech company
@@ -172,9 +174,11 @@ func parseWikidataCompanyFacts(entityID string, data []byte) (*WikidataCompanyFa
 		EntityURL:               "https://www.wikidata.org/wiki/" + url.PathEscape(entityID),
 		FoundedYearClaimCount:   len(entity.Claims["P571"]),
 		EmployeeCountClaimCount: len(entity.Claims["P1128"]),
+		TickerClaimCount:        len(entity.Claims["P249"]) + wikidataQualifierCount(entity.Claims["P414"], "P249"),
 	}
 	facts.FoundedYear = bestWikidataTimeYear(entity.Claims["P571"])
 	facts.EmployeeCount = bestWikidataEmployeeCount(entity.Claims["P1128"])
+	facts.TickerSymbol = bestWikidataTicker(entity.Claims["P249"], entity.Claims["P414"])
 	return facts, nil
 }
 
@@ -241,6 +245,14 @@ func wikidataQualifierYear(claim wikidataClaim, property string) int {
 	return 0
 }
 
+func wikidataQualifierCount(claims []wikidataClaim, property string) int {
+	count := 0
+	for _, claim := range claims {
+		count += len(claim.Qualifiers[property])
+	}
+	return count
+}
+
 func wikidataTimeYear(snak wikidataSnak) *int {
 	if snak.Datavalue == nil {
 		return nil
@@ -279,6 +291,72 @@ func wikidataQuantityInt(snak wikidataSnak) *int {
 	}
 	count := int(number + 0.5)
 	return &count
+}
+
+func bestWikidataString(claims []wikidataClaim) *string {
+	var best *string
+	bestRank := -1
+	for _, claim := range claims {
+		if claim.Rank == "deprecated" {
+			continue
+		}
+		value := wikidataString(claim.Mainsnak)
+		if value == nil {
+			continue
+		}
+		rank := wikidataRankScore(claim.Rank)
+		if best == nil || rank > bestRank {
+			selected := *value
+			best = &selected
+			bestRank = rank
+		}
+	}
+	return best
+}
+
+func bestWikidataTicker(directClaims []wikidataClaim, exchangeClaims []wikidataClaim) *string {
+	if direct := bestWikidataString(directClaims); direct != nil {
+		return direct
+	}
+	return bestWikidataQualifierString(exchangeClaims, "P249")
+}
+
+func bestWikidataQualifierString(claims []wikidataClaim, property string) *string {
+	var best *string
+	bestRank := -1
+	for _, claim := range claims {
+		if claim.Rank == "deprecated" {
+			continue
+		}
+		rank := wikidataRankScore(claim.Rank)
+		for _, snak := range claim.Qualifiers[property] {
+			value := wikidataString(snak)
+			if value == nil {
+				continue
+			}
+			if best == nil || rank > bestRank {
+				selected := *value
+				best = &selected
+				bestRank = rank
+			}
+		}
+	}
+	return best
+}
+
+func wikidataString(snak wikidataSnak) *string {
+	if snak.Datavalue == nil {
+		return nil
+	}
+	var value string
+	if err := json.Unmarshal(snak.Datavalue.Value, &value); err != nil {
+		return nil
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 func wikidataRankScore(rank string) int {

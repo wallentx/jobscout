@@ -33,7 +33,7 @@ func fetchGoogleNewsRSS(query string) ([]RSSItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", companyHealthUserAgent())
 	req.Header.Set("Accept", "application/rss+xml,application/xml,text/xml,*/*")
 
 	resp, err := client.Do(req)
