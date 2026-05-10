@@ -3,7 +3,6 @@ package tuiapp
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	healthpkg "github.com/wallentx/jobscout/internal/health"
@@ -12,7 +11,9 @@ import (
 )
 
 func (m model) handleHealthLoadedMsg(msg healthLoadedMsg) (tea.Model, tea.Cmd) {
+	singleHealthTaskForeground := false
 	if msg.taskKey != "" {
+		singleHealthTaskForeground = m.backgroundHealth.expanded && !m.backgroundHealth.animating
 		m.finishSingleHealthTask(msg)
 	}
 
@@ -26,7 +27,8 @@ func (m model) handleHealthLoadedMsg(msg healthLoadedMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	if msg.background || (m.overlay.kind == overlayHealth && m.overlay.health.minimized) {
+	singleHealthTaskBackgrounded := msg.taskKey != "" && (!singleHealthTaskForeground || m.singleHealthTasksActive())
+	if msg.background || singleHealthTaskBackgrounded || (m.overlay.kind == overlayHealth && m.overlay.health.minimized) {
 		if !m.singleHealthTasksActive() && m.overlay.kind == overlayHealth && m.overlay.health.minimized {
 			m.clearOverlay()
 		}
@@ -40,22 +42,7 @@ func (m model) handleHealthLoadedMsg(msg healthLoadedMsg) (tea.Model, tea.Cmd) {
 	m.overlay.health.scrollOffset = 0
 	if msg.err != nil {
 		m.overlay.health.err = msg.err.Error()
-		if strings.HasPrefix(strings.ToLower(m.overlay.health.err), "imported ") {
-			// Reload
-			if jobs, err := loadRuntimeJobs(); err == nil {
-				m.allJobs = jobs
-				m.applyFilterAndSort()
-			}
-			// Clear error after a moment? Or show it.
-			// We'll show it in the health view if triggered, but for import
-			// we might want a separate status message field.
-			// For now, let's just print it to debug and rely on the list update.
-			logDebug(m.overlay.health.err)
-			// Clear it so it doesn't block health view
-			m.overlay.health.err = ""
-		} else {
-			m.overlay.kind = overlayHealth
-		}
+		m.overlay.kind = overlayHealth
 	} else {
 		m.overlay.kind = overlayHealth
 		m.overlay.health.report = msg.result

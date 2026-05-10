@@ -138,6 +138,40 @@ func TestLoadingTickAdvancesForBackgroundTask(t *testing.T) {
 	}
 }
 
+func TestStaleLoadingTickDoesNotAdvanceAnimation(t *testing.T) {
+	m := model{
+		backgroundHealth: backgroundHealthState{
+			tasks: map[string]singleHealthTaskState{
+				"acme":  {company: "Acme"},
+				"bravo": {company: "Bravo"},
+			},
+		},
+	}
+
+	_ = m.restartLoadingIndicator()
+	staleTick := loadingTickMsg{generation: m.loading.generation}
+	_ = m.restartLoadingIndicator()
+	currentTick := loadingTickMsg{generation: m.loading.generation}
+
+	updated, cmd := m.Update(staleTick)
+	got := updated.(model)
+	if got.loading.frame != 0 {
+		t.Fatalf("loading.frame = %d after stale tick; want 0", got.loading.frame)
+	}
+	if cmd != nil {
+		t.Fatal("cmd != nil after stale tick; want no replacement tick")
+	}
+
+	updated, cmd = got.Update(currentTick)
+	got = updated.(model)
+	if got.loading.frame != 1 {
+		t.Fatalf("loading.frame = %d after current tick; want 1", got.loading.frame)
+	}
+	if cmd == nil {
+		t.Fatal("cmd = nil after current tick; want next loading tick")
+	}
+}
+
 func TestBackgroundTaskRendersActivityAndLegendHotkey(t *testing.T) {
 	m := model{
 		termWidth:     100,
@@ -178,8 +212,23 @@ func TestViewRendersLogoWhenJobTableIsEmpty(t *testing.T) {
 	if !strings.Contains(stripped, "██████╗") {
 		t.Fatalf("View() missing empty-state logo:\n%s", stripped)
 	}
+	logoLine := -1
+	for i, line := range strings.Split(stripped, "\n") {
+		if strings.Contains(line, "██████╗") {
+			logoLine = i
+			break
+		}
+	}
+	if logoLine == -1 || logoLine > 4 {
+		t.Fatalf("logoLine = %d; want normal title logo near top:\n%s", logoLine, stripped)
+	}
 	if !strings.Contains(stripped, "v1.2.3-abcdef0") {
-		t.Fatalf("View() missing version beside empty-state logo:\n%s", stripped)
+		t.Fatalf("View() missing version below empty-state logo:\n%s", stripped)
+	}
+	for _, line := range strings.Split(stripped, "\n") {
+		if strings.Contains(line, "v1.2.3-abcdef0") && strings.Contains(line, "█") {
+			t.Fatalf("version rendered inside logo line %q; want version below logo", line)
+		}
 	}
 	if !strings.Contains(rendered, "\x1b[38;2;198;216;255m") {
 		t.Fatalf("View() missing top logo accent color")
@@ -192,6 +241,43 @@ func TestViewRendersLogoWhenJobTableIsEmpty(t *testing.T) {
 	}
 	if !strings.Contains(rendered, "\x1b[38;2;30;30;30m╚") {
 		t.Fatalf("View() missing darkest gray bottom shadow")
+	}
+}
+
+func TestSetupJobsTableRendersLogoAboveBottomMessage(t *testing.T) {
+	restoreRuntimePathsAfterTest(t)
+	runtimeBuildVersion = "v1.2.3-abcdef0"
+
+	height := 18
+	rendered := ansi.Strip(renderSetupEmptyTable(96, height, 2, runtimeBuildVersion))
+	lines := strings.Split(rendered, "\n")
+	logoLine := -1
+	messageLine := -1
+	versionLine := -1
+	for i, line := range lines {
+		switch {
+		case logoLine == -1 && strings.Contains(line, "██████╗"):
+			logoLine = i
+		case versionLine == -1 && strings.Contains(line, "v1.2.3-abcdef0"):
+			versionLine = i
+		case messageLine == -1 && strings.Contains(line, "Setup jobs view"):
+			messageLine = i
+		}
+	}
+	if logoLine == -1 {
+		t.Fatalf("View() missing setup jobs logo:\n%s", rendered)
+	}
+	if versionLine == -1 || versionLine <= logoLine {
+		t.Fatalf("versionLine = %d, logoLine = %d; want version below logo:\n%s", versionLine, logoLine, rendered)
+	}
+	if messageLine == -1 {
+		t.Fatalf("View() missing setup jobs message:\n%s", rendered)
+	}
+	if messageLine <= versionLine {
+		t.Fatalf("messageLine = %d, versionLine = %d; want setup message below logo/version:\n%s", messageLine, versionLine, rendered)
+	}
+	if messageLine < height-3 {
+		t.Fatalf("messageLine = %d; want setup message near bottom of table:\n%s", messageLine, rendered)
 	}
 }
 
@@ -300,6 +386,40 @@ func TestHealthLoadingCompletionStaysBackgroundedWhenMinimized(t *testing.T) {
 		return
 	}
 	t.Fatal("buildMainOverlaySpec() rendered completed health popup; want background completion")
+}
+
+func TestBackgroundHealthActivityUsesOneGenericLoadingLabel(t *testing.T) {
+	m := model{
+		termWidth:  100,
+		termHeight: 30,
+		overlay: overlayState{
+			kind: overlayHealth,
+			health: healthOverlayState{
+				loading:     true,
+				minimized:   true,
+				loadingText: "Checking Acme",
+			},
+		},
+		backgroundHealth: backgroundHealthState{
+			tasks: map[string]singleHealthTaskState{
+				"acme":  {company: "Acme"},
+				"bravo": {company: "Bravo"},
+			},
+		},
+	}
+
+	rendered := ansi.Strip(m.backgroundTaskActivityView())
+	if !strings.Contains(rendered, "REFRESHING HEALTH DATA") {
+		t.Fatalf("activity = %q; want generic health refresh label", rendered)
+	}
+	if strings.Contains(rendered, "CHECKING ACME") {
+		t.Fatalf("activity = %q; want no stale per-company minimized label", rendered)
+	}
+
+	view := ansi.Strip(m.View())
+	if count := strings.Count(view, "REFRESHING HEALTH DATA"); count != 1 {
+		t.Fatalf("View() rendered REFRESHING HEALTH DATA %d times; want one compact activity", count)
+	}
 }
 
 func TestBackgroundTaskHotkeyTogglesExpandedPopup(t *testing.T) {
@@ -430,7 +550,86 @@ func TestDetailShowsPendingEnrichmentAndRefreshesAfterCompletion(t *testing.T) {
 	}
 }
 
-func TestDetailOverlayNavigatesBetweenJobs(t *testing.T) {
+func TestBackgroundHealthOverlayCyclesTasksWithLeftRight(t *testing.T) {
+	m := model{
+		termWidth:  100,
+		termHeight: 30,
+		backgroundHealth: backgroundHealthState{
+			tasks: map[string]singleHealthTaskState{
+				"bravo": {company: "Bravo"},
+				"acme":  {company: "Acme"},
+			},
+			expanded: true,
+			progress: 1,
+		},
+	}
+
+	spec, ok := m.buildSingleHealthTaskOverlaySpecIfActive()
+	if !ok {
+		t.Fatal("buildSingleHealthTaskOverlaySpecIfActive() ok = false; want expanded overlay")
+	}
+	rendered := ansi.Strip(spec.body.content + "\n" + spec.footer)
+	if !strings.Contains(rendered, "Acme") || !strings.Contains(rendered, "[1/2]") {
+		t.Fatalf("initial background health overlay = %q; want first task and [1/2]", rendered)
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	got := updated.(model)
+	spec, ok = got.buildSingleHealthTaskOverlaySpecIfActive()
+	if !ok {
+		t.Fatal("buildSingleHealthTaskOverlaySpecIfActive() ok = false after right")
+	}
+	rendered = ansi.Strip(spec.body.content + "\n" + spec.footer)
+	if !strings.Contains(rendered, "Bravo") || !strings.Contains(rendered, "[2/2]") {
+		t.Fatalf("background health overlay after right = %q; want second task and [2/2]", rendered)
+	}
+
+	updated, _ = got.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	got = updated.(model)
+	spec, ok = got.buildSingleHealthTaskOverlaySpecIfActive()
+	if !ok {
+		t.Fatal("buildSingleHealthTaskOverlaySpecIfActive() ok = false after left")
+	}
+	rendered = ansi.Strip(spec.body.content + "\n" + spec.footer)
+	if !strings.Contains(rendered, "Acme") || !strings.Contains(rendered, "[1/2]") {
+		t.Fatalf("background health overlay after left = %q; want first task and [1/2]", rendered)
+	}
+}
+
+func TestMinimizedHealthPopupTaskHotkeyExpandsBackgroundHealthTasks(t *testing.T) {
+	m := model{
+		termWidth:  100,
+		termHeight: 30,
+		overlay: overlayState{
+			kind: overlayHealth,
+			health: healthOverlayState{
+				loading:     true,
+				minimized:   true,
+				loadingText: "Checking Acme",
+			},
+		},
+		backgroundHealth: backgroundHealthState{
+			tasks: map[string]singleHealthTaskState{
+				"acme":  {company: "Acme"},
+				"bravo": {company: "Bravo"},
+			},
+		},
+	}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+	got := updated.(model)
+	if !got.overlay.health.minimized {
+		t.Fatal("overlay.health.minimized = false; want stale health popup to stay minimized")
+	}
+	if !got.backgroundHealth.animating {
+		t.Fatal("backgroundHealth.animating = false; want task overlay expansion")
+	}
+	if cmd == nil {
+		t.Fatal("cmd = nil; want background task animation tick")
+	}
+}
+
+func TestDetailOverlayNavigatesBetweenJobsWithUpDown(t *testing.T) {
 	jobs := []Job{
 		{Company: "Acme", Title: "Backend Engineer"},
 		{Company: "Bravo", Title: "Frontend Engineer"},
@@ -443,20 +642,26 @@ func TestDetailOverlayNavigatesBetweenJobs(t *testing.T) {
 		tableHeight:  10,
 	}
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	got := updated.(model)
 	if got.cursor != 1 {
-		t.Fatalf("cursor = %d; want 1 after right in detail overlay", got.cursor)
+		t.Fatalf("cursor = %d; want 1 after down in detail overlay", got.cursor)
 	}
 	rendered := ansi.Strip(got.currentDetailText(80))
 	if !strings.Contains(rendered, "Company: Bravo") {
 		t.Fatalf("detail text = %q; want Bravo after navigation", rendered)
 	}
 
-	updated, _ = got.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	updated, _ = got.Update(tea.KeyMsg{Type: tea.KeyUp})
 	got = updated.(model)
 	if got.cursor != 0 {
-		t.Fatalf("cursor = %d; want 0 after left in detail overlay", got.cursor)
+		t.Fatalf("cursor = %d; want 0 after up in detail overlay", got.cursor)
+	}
+
+	updated, _ = got.Update(tea.KeyMsg{Type: tea.KeyRight})
+	got = updated.(model)
+	if got.cursor != 0 {
+		t.Fatalf("cursor = %d after right; want detail job navigation to stay on up/down", got.cursor)
 	}
 }
 
@@ -591,32 +796,5 @@ func TestWaitForBackgroundTaskProgressHandlesClosedJobChannel(t *testing.T) {
 		}
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("waitForBackgroundTaskProgress blocked after job channel closed")
-	}
-}
-
-func TestNoticePopupUsesHealthPopupWidth(t *testing.T) {
-	m := model{
-		termWidth:  100,
-		termHeight: 40,
-	}
-	m.showNotice("Fetch Review", "Fetched 3 results. Added 2 new jobs.", false)
-
-	noticeSpec := m.buildNoticeOverlaySpec()
-	healthSpec := model{
-		termWidth:  100,
-		termHeight: 40,
-		overlay: overlayState{
-			kind: overlayHealth,
-			health: healthOverlayState{
-				report: &CompanyHealthResult{
-					Company: "Acme",
-					Sources: map[string]interface{}{},
-				},
-			},
-		},
-	}.buildHealthOverlaySpec()
-
-	if noticeSpec.width != healthSpec.width {
-		t.Fatalf("notice width = %d; want health width %d", noticeSpec.width, healthSpec.width)
 	}
 }

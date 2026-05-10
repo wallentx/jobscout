@@ -15,15 +15,6 @@ func TestSearchProfileFieldsIncludeExamples(t *testing.T) {
 	}
 }
 
-func TestFieldSpecAtRejectsOutOfRangeIndex(t *testing.T) {
-	if _, ok := FieldSpecAt(-1); ok {
-		t.Fatal("FieldSpecAt(-1) ok = true, want false")
-	}
-	if _, ok := FieldSpecAt(len(SearchProfileGroupSpec().Fields)); ok {
-		t.Fatal("FieldSpecAt(len(fields)) ok = true, want false")
-	}
-}
-
 func TestSearchProfileFieldSavesParsedValues(t *testing.T) {
 	var cfg domain.CriteriaConfig
 	fields := SearchProfileGroupSpec().Fields

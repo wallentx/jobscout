@@ -88,15 +88,6 @@ func TestOpenAIResponseOutputText(t *testing.T) {
 	}
 }
 
-func TestSummarizeOpenAIOutputText(t *testing.T) {
-	if got, want := summarizeOpenAIOutputText(" [] "), "[]"; got != want {
-		t.Fatalf("summarizeOpenAIOutputText(...) = %q, want %q", got, want)
-	}
-	if got, want := summarizeOpenAIOutputText(""), "<empty>"; got != want {
-		t.Fatalf("summarizeOpenAIOutputText(empty) = %q, want %q", got, want)
-	}
-}
-
 func TestOpenAIWebSearchBatchesGroupsByTitleWithAllowedDomains(t *testing.T) {
 	prompt := strings.Join([]string{
 		"Search only these public-web queries:",

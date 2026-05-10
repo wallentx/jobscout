@@ -1,6 +1,11 @@
 package tuiapp
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/wallentx/jobscout/internal/tui"
+)
 
 func (m model) buildNoticeOverlaySpec() popupSpec {
 	dialogWidth := clampPopupWidth(m.termWidth, 40, 0)
@@ -43,9 +48,9 @@ func (m model) buildDetailOverlaySpec() popupSpec {
 	maxDetailLines := popupMaxViewportLinesWithChrome(m.termHeight, 6, 8)
 	details := m.currentDetailText(innerW)
 	viewport := renderScrollablePopupText(details, innerW, maxDetailLines, m.overlay.detail.scrollOffset, nil)
-	footerText := "←/→: Prev/Next • u: Update • o: Open URL • Esc: Return"
+	footerText := "↑/↓: Prev/Next • u: Update • o: Open URL • Esc: Return"
 	if viewport.maxOffset > 0 {
-		footerText = "←/→: Prev/Next • u: Update • o: Open URL • ↑/↓/PgUp/PgDn: Scroll • Esc: Return"
+		footerText = "↑/↓: Prev/Next • u: Update • o: Open URL • j/k/PgUp/PgDn: Scroll • Esc: Return"
 	}
 	return popupSpec{
 		width:  dialogWidth,
@@ -183,6 +188,12 @@ func (m model) buildSingleHealthTaskOverlaySpec() popupSpec {
 
 	title := m.singleHealthTaskTitle()
 	viewport := renderScrollablePopupText(m.singleHealthTaskMessage(), width-6, maxNoticeLines, 0, nil)
+	_, selectedIdx, totalTasks, _ := m.selectedSingleHealthTask()
+	footer := "t: Minimize"
+	if totalTasks > 1 {
+		indicator := fmt.Sprintf("[%d/%d]", selectedIdx+1, totalTasks)
+		footer = tui.CenterVisible(indicator, width-6) + "\n" + "←/→: Task • t: Minimize"
+	}
 	return popupSpec{
 		width:     width,
 		x:         &posX,
@@ -190,7 +201,7 @@ func (m model) buildSingleHealthTaskOverlaySpec() popupSpec {
 		title:     title,
 		titleView: renderLoadingTitle(title, m.loading.frame),
 		body:      popupScrollableTextBody(viewport.content),
-		footer:    popupHintStyle.Render("t: Minimize"),
+		footer:    popupHintStyle.Render(footer),
 	}
 }
 

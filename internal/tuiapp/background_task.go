@@ -117,6 +117,9 @@ func (m model) backgroundTaskActivityView() string {
 
 func (m model) taskActivityTitle() string {
 	if m.blockingLoadingOverlayMinimized() {
+		if m.overlay.kind == overlayHealth && m.singleHealthTasksActive() {
+			return m.singleHealthTaskTitle()
+		}
 		return m.blockingLoadingOverlayTitle()
 	} else if m.fetchingJobs {
 		if title := strings.TrimSpace(m.activeFetch.title); title != "" {

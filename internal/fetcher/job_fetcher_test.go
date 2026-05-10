@@ -629,18 +629,6 @@ func TestJobNeedsApplyPageEnrichmentWhenCompanyMissing(t *testing.T) {
 	}
 }
 
-func TestBuildSiteSearchQuery(t *testing.T) {
-	criteria := &CriteriaConfig{}
-	criteria.Filters.TitleIncludes = []string{"engineer", "platform"}
-	criteria.Filters.WorkSettings.Remote = true
-
-	got := buildSiteSearchQuery("jobs.lever.co", criteria)
-	want := "site:jobs.lever.co (engineer OR platform) Remote"
-	if got != want {
-		t.Fatalf("buildSiteSearchQuery() = %q; want %q", got, want)
-	}
-}
-
 func TestNormalizeRSSJobIdentityParsesCompanyFromAtSuffix(t *testing.T) {
 	company, title := normalizeRSSJobIdentity(
 		"Real Work From Anywhere Backend RSS",

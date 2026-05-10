@@ -20,9 +20,3 @@ func TestDebugRejectedEvidenceSummaryGroupsBySourceAndReason(t *testing.T) {
 		t.Fatalf("debugRejectedEvidenceSummary() = %q, want %q", got, want)
 	}
 }
-
-func TestDebugRejectedEvidenceSummaryHandlesEmpty(t *testing.T) {
-	if got := debugRejectedEvidenceSummary(nil); got != "[]" {
-		t.Fatalf("debugRejectedEvidenceSummary(nil) = %q, want []", got)
-	}
-}

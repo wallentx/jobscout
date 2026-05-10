@@ -3,11 +3,14 @@ package tuiapp
 import tea "github.com/charmbracelet/bubbletea"
 
 func (m model) handleLoadingTickMsg(msg loadingTickMsg) (tea.Model, tea.Cmd) {
+	if msg.generation != m.loading.generation {
+		return m, nil
+	}
 	if !m.isLoadingActive() {
 		return m, nil
 	}
 	m.loading.frame++
-	return m, nextLoadingTick()
+	return m, nextLoadingTick(m.loading.generation)
 }
 
 func (m model) handleBackgroundTaskAnimMsg(msg backgroundTaskAnimMsg) (tea.Model, tea.Cmd) {

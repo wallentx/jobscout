@@ -25,10 +25,8 @@ func TestSetupHeaderExplainsFirstRunPurpose(t *testing.T) {
 	header := ansi.Strip(spec.header)
 
 	for _, want := range []string{
-		"Before jobscout can search",
-		"search profile and app settings",
-		"runs a preview before saving jobs",
-		"LLM job search",
+		"Create a search profile and app settings",
+		"Optional LLM features",
 		"company health summaries",
 	} {
 		if !strings.Contains(header, want) {
@@ -54,9 +52,7 @@ func TestSetupHeaderExplainsRepairIssues(t *testing.T) {
 	header := ansi.Strip(spec.header)
 
 	for _, want := range []string{
-		"jobscout found incomplete setup data",
-		"search with your current criteria",
-		"Pick the area you want to configure",
+		"Some setup data is missing or incomplete",
 		"What needs attention",
 		"Config: missing fields",
 	} {

@@ -14,14 +14,17 @@ const (
 )
 
 type loadingIndicatorState struct {
-	frame int
+	frame      int
+	generation int
 }
 
-type loadingTickMsg struct{}
+type loadingTickMsg struct {
+	generation int
+}
 
-func nextLoadingTick() tea.Cmd {
+func nextLoadingTick(generation int) tea.Cmd {
 	return tea.Tick(loadingTickInterval, func(time.Time) tea.Msg {
-		return loadingTickMsg{}
+		return loadingTickMsg{generation: generation}
 	})
 }
 
@@ -33,7 +36,8 @@ func nextBackgroundTaskAnimTick(target float64) tea.Cmd {
 
 func (m *model) restartLoadingIndicator() tea.Cmd {
 	m.loading.frame = 0
-	return nextLoadingTick()
+	m.loading.generation++
+	return nextLoadingTick(m.loading.generation)
 }
 
 func (m model) isLoadingActive() bool {

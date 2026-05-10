@@ -124,7 +124,7 @@ func (m model) Init() tea.Cmd {
 		cmds = append(cmds, textarea.Blink)
 	}
 	if m.isLoadingActive() {
-		cmds = append(cmds, nextLoadingTick())
+		cmds = append(cmds, nextLoadingTick(m.loading.generation))
 	}
 	if cmd := maybeCheckForUpdateCmd(m.taskCtx, runtimeBuildVersion); cmd != nil {
 		cmds = append(cmds, cmd)

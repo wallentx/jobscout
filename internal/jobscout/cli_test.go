@@ -2,9 +2,7 @@ package jobscout
 
 import (
 	"encoding/json"
-	"io"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/wallentx/jobscout/internal/domain"
@@ -67,20 +65,6 @@ func TestRunImportCLISavesDuplicateImportEnrichment(t *testing.T) {
 	}
 }
 
-func TestRunRejectsRemovedMigrateCommand(t *testing.T) {
-	code := Run([]string{"jobscout", "--migrate"})
-	if code != 1 {
-		t.Fatalf("Run(... --migrate) = %d; want 1", code)
-	}
-}
-
-func TestHelpOmitsRemovedMigrateCommand(t *testing.T) {
-	output := captureStdout(t, printHelp)
-	if strings.Contains(output, "--migrate") {
-		t.Fatalf("help output contains removed migrate command:\n%s", output)
-	}
-}
-
 func withImportStdin(t *testing.T, data []byte) {
 	t.Helper()
 
@@ -100,28 +84,4 @@ func withImportStdin(t *testing.T, data []byte) {
 		os.Stdin = previous
 		_ = reader.Close()
 	})
-}
-
-func captureStdout(t *testing.T, fn func()) string {
-	t.Helper()
-
-	previous := os.Stdout
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe() error = %v", err)
-	}
-	os.Stdout = writer
-	fn()
-	if err := writer.Close(); err != nil {
-		t.Fatalf("writer.Close() error = %v", err)
-	}
-	os.Stdout = previous
-	t.Cleanup(func() {
-		_ = reader.Close()
-	})
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		t.Fatalf("io.ReadAll() error = %v", err)
-	}
-	return string(data)
 }

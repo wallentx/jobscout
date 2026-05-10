@@ -405,6 +405,140 @@ func TestSingleHealthRefreshSuppressesDuplicateJob(t *testing.T) {
 	}
 }
 
+func TestSingleHealthRefreshUsesOnlyTaskOverlayWhileLoading(t *testing.T) {
+	job := Job{
+		Company:        "Acme",
+		CompanyWebsite: "https://acme.example",
+		Title:          "Backend Engineer",
+		Status:         "Unopened",
+	}
+	m := model{
+		termWidth:     100,
+		termHeight:    40,
+		allJobs:       []Job{job},
+		filteredJobs:  []Job{job},
+		activeFilters: filterValuesFromStatuses(nil),
+		overlay:       overlayState{kind: overlayNone},
+		healthCache:   make(HealthCache),
+	}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	if cmd == nil {
+		t.Fatal("Update(h) cmd = nil; want single health command")
+	}
+	got := updated.(model)
+	if got.overlay.kind != overlayNone {
+		t.Fatalf("overlay.kind = %v; want overlayNone while task overlay owns loading UI", got.overlay.kind)
+	}
+	if spec, ok := got.buildMainOverlaySpec(); ok {
+		t.Fatalf("buildMainOverlaySpec() = %#v, true; want no phantom Checking company overlay", spec)
+	}
+	spec, ok := got.buildSingleHealthTaskOverlaySpecIfActive()
+	if !ok {
+		t.Fatal("buildSingleHealthTaskOverlaySpecIfActive() ok = false; want single health task popup")
+	}
+	rendered := strings.Join(strings.Fields(ansi.Strip(spec.title+"\n"+spec.body.content)), " ")
+	if !strings.Contains(rendered, "Refreshing Health Data") || !strings.Contains(rendered, "Acme") {
+		t.Fatalf("single health task popup = %q; want generic title and selected company", rendered)
+	}
+}
+
+func TestSingleHealthRefreshCompletionStaysBackgroundedAfterTaskMinimize(t *testing.T) {
+	job := Job{
+		Company:        "Acme",
+		CompanyWebsite: "https://acme.example",
+		Title:          "Backend Engineer",
+		Status:         "Unopened",
+	}
+	key := healthTaskKeyForJob(job)
+	m := model{
+		termWidth:     100,
+		termHeight:    40,
+		allJobs:       []Job{job},
+		filteredJobs:  []Job{job},
+		activeFilters: filterValuesFromStatuses(nil),
+		overlay:       overlayState{kind: overlayNone},
+		healthCache:   make(HealthCache),
+		backgroundHealth: backgroundHealthState{
+			tasks: map[string]singleHealthTaskState{
+				key: {job: job, company: "Acme"},
+			},
+			expanded: true,
+			progress: 1,
+		},
+	}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+	if cmd == nil {
+		t.Fatal("Update(t) cmd = nil; want minimize animation")
+	}
+	got := updated.(model)
+	got.backgroundHealth.animating = false
+	got.backgroundHealth.expanded = false
+	got.backgroundHealth.progress = 0
+
+	updated, _ = got.Update(healthLoadedMsg{
+		company:   "Acme",
+		taskKey:   key,
+		result:    &CompanyHealthResult{Company: "Acme", Sources: map[string]any{}},
+		fetchedAt: time.Now(),
+	})
+	got = updated.(model)
+	if got.overlay.kind != overlayNone {
+		t.Fatalf("overlay.kind = %v after minimized task completion; want overlayNone", got.overlay.kind)
+	}
+	if _, ok := got.buildMainOverlaySpec(); ok {
+		t.Fatal("buildMainOverlaySpec() rendered completed health popup; want background completion")
+	}
+}
+
+func TestSingleHealthRefreshStartedAfterMinimizeStaysBackgrounded(t *testing.T) {
+	running := Job{
+		Company:        "Acme",
+		CompanyWebsite: "https://acme.example",
+		Title:          "Backend Engineer",
+		Status:         "Unopened",
+	}
+	next := Job{
+		Company:        "Bravo",
+		CompanyWebsite: "https://bravo.example",
+		Title:          "Frontend Engineer",
+		Status:         "Unopened",
+	}
+	m := model{
+		termWidth:     100,
+		termHeight:    40,
+		allJobs:       []Job{running, next},
+		filteredJobs:  []Job{running, next},
+		cursor:        1,
+		activeFilters: filterValuesFromStatuses(nil),
+		overlay:       overlayState{kind: overlayNone},
+		healthCache:   make(HealthCache),
+		backgroundHealth: backgroundHealthState{
+			tasks: map[string]singleHealthTaskState{
+				healthTaskKeyForJob(running): {job: running, company: "Acme"},
+			},
+			expanded: false,
+			progress: 0,
+		},
+	}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	if cmd == nil {
+		t.Fatal("Update(h) cmd = nil; want second single health command")
+	}
+	got := updated.(model)
+	if got.backgroundHealth.expanded {
+		t.Fatal("backgroundHealth.expanded = true; want second task to stay backgrounded")
+	}
+	if _, ok := got.buildSingleHealthTaskOverlaySpecIfActive(); ok {
+		t.Fatal("buildSingleHealthTaskOverlaySpecIfActive() rendered popup; want backgrounded task")
+	}
+	if got.overlay.kind != overlayNone {
+		t.Fatalf("overlay.kind = %v; want overlayNone", got.overlay.kind)
+	}
+}
+
 func TestBulkHealthRefreshExcludesRunningSingleHealthJobs(t *testing.T) {
 	prevStore := runtimeHealthStore
 	runtimeHealthStore = &fakeHealthStore{}

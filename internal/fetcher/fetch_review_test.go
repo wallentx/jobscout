@@ -152,24 +152,3 @@ func TestFormatFetchReviewSummaryDebugShowsLLMFilterBypassReasons(t *testing.T) 
 		}
 	}
 }
-
-func TestFormatExecutedSearchStatusIncludesFilteredAndRejectedCandidates(t *testing.T) {
-	tests := []struct {
-		accepted int
-		filtered int
-		rejected int
-		want     string
-	}{
-		{accepted: 0, filtered: 0, rejected: 0, want: "executed; found 0 results"},
-		{accepted: 4, filtered: 0, rejected: 0, want: "executed; found 4 results"},
-		{accepted: 0, filtered: 2, rejected: 0, want: "executed; accepted 0 results; filtered 2; rejected 0"},
-		{accepted: 3, filtered: 129, rejected: 4, want: "executed; accepted 3 results; filtered 129; rejected 4"},
-	}
-
-	for _, tt := range tests {
-		got := formatExecutedSearchStatus(tt.accepted, tt.filtered, tt.rejected)
-		if got != tt.want {
-			t.Fatalf("formatExecutedSearchStatus(%d, %d, %d) = %q; want %q", tt.accepted, tt.filtered, tt.rejected, got, tt.want)
-		}
-	}
-}

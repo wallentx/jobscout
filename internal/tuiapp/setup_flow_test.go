@@ -2,7 +2,6 @@ package tuiapp
 
 import (
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/wallentx/jobscout/internal/config"
@@ -266,14 +265,6 @@ func TestSetupConfigMenuIndexForSection(t *testing.T) {
 	}
 	if got := setupConfigMenuIndexForSection(setupSectionPrompt); got != setupConfigMenuIndexByID(setupMenuPrompt) {
 		t.Fatalf("prompt menu index = %d; want prompt menu item index", got)
-	}
-}
-
-func TestSearchProfileFieldsIncludeExamples(t *testing.T) {
-	for _, field := range searchProfileGroupSpec().Fields {
-		if !strings.Contains(strings.ToLower(field.Help), "e.g.") && !strings.Contains(strings.ToLower(field.Help), "example") {
-			t.Fatalf("field %q help = %q, want example text", field.Key, field.Help)
-		}
 	}
 }
 

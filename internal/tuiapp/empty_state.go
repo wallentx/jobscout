@@ -44,13 +44,73 @@ func renderEmptyTableLogo(width int, height int, version string) string {
 	if width <= 0 || height <= 0 {
 		return ""
 	}
+	version = strings.TrimSpace(version)
+	return renderEmptyTableLogoWithTopPadding(width, height, version, 1)
+}
+
+func renderSetupEmptyTable(width int, height int, savedJobs int, version string) string {
+	if width <= 0 || height <= 0 {
+		return ""
+	}
+	messageLines := setupTableMessageLines(width, savedJobs)
+	if len(messageLines) > height {
+		messageLines = messageLines[:height]
+	}
+	logoHeight := height - len(messageLines)
+	if logoHeight < 0 {
+		logoHeight = 0
+	}
+
+	out := splitRenderedLines(renderEmptyTableLogoWithTopPadding(width, logoHeight, version, 1))
+	for len(out) < logoHeight {
+		out = append(out, lipgloss.NewStyle().Width(width).Render(""))
+	}
+	out = append(out, messageLines...)
+	for len(out) < height {
+		out = append(out, lipgloss.NewStyle().Width(width).Render(""))
+	}
+	if len(out) > height {
+		out = out[:height]
+	}
+	return strings.Join(out, "\n")
+}
+
+func setupTableMessageLines(width int, savedJobs int) []string {
+	lines := strings.Split(strings.TrimRight(tempSetupTableMessage(savedJobs), "\n"), "\n")
+	out := make([]string, 0, len(lines))
+	style := lipgloss.NewStyle().Width(width).Foreground(lipgloss.Color("244"))
+	for _, line := range lines {
+		out = append(out, style.Render(truncate(line, width)))
+	}
+	return out
+}
+
+func renderEmptyTableLogoWithTopPadding(width int, height int, version string, topPadding int) string {
+	if width <= 0 || height <= 0 {
+		return ""
+	}
 	rawLines := strings.Split(strings.Trim(emptyStateLogo, "\n"), "\n")
-	lines, versionLine := emptyStateLogoLinesWithVersion(rawLines, width, height, version)
+	version = strings.TrimSpace(version)
+	versionLine := ""
+	if version != "" && height > len(rawLines) {
+		versionLine = version
+	}
+	lines := emptyStateLogoLines(rawLines)
 	if len(lines) > height {
 		lines = lines[:height]
 	}
-
-	topPadding := (height - len(lines)) / 2
+	contentHeight := len(lines)
+	if versionLine != "" {
+		contentHeight++
+	}
+	if contentHeight > height {
+		versionLine = ""
+		contentHeight = len(lines)
+	}
+	maxTopPadding := height - contentHeight
+	if topPadding > maxTopPadding {
+		topPadding = maxTopPadding
+	}
 	if topPadding < 0 {
 		topPadding = 0
 	}
@@ -61,9 +121,6 @@ func renderEmptyTableLogo(width int, height int, version string) string {
 	}
 	for _, line := range lines {
 		styled := renderLogoLine(line.text, logoBlockGradientColor(line.logoIndex), logoGradientColor(emptyStateLogoShadowColors, line.logoIndex))
-		if line.version != "" {
-			styled += "  " + emptyStateVersionStyle.Render(line.version)
-		}
 		out = append(out, lipgloss.PlaceHorizontal(width, lipgloss.Center, styled))
 	}
 	if versionLine != "" && len(out) < height {
@@ -75,42 +132,28 @@ func renderEmptyTableLogo(width int, height int, version string) string {
 	return strings.Join(out, "\n")
 }
 
+func splitRenderedLines(value string) []string {
+	if value == "" {
+		return nil
+	}
+	return strings.Split(value, "\n")
+}
+
 type emptyStateLogoLine struct {
 	text      string
 	logoIndex int
-	version   string
 }
 
 var emptyStateVersionStyle = lipgloss.NewStyle().
 	Foreground(lipgloss.Color("245")).
 	Bold(true)
 
-func emptyStateLogoLinesWithVersion(lines []string, width int, height int, version string) ([]emptyStateLogoLine, string) {
+func emptyStateLogoLines(lines []string) []emptyStateLogoLine {
 	renderLines := make([]emptyStateLogoLine, 0, len(lines))
 	for i, line := range lines {
 		renderLines = append(renderLines, emptyStateLogoLine{text: line, logoIndex: i})
 	}
-
-	version = strings.TrimSpace(version)
-	if version == "" {
-		return renderLines, ""
-	}
-	logoWidth := 0
-	for _, line := range lines {
-		if lineWidth := lipgloss.Width(strings.TrimRight(line, " ")); lineWidth > logoWidth {
-			logoWidth = lineWidth
-		}
-	}
-	if logoWidth+2+lipgloss.Width(version) <= width {
-		idx := len(renderLines) / 2
-		renderLines[idx].text = strings.TrimRight(renderLines[idx].text, " ")
-		renderLines[idx].version = version
-		return renderLines, ""
-	}
-	if height > len(lines) {
-		return renderLines, version
-	}
-	return renderLines, ""
+	return renderLines
 }
 
 func logoBlockGradientColor(idx int) rgbColor {

@@ -53,6 +53,7 @@ type singleHealthTaskState struct {
 
 type backgroundHealthState struct {
 	tasks     map[string]singleHealthTaskState
+	selected  int
 	updated   int
 	skipped   int
 	failed    int

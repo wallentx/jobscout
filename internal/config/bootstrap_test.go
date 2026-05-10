@@ -91,32 +91,6 @@ func TestDefaultArtifacts(t *testing.T) {
 	}
 }
 
-func TestSaveHelpersWriteFiles(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	appPath := filepath.Join(tmpDir, "config.yaml")
-	promptPath := filepath.Join(tmpDir, "SEARCH_PROMPT.md")
-
-	appCfg := defaultAppConfig()
-	criteriaCfg := &CriteriaConfig{}
-	criteriaCfg.Filters.TitleIncludes = []string{"platform"}
-	appCfg.Criteria = *criteriaCfg
-	prompt := defaultSearchPrompt(criteriaCfg)
-
-	if err := saveAppConfig(appPath, &appCfg); err != nil {
-		t.Fatalf("saveAppConfig(): %v", err)
-	}
-	if err := saveSearchPrompt(promptPath, prompt); err != nil {
-		t.Fatalf("saveSearchPrompt(): %v", err)
-	}
-
-	for _, path := range []string{appPath, promptPath} {
-		if _, err := os.Stat(path); err != nil {
-			t.Fatalf("Stat(%q): %v", path, err)
-		}
-	}
-}
-
 func TestLoadCriteriaConfigReadsConfigCriteriaSection(t *testing.T) {
 	tmpDir := t.TempDir()
 

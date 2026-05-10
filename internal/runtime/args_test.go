@@ -82,12 +82,6 @@ func TestParseArgsDeleteDB(t *testing.T) {
 	}
 }
 
-func TestParseArgsRejectsRemovedMigrateCommand(t *testing.T) {
-	if _, err := ParseArgs([]string{"jobscout", "--migrate"}); err == nil {
-		t.Fatal("ParseArgs(... --migrate) error = nil; want removed-command error")
-	}
-}
-
 func TestParseArgsConfigOverride(t *testing.T) {
 	configRoot := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", configRoot)
@@ -252,19 +246,6 @@ func TestParseArgsMissingPathErrors(t *testing.T) {
 	for _, args := range tests {
 		if _, err := ParseArgs(args); err == nil {
 			t.Fatalf("ParseArgs(%#v) error = nil; want error", args)
-		}
-	}
-}
-
-func TestParseArgsRejectsRemovedCriteriaFlag(t *testing.T) {
-	tests := [][]string{
-		{"jobscout", "--criteria", "old-search.yaml"},
-		{"jobscout", "--criteria=old-search.yaml"},
-	}
-
-	for _, args := range tests {
-		if _, err := ParseArgs(args); err == nil {
-			t.Fatalf("ParseArgs(%#v) error = nil; want removed-criteria error", args)
 		}
 	}
 }

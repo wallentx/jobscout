@@ -12,6 +12,14 @@ import (
 )
 
 func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "t" && m.overlay.kind == overlayHealth && m.overlay.health.minimized && m.singleHealthTasksActive() && !m.backgroundHealth.animating {
+		m.backgroundHealth.animating = true
+		val := 0.0
+		if !m.backgroundHealth.expanded {
+			val = 1.0
+		}
+		return m, nextBackgroundTaskAnimTick(val)
+	}
 	if msg.String() == "t" && m.canMinimizeBlockingLoadingOverlay() {
 		m.setBlockingLoadingOverlayMinimized(!m.blockingLoadingOverlayMinimized())
 		return m, nil
@@ -46,6 +54,18 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if handled && target != nil {
 			return m, nextBackgroundTaskAnimTick(*target)
+		}
+	}
+	if m.overlay.kind != overlaySetup && m.singleHealthTasksActive() && m.backgroundHealth.expanded && !m.backgroundHealth.animating {
+		switch msg.String() {
+		case "left":
+			if m.cycleSingleHealthTask(-1) {
+				return m, nil
+			}
+		case "right":
+			if m.cycleSingleHealthTask(1) {
+				return m, nil
+			}
 		}
 	}
 	if m.overlay.kind == overlaySetup {
@@ -263,19 +283,19 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "esc":
 			m.clearOverlay()
-		case "left", "p":
+		case "up", "p":
 			if m.cursor > 0 {
 				m.moveCursor(-1)
 				m.overlay.detail.scrollOffset = 0
 			}
-		case "right", "n":
+		case "down", "n":
 			if m.cursor < len(m.filteredJobs)-1 {
 				m.moveCursor(1)
 				m.overlay.detail.scrollOffset = 0
 			}
-		case "up", "k":
+		case "k":
 			m.overlay.detail.scrollOffset = clampPopupScroll(m.overlay.detail.scrollOffset-1, m.getMaxDetailScroll())
-		case "down", "j":
+		case "j":
 			m.overlay.detail.scrollOffset = clampPopupScroll(m.overlay.detail.scrollOffset+1, m.getMaxDetailScroll())
 		case "pgup":
 			m.overlay.detail.scrollOffset = clampPopupScroll(m.overlay.detail.scrollOffset-10, m.getMaxDetailScroll())
@@ -428,7 +448,7 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "h":
 		if mainListKeysAvailable && len(m.filteredJobs) > 0 {
 			job := m.filteredJobs[m.cursor]
-			showPopup := m.overlay.kind == overlayNone
+			showPopup := m.overlay.kind == overlayNone && (!m.singleHealthTasksActive() || m.backgroundHealth.expanded)
 			cmd := m.startSingleHealthTask(job, showPopup, false)
 			if cmd == nil {
 				return m, nil
@@ -535,16 +555,6 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			current := m.filteredJobs[m.cursor]
 			return m, tea.ExecProcess(exec.Command("true"), func(err error) tea.Msg {
 				return editJob(current)()
-			})
-		}
-	case "i":
-		if mainListKeysAvailable {
-			return m, tea.ExecProcess(exec.Command("true"), func(err error) tea.Msg {
-				// We use a dummy exec command to transition to "fullscreen" mode for the editor
-				// But actually, we need to run the editor command IN the tea.Cmd wrapper
-				// The tea.ExecProcess helper is cleaner, but importJobs does logic after.
-				// Let's just return the command. Bubbletea will pause rendering.
-				return importJobs(m.allJobs)()
 			})
 		}
 	case "o":

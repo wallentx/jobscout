@@ -34,16 +34,6 @@ func (m model) View() string {
 	rowsAvailable := m.tableHeight
 	if showSetupTable {
 		displayJobs = m.setup.previewJobs
-		if rowsAvailable > 0 {
-			rowsAvailable--
-			body.WriteString(
-				lipgloss.NewStyle().
-					Width(cW + tW + sW + pW).
-					Foreground(lipgloss.Color("244")).
-					Render(truncate(tempSetupTableMessage(len(m.allJobs)), cW+tW+sW+pW)),
-			)
-			body.WriteString("\n")
-		}
 	}
 	if rowsAvailable < 0 {
 		rowsAvailable = 0
@@ -54,7 +44,20 @@ func (m model) View() string {
 	if showSetupTable {
 		start = 0
 	}
-	end := start + rowsAvailable
+	contentRowsAvailable := rowsAvailable
+	setupMessageLines := []string(nil)
+	if showSetupTable {
+		setupMessageLines = setupTableMessageLines(cW+tW+sW+pW, len(m.allJobs))
+		if len(setupMessageLines) > contentRowsAvailable {
+			setupMessageLines = setupMessageLines[:contentRowsAvailable]
+		}
+		contentRowsAvailable -= len(setupMessageLines)
+		if contentRowsAvailable < 0 {
+			contentRowsAvailable = 0
+		}
+	}
+
+	end := start + contentRowsAvailable
 	if end > len(displayJobs) {
 		end = len(displayJobs)
 	}
@@ -65,13 +68,17 @@ func (m model) View() string {
 	}
 
 	renderedRows := end - start
-	if !showSetupTable && len(displayJobs) == 0 && rowsAvailable > 0 {
+	if showSetupTable && len(displayJobs) == 0 && rowsAvailable > 0 {
+		body.WriteString(renderSetupEmptyTable(cW+tW+sW+pW, rowsAvailable, len(m.allJobs), runtimeBuildVersion))
+		body.WriteString("\n")
+		renderedRows = rowsAvailable
+	} else if !showSetupTable && len(displayJobs) == 0 && rowsAvailable > 0 {
 		body.WriteString(renderEmptyTableLogo(cW+tW+sW+pW, rowsAvailable, runtimeBuildVersion))
 		body.WriteString("\n")
 		renderedRows = rowsAvailable
 	}
 
-	for i := renderedRows; i < rowsAvailable; i++ {
+	for i := renderedRows; i < contentRowsAvailable; i++ {
 		blankRow := lipgloss.JoinHorizontal(lipgloss.Top,
 			lipgloss.NewStyle().Width(cW).Render(""),
 			lipgloss.NewStyle().Width(tW).Render(""),
@@ -79,6 +86,11 @@ func (m model) View() string {
 			lipgloss.NewStyle().Width(pW).Render(""),
 		)
 		body.WriteString(blankRow + "\n")
+	}
+	if showSetupTable && len(displayJobs) > 0 {
+		for _, line := range setupMessageLines {
+			body.WriteString(line + "\n")
+		}
 	}
 
 	tableView := baseStyle.Copy().
@@ -111,7 +123,6 @@ func (m model) View() string {
 			formatHelpItem("h", "Health"),
 			formatHelpItem("s", "Status"),
 			formatHelpItem("m", "Mark Viewed"),
-			formatHelpItem("i", "Import"),
 			formatHelpItem("r", "Fetch"),
 			formatHelpItem("c", "Config"),
 			formatHelpItem("D", "Del"),
@@ -120,7 +131,7 @@ func (m model) View() string {
 			formatHelpItem("1-5", "Sort"),
 			formatHelpItem("f", fmt.Sprintf("Filter %s", filterText)),
 		)
-		if m.backgroundTask.active {
+		if m.backgroundTask.active || m.fetchingJobs || m.singleHealthTasksActive() {
 			items = append(items, formatHelpItem("t", "Task"))
 		}
 		items = append(items, formatHelpItem("q", "Quit"))

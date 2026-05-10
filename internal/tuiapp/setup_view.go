@@ -120,8 +120,7 @@ func (m model) buildSetupOverlaySpec() popupSpec {
 				Selected: m.setup.choiceIdx == i,
 			})
 		}
-		content.WriteString("LLM is configured, but auth is unavailable in this session.\n\n")
-		content.WriteString("You can continue with non-LLM sources for now, fix LLM settings, or quit.")
+		content.WriteString("Your saved LLM settings are unchanged. Choose how to continue.")
 		return popupSpec{
 			width:  dialogWidth,
 			header: popupBodyStyle.Render(header.String()),
@@ -296,7 +295,7 @@ func (m model) buildSetupOverlaySpec() popupSpec {
 		}
 	case setupStepProviderConfigMenu:
 		fmt.Fprintf(&content, "Provider config: %s\n\n", providerLabel(m.setup.appConfig.LLM.Provider))
-		content.WriteString(helpStyle.Render("Credentials, default model, and task model overrides are stored for this provider only."))
+		content.WriteString(helpStyle.Render("Credentials and model choices are stored for this provider only."))
 		content.WriteString("\n\n")
 		labelWidth := lipgloss.Width("Default Model:")
 		dropdownWidth := dialogWidth - 10 - labelWidth
@@ -616,7 +615,7 @@ func (m model) buildSetupOverlaySpec() popupSpec {
 		}
 	case setupStepResumeChoice:
 		content.WriteString("Use your resume to prefill search criteria?\n\n")
-		content.WriteString(helpStyle.Render("Your resume will be parsed by your configured LLM provider to prefill criteria. jobscout does not store the resume file."))
+		content.WriteString(helpStyle.Render("Sends parsed resume text to your configured LLM provider. The file is not stored."))
 		options := []string{"Yes, enter a resume path", "Skip and enter criteria manually"}
 		items := make([]popupMenuItem, 0, len(options))
 		for i, option := range options {
@@ -832,56 +831,56 @@ func (m model) setupHeaderText() string {
 func (m model) setupModePurpose() string {
 	switch m.setup.mode {
 	case setupModeRecovery:
-		return "LLM features are configured, but the token is not available in this shell. You can keep using jobscout without LLM features or fix the provider auth now."
+		return "Provider auth is not available in this shell."
 	case setupModeRepair:
-		return "jobscout found incomplete setup data. Repairing these items lets the app search with your current criteria instead of guessing."
+		return "Some setup data is missing or incomplete."
 	case setupModeEdit:
 		return "Change how jobscout searches, filters, and optionally uses your LLM provider."
 	default:
-		return fmt.Sprintf("Before jobscout can search, it needs a search profile and app settings. This wizard writes them under %s and runs a preview before saving jobs.", appruntime.DefaultDir())
+		return fmt.Sprintf("Create a search profile and app settings under %s.", appruntime.DefaultDir())
 	}
 }
 
 func setupStepPurpose(step setupStep) string {
 	switch step {
 	case setupStepRecoveryChoice:
-		return "Choose whether to continue without LLM for this session or update LLM auth."
+		return ""
 	case setupStepLLMChoice:
-		return "Choose whether jobscout may use your own LLM provider for LLM job search, LLM job filtering, resume-based criteria setup, and company health summaries."
+		return "Optional LLM features can assist search, filtering, resume setup, and company health summaries."
 	case setupStepConfigMenu:
-		return "Pick the area you want to configure. The recommended item is based on what jobscout found missing or incomplete."
+		return ""
 	case setupStepLLMConfigMenu:
-		return "LLM settings control LLM job search, LLM job filtering, provider choice, credentials, and model selection. Each provider keeps its own config."
+		return "Enable features, choose a provider, or edit provider config."
 	case setupStepProviderConfigMenu:
-		return "Configure credentials and models for the selected provider. Task overrides here do not apply to other providers."
+		return "Configure credentials and models for the selected provider."
 	case setupStepProviderChoice:
-		return "Select the provider jobscout should call when LLM features are enabled."
+		return "Select the provider to use when LLM features are enabled."
 	case setupStepAuthModeChoice:
-		return "Choose how jobscout should load the provider token. Environment variables or token commands avoid storing secrets in config files."
+		return "Environment variables or token commands avoid storing secrets in config files."
 	case setupStepAuthValueField:
-		return "Enter the auth source for this provider. jobscout uses it to fetch available models and run LLM features."
+		return "Enter the auth source for this provider."
 	case setupStepModelChoice:
-		return "Choose the model jobscout should use for LLM-assisted tasks. The list is fetched from your provider when possible."
+		return "Choose the default model for LLM-assisted tasks."
 	case setupStepModelValueField:
-		return "Enter a model ID manually when the provider list does not include the model you want."
+		return "Use a model ID that is not in the provider list."
 	case setupStepTaskModelMenu:
-		return "Optionally override the model per LLM task so cheap, fast tasks and harder reasoning tasks can use different models."
+		return "Optional per-task model overrides."
 	case setupStepTaskModelChoice:
 		return "Choose a model for this task, or keep it on the default fallback."
 	case setupStepTaskModelValueField:
-		return "Enter a task-specific model ID manually, or leave it blank to clear the override."
+		return "Leave blank to clear this override."
 	case setupStepResumeChoice:
-		return "Optionally seed your search criteria from a resume. The resume text is parsed by your configured LLM provider."
+		return "Optionally seed search criteria from a resume."
 	case setupStepResumePathField:
-		return "Provide the local path to your resume so jobscout can extract text and draft starter criteria."
+		return "Provide the local resume path."
 	case setupStepCriteriaField:
 		return "Define the roles, locations, work settings, and compensation that should count as a useful match."
 	case setupStepSummary:
-		return "Review the files jobscout is about to write before running a preview search."
+		return "Review settings before saving."
 	case setupStepPromptReview:
-		return "Review the generated LLM search prompt. This tells the model what kinds of jobs to find."
+		return "Review the prompt used for LLM job search."
 	case setupStepPreviewConfirm:
-		return "Review temporary fetch results before anything is added to your saved jobs database."
+		return "Review temporary results before saving jobs."
 	default:
 		return ""
 	}
