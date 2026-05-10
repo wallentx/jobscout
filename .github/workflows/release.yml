@@ -130,8 +130,16 @@ jobs:
     timeout-minutes: 15
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
 
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.JOBSCOUT_RELEASE_TAG }}
+          fetch-depth: 0
+          fetch-tags: true
+
       - name: Download release archives
         uses: actions/download-artifact@v8
         with:
@@ -149,6 +157,7 @@ jobs:
           sha256sum "${files[@]}" > dist/checksums.txt
 
       - name: Ensure GitHub release exists
+        if: github.event_name == 'workflow_dispatch'
         run: |
           if ! gh release view "$JOBSCOUT_RELEASE_TAG" >/dev/null 2>&1; then
             gh release create "$JOBSCOUT_RELEASE_TAG" --title "$JOBSCOUT_RELEASE_TAG" --generate-notes
