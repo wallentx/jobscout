@@ -1,0 +1,69 @@
+{
+  "id": "company_health_low_risk_v1",
+  "task": "company_health_summary",
+  "version": 1,
+  "input": {
+    "result": {
+      "company": "Harbor Software",
+      "score": 82,
+      "confidence": "high",
+      "public": true,
+      "founded_year": 2008,
+      "age_years": 18,
+      "estimated_employees": 2400,
+      "discovered_ticker": "HARB",
+      "flags": [],
+      "notes": [
+        "Overall: looks relatively healthy (signals suggest stability).",
+        "SEC filings seen recently.",
+        "No negative news keywords detected in recent headlines.",
+        "Estimated size: 2400 employees."
+      ],
+      "hn_signals": [
+        {
+          "title": "Harbor Software publishes new developer SDK",
+          "points": 92,
+          "comments": 18
+        }
+      ],
+      "employment_risk": {
+        "level": "Low",
+        "score": 12,
+        "factors": [
+          "No recent layoff signal",
+          "Recent filings",
+          "Stable company age"
+        ]
+      }
+    }
+  },
+  "checks": {
+    "json_required": true,
+    "required_fields": [
+      "summary",
+      "recommendation",
+      "risk_level",
+      "positive_signals",
+      "concerns",
+      "follow_up_questions"
+    ],
+    "expected_values": {
+      "risk_level": "low"
+    },
+    "must_include": [
+      "stable",
+      "low",
+      "recent"
+    ],
+    "must_not_include": [
+      "layoff",
+      "bankruptcy",
+      "fraud"
+    ],
+    "grounding_rules": [
+      "Harbor Software",
+      "recent",
+      "Low"
+    ]
+  }
+}

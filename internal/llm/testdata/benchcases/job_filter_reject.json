@@ -1,0 +1,78 @@
+{
+  "id": "job_filter_contract_manager_reject_v1",
+  "task": "job_filter",
+  "version": 1,
+  "input": {
+    "criteria": {
+      "candidate": {
+        "city": "Columbus",
+        "state": "OH",
+        "country_code": "US",
+        "years_of_experience": 5
+      },
+      "filters": {
+        "title_requires": [
+          "Developer"
+        ],
+        "title_includes": [
+          "Software",
+          "Backend"
+        ],
+        "title_excludes": [
+          "Manager",
+          "Contract"
+        ],
+        "work_settings": {
+          "remote": true,
+          "hybrid": true
+        },
+        "min_base_usd": 110000
+      },
+      "role_families": [
+        "backend"
+      ],
+      "priority_signals": [
+        "API development",
+        "databases",
+        "testing"
+      ]
+    },
+    "job": {
+      "company": "Example Consulting",
+      "title": "Contract Engineering Manager",
+      "remote": "Onsite - New York, NY",
+      "compensation": "$95,000 - $105,000 base",
+      "description": "Manage a team of software engineers for a six month onsite contract.",
+      "apply_url": "https://example.com/jobs/contract-engineering-manager"
+    }
+  },
+  "checks": {
+    "json_required": true,
+    "required_fields": [
+      "matches",
+      "compensation_extracted",
+      "remote_eligibility",
+      "why_it_matches"
+    ],
+    "expected_values": {
+      "matches": false
+    },
+    "expected_contains": {
+      "why_it_matches": [
+        "contract"
+      ]
+    },
+    "must_include": [
+      "contract",
+      "manager",
+      "onsite"
+    ],
+    "must_not_include": [
+      "\"matches\":true"
+    ],
+    "grounding_rules": [
+      "contract",
+      "onsite"
+    ]
+  }
+}

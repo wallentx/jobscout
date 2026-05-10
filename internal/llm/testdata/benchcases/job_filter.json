@@ -1,0 +1,82 @@
+{
+  "id": "job_filter_software_remote_v1",
+  "task": "job_filter",
+  "version": 1,
+  "input": {
+    "criteria": {
+      "candidate": {
+        "city": "Columbus",
+        "state": "OH",
+        "country_code": "US",
+        "years_of_experience": 5
+      },
+      "filters": {
+        "title_requires": [
+          "Developer"
+        ],
+        "title_includes": [
+          "Software",
+          "Backend"
+        ],
+        "title_excludes": [
+          "Manager",
+          "Contract"
+        ],
+        "work_settings": {
+          "remote": true,
+          "hybrid": true
+        },
+        "min_base_usd": 110000
+      },
+      "role_families": [
+        "backend"
+      ],
+      "priority_signals": [
+        "API development",
+        "databases",
+        "testing",
+        "team collaboration"
+      ]
+    },
+    "job": {
+      "company": "Example Apps",
+      "title": "Software Developer",
+      "remote": "Remote - United States",
+      "compensation": "$120,000 - $145,000 base",
+      "description": "Build backend APIs, improve database-backed services, write automated tests, and work with product teams on customer-facing features.",
+      "apply_url": "https://example.com/jobs/software-developer"
+    }
+  },
+  "checks": {
+    "json_required": true,
+    "required_fields": [
+      "matches",
+      "compensation_extracted",
+      "remote_eligibility",
+      "why_it_matches"
+    ],
+    "expected_values": {
+      "matches": true
+    },
+    "expected_contains": {
+      "why_it_matches": [
+        "API"
+      ]
+    },
+    "must_include": [
+      "Software",
+      "$120",
+      "Remote",
+      "API"
+    ],
+    "must_not_include": [
+      "onsite",
+      "manager"
+    ],
+    "grounding_rules": [
+      "API",
+      "database",
+      "testing"
+    ]
+  }
+}
