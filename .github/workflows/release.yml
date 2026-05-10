@@ -1,9 +1,9 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - v*
+  release:
+    types:
+      - published
   workflow_dispatch:
     inputs:
       version:
@@ -25,8 +25,11 @@ permissions:
   repository-projects: read
   statuses: read
 
+env:
+  JOBSCOUT_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.event.release.tag_name }}
+
 concurrency:
-  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.version || github.event.release.tag_name }}
   cancel-in-progress: false
 
 jobs:
@@ -34,19 +37,14 @@ jobs:
     name: make all
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
         with:
+          ref: ${{ env.JOBSCOUT_RELEASE_TAG }}
           fetch-depth: 0
           fetch-tags: true
-
-      - name: Check out release tag
-        if: github.event_name == 'workflow_dispatch'
-        run: git checkout "$RELEASE_TAG"
 
       - name: Actions Toolbox
         uses: wallentx/gh-actions/composite/actions-toolbox@main
@@ -62,6 +60,8 @@ jobs:
           cache: true
 
       - name: Run release gate
+        env:
+          RELEASE_TAG: ${{ env.JOBSCOUT_RELEASE_TAG }}
         run: make all
 
   build:
@@ -85,19 +85,14 @@ jobs:
             goarch: amd64
           - goos: windows
             goarch: arm64
-    env:
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
         with:
+          ref: ${{ env.JOBSCOUT_RELEASE_TAG }}
           fetch-depth: 0
           fetch-tags: true
-
-      - name: Check out release tag
-        if: github.event_name == 'workflow_dispatch'
-        run: git checkout "$RELEASE_TAG"
 
       - name: Actions Toolbox
         uses: wallentx/gh-actions/composite/actions-toolbox@main
@@ -114,14 +109,15 @@ jobs:
 
       - name: Build release archive
         env:
+          RELEASE_TAG: ${{ env.JOBSCOUT_RELEASE_TAG }}
           RELEASE_GOOS: ${{ matrix.goos }}
           RELEASE_GOARCH: ${{ matrix.goarch }}
         run: make release
 
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: jobscout-${{ env.RELEASE_TAG }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: jobscout-${{ env.JOBSCOUT_RELEASE_TAG }}-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
             dist/*.tar.gz
             dist/*.zip
@@ -133,27 +129,30 @@ jobs:
     needs: build
     timeout-minutes: 15
     env:
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Download release archives
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
-          pattern: jobscout-${{ env.RELEASE_TAG }}-*
+          pattern: jobscout-${{ env.JOBSCOUT_RELEASE_TAG }}-*
           merge-multiple: true
 
       - name: Generate checksums
         run: |
-          cd dist
-          sha256sum ./*.tar.gz ./*.zip > checksums.txt
+          mapfile -t files < <(find dist -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) | sort)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No release archives were downloaded" >&2
+            exit 1
+          fi
+          sha256sum "${files[@]}" > dist/checksums.txt
 
       - name: Ensure GitHub release exists
         run: |
-          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --generate-notes
+          if ! gh release view "$JOBSCOUT_RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$JOBSCOUT_RELEASE_TAG" --title "$JOBSCOUT_RELEASE_TAG" --generate-notes
           fi
 
       - name: Upload release assets
-        run: gh release upload "$RELEASE_TAG" dist/*.tar.gz dist/*.zip dist/checksums.txt --clobber
+        run: gh release upload "$JOBSCOUT_RELEASE_TAG" dist/*.tar.gz dist/*.zip dist/checksums.txt --clobber

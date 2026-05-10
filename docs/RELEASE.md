@@ -18,8 +18,8 @@ make full-check
 
 Release builds embed the value of `VERSION` into `jobscout --version`.
 
-By default, `VERSION` comes from `RELEASE_TAG` when the CI toolbox action
-provides it. Otherwise, local dev builds use:
+Release workflow builds set `RELEASE_TAG` from the published GitHub Release tag.
+Otherwise, local dev builds use:
 
 ```text
 <latest-tag-or-v0.0.0>-<git-short-sha>
@@ -33,16 +33,15 @@ Use `v0.1.0` for the first public release.
 
 ```sh
 make all
-git tag -a v0.1.0 -m "jobscout v0.1.0"
 git push origin main
-git push origin v0.1.0
 ```
 
-Pushing the tag starts the release workflow. The workflow runs `make all`,
-builds release archives for Linux, macOS, and Windows on amd64 and arm64, then
-creates or updates the GitHub Release for that tag with archives and checksums.
-Linux and macOS assets are `.tar.gz` archives; Windows assets are `.zip`
-archives.
+Create and publish the GitHub Release manually. Use `v0.1.0` as the release
+tag, creating it from `main` in the GitHub release form if it does not already
+exist. Publishing the release starts the release workflow. The workflow runs
+`make all`, builds release archives for Linux, macOS, and Windows on amd64 and
+arm64, then uploads archives and checksums to that GitHub Release. Linux and
+macOS assets are `.tar.gz` archives; Windows assets are `.zip` archives.
 
 For a local release build, pass the release version explicitly:
 
