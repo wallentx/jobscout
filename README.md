@@ -26,9 +26,9 @@ to check whether a newer version is available. The check is silent when it
 fails or when the current build version cannot be compared. Set
 `JOBSCOUT_DISABLE_UPDATE_CHECK=1` to disable it.
 
-## Non-LLM Mode
+## Deterministic Mode
 
-The app can function without LLM access. In non-LLM mode it uses configured sources such as RSS feeds, site-search targets, and built-in source catalogs. Company Health also uses deterministic source checks such as SEC, Wikipedia/Wikidata, Google News RSS, Hacker News, and stock-history signals.
+The app can fully function with, or without LLM enhancements. When fetching jobs, it uses configured sources such as RSS feeds, site-search targets, and built-in source catalogs. Company Health also uses deterministic source checks such as SEC, Wikipedia/Wikidata, Google News RSS, Hacker News, and stock-history signals.
 
 Runtime files are created under the OS-specific user config directory by
 default. Choose "No, use non-LLM sources only" during setup, or disable LLM
@@ -80,23 +80,30 @@ See [Demo mode](docs/DEMO_MODE.md) for the in-memory profile and LLM behavior.
 
 ## CLI Helpers
 
+Most of these are only useful during development.
 ```sh
-jobscout --demo
-jobscout --help
-jobscout --version
-jobscout -v
-jobscout --fetch-dry-run
-jobscout --fetch-dry-run --json
-jobscout --export-json jobs-export.json
-jobscout --import < jobs-export.json
+Usage:
+  jobscout [options]
+  jobscout [options] <command> [command options]
+
+Options:
+  --demo                  Run with in-memory demo data; read/write no user config or database
+  -d, --debug             Show additional fetch and Company Health details
+  --sources <list>        Use only selected fetch sources for this run: rss, site, llm, llm_web
+                            llm_web is an opt-in experimental source
+  --config <path>         Use an alternate config file
+  -h, --help              Show this help
+  -v, --version           Show version information
+
+Commands:
+  --fetch-dry-run [--json]       Fetch jobs without saving them
+  --export-json [path|-]         Export saved jobs as JSON
+  --import, -i                   Import jobs from stdin or editor JSON
+  --delete-db                    Delete the SQLite database and exit
+  --repair-job-identity          Repair missing company identity data
+  --bench-llm                   Run LLM benchmark cases
+  --bench-report                Summarize saved LLM benchmark results
 ```
-
-Use `--config` to point at an alternate config file, and `--debug` for
-additional fetch and Company Health details. `--import` reads JSON from stdin;
-when run interactively without stdin, it opens `$EDITOR` for JSON entry.
-
-LLM web-search sources are inert during normal refreshes. Use
-`--sources llm_web` when intentionally testing that path.
 
 ## Development
 
