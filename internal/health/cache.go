@@ -91,6 +91,13 @@ func CachedHealthForJob(cache storage.HealthCache, job domain.Job) *domain.Compa
 	return cachedHealth(cache, job.Company)
 }
 
+func StoredHealthForJob(cache storage.HealthCache, job domain.Job) *domain.CompanyHealthResult {
+	if stored := storedHealth(cache, CacheKeyForJob(job)); stored != nil {
+		return stored
+	}
+	return storedHealth(cache, job.Company)
+}
+
 func SetCachedHealth(cache storage.HealthCache, company string, result *domain.CompanyHealthResult) {
 	cache[company] = storage.HealthCacheEntry{Result: result, Timestamp: time.Now()}
 }
@@ -137,6 +144,14 @@ func healthResultHasVolatileSignals(result *domain.CompanyHealthResult) bool {
 func cachedHealth(cache storage.HealthCache, company string) *domain.CompanyHealthResult {
 	entry, ok := cache[company]
 	if !ok || !IsHealthCacheFresh(entry.Timestamp, entry.Result) {
+		return nil
+	}
+	return entry.Result
+}
+
+func storedHealth(cache storage.HealthCache, company string) *domain.CompanyHealthResult {
+	entry, ok := cache[company]
+	if !ok {
 		return nil
 	}
 	return entry.Result

@@ -58,6 +58,53 @@ func TestLoadCompanyHealthForJobRequiresCompanyWebsite(t *testing.T) {
 	}
 }
 
+func TestMainListHealthKeyShowsCachedReportWithStockGraph(t *testing.T) {
+	job := Job{
+		Company:        "Acme",
+		Title:          "Backend Engineer",
+		CompanyWebsite: "https://www.acme.example",
+	}
+	cached := &CompanyHealthResult{
+		Company:    "Acme",
+		Score:      82,
+		Confidence: "high",
+		Sources: map[string]interface{}{
+			"stock_history": []interface{}{10.0, 12.0, 11.0, 14.0, 16.0, 15.0, 18.0, 20.0, 19.0, 21.0, 24.0, 23.0},
+		},
+	}
+	m := model{
+		termWidth:     120,
+		termHeight:    40,
+		tableHeight:   calculateTableHeight(40),
+		allJobs:       []Job{job},
+		filteredJobs:  []Job{job},
+		activeFilters: filterValuesFromStatuses(nil),
+		healthCache: HealthCache{
+			"domain:acme.example": {
+				Result:    cached,
+				Timestamp: time.Now().Add(-30 * 24 * time.Hour),
+			},
+		},
+	}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	got := updated.(model)
+	if cmd != nil {
+		t.Fatal("Update(h) cmd != nil for cached health report; want cached report shown without refresh")
+	}
+	if got.singleHealthTasksActive() {
+		t.Fatal("single health task active after cached h; want no background refresh")
+	}
+	if got.overlay.kind != overlayHealth || got.overlay.health.report != cached {
+		t.Fatalf("overlay health report = %#v; want cached report", got.overlay.health.report)
+	}
+
+	rendered := ansi.Strip(got.buildHealthOverlaySpec().body.content)
+	if !strings.Contains(rendered, "1-Year Stock Chart") {
+		t.Fatalf("cached health popup missing stock chart:\n%s", rendered)
+	}
+}
+
 func TestHealthOverlayRendersIdentityUnresolvedState(t *testing.T) {
 	m := model{
 		termWidth:  100,

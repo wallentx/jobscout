@@ -448,6 +448,10 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "h":
 		if mainListKeysAvailable && len(m.filteredJobs) > 0 {
 			job := m.filteredJobs[m.cursor]
+			if cached := healthpkg.StoredHealthForJob(m.healthCache, job); cached != nil {
+				m.openHealthOverlay(false, "", cached, "")
+				return m, nil
+			}
 			showPopup := m.overlay.kind == overlayNone && (!m.singleHealthTasksActive() || m.backgroundHealth.expanded)
 			cmd := m.startSingleHealthTask(job, showPopup, false)
 			if cmd == nil {
