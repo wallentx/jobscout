@@ -1,0 +1,58 @@
+{
+  "id": "resume_to_criteria_frontend_developer_v1",
+  "task": "resume_to_criteria",
+  "version": 1,
+  "input": {
+    "resume_text": "Taylor Sample\nRaleigh, NC, United States\n\nFrontend developer with 4 years of experience building accessible web applications, React components, TypeScript interfaces, design-system documentation, automated UI tests, and customer-facing dashboards. Recent work includes improving page performance, fixing usability issues, reviewing pull requests, and partnering with product designers. Looking for remote frontend developer, UI engineer, or full-stack developer roles. Prefers base salary above 100000 USD."
+  },
+  "checks": {
+    "json_required": true,
+    "required_fields": [
+      "candidate.city",
+      "candidate.state",
+      "candidate.country_code",
+      "candidate.years_of_experience",
+      "filters.work_settings",
+      "filters.min_base_usd",
+      "role_families",
+      "priority_signals"
+    ],
+    "expected_values": {
+      "candidate.city": "Raleigh",
+      "candidate.state": "NC",
+      "candidate.country_code": "US",
+      "candidate.years_of_experience": 4,
+      "filters.work_settings.remote": true
+    },
+    "expected_contains": {
+      "role_families": [
+        "frontend",
+        "fullstack"
+      ],
+      "priority_signals": [
+        "React",
+        "TypeScript"
+      ]
+    },
+    "numeric_minimums": {
+      "candidate.years_of_experience": 4,
+      "filters.min_base_usd": 100000
+    },
+    "must_include": [
+      "frontend",
+      "React",
+      "TypeScript",
+      "accessibility",
+      "remote"
+    ],
+    "must_not_include": [
+      "manager",
+      "sales"
+    ],
+    "grounding_rules": [
+      "Raleigh",
+      "React",
+      "TypeScript"
+    ]
+  }
+}

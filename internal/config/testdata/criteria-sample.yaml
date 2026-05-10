@@ -1,0 +1,19 @@
+candidate:
+  city: Example City
+  state: EX
+  country_code: US
+  years_of_experience: 0
+
+filters:
+  title_requires: []
+  title_includes:
+    - engineer
+  title_excludes: []
+  work_settings:
+    remote: true
+  max_distance_miles: 0
+  min_base_usd: 0
+  industry_includes: []
+  industry_excludes: []
+
+priority_signals: []

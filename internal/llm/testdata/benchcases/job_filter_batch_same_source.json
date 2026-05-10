@@ -1,0 +1,121 @@
+{
+  "id": "job_filter_batch_same_source_v1",
+  "task": "job_filter_batch",
+  "version": 1,
+  "input": {
+    "criteria": {
+      "candidate": {
+        "city": "Columbus",
+        "state": "OH",
+        "country_code": "US",
+        "years_of_experience": 5
+      },
+      "filters": {
+        "title_includes": [
+          "Software Engineer",
+          "Backend Engineer"
+        ],
+        "title_excludes": [
+          "Manager",
+          "Contract"
+        ],
+        "work_settings": {
+          "remote": true,
+          "hybrid": true
+        },
+        "min_base_usd": 110000
+      },
+      "role_families": [
+        "backend"
+      ],
+      "priority_signals": [
+        "API development",
+        "databases",
+        "testing",
+        "team collaboration"
+      ]
+    },
+    "source": "RSS: Example Software Jobs",
+    "jobs": [
+      {
+        "id": "accept_remote_backend",
+        "job": {
+          "company": "Example Apps",
+          "title": "Backend Software Engineer",
+          "remote": "Remote - United States",
+          "compensation": "$120,000 - $145,000 base",
+          "description": "Build backend APIs, improve database-backed services, write automated tests, and work with product teams on customer-facing features.",
+          "apply_url": "https://example.com/jobs/backend-software-engineer"
+        }
+      },
+      {
+        "id": "reject_onsite_manager",
+        "job": {
+          "company": "Example Consulting",
+          "title": "Engineering Manager",
+          "remote": "Onsite - New York, NY",
+          "compensation": "$95,000 - $105,000 base",
+          "description": "Manage a team of software engineers for a six month onsite contract.",
+          "apply_url": "https://example.com/jobs/engineering-manager"
+        }
+      },
+      {
+        "id": "reject_unrelated_low_pay",
+        "job": {
+          "company": "Example Support",
+          "title": "Customer Support Specialist",
+          "remote": "Remote - United States",
+          "compensation": "$65,000 base",
+          "description": "Support customers through chat and email, write help-center articles, and triage account issues.",
+          "apply_url": "https://example.com/jobs/customer-support-specialist"
+        }
+      }
+    ]
+  },
+  "checks": {
+    "json_required": true,
+    "required_fields": [
+      "results.accept_remote_backend.matches",
+      "results.accept_remote_backend.compensation_extracted",
+      "results.accept_remote_backend.remote_eligibility",
+      "results.accept_remote_backend.why_it_matches",
+      "results.reject_onsite_manager.matches",
+      "results.reject_unrelated_low_pay.matches"
+    ],
+    "expected_values": {
+      "results.accept_remote_backend.matches": true,
+      "results.reject_onsite_manager.matches": false,
+      "results.reject_unrelated_low_pay.matches": false
+    },
+    "expected_contains": {
+      "results.accept_remote_backend.why_it_matches": [
+        "API",
+        "database"
+      ],
+      "results.reject_onsite_manager.why_it_matches": [
+        "manager"
+      ],
+      "results.reject_unrelated_low_pay.why_it_matches": [
+        "support"
+      ]
+    },
+    "must_include": [
+      "accept_remote_backend",
+      "reject_onsite_manager",
+      "reject_unrelated_low_pay",
+      "$120",
+      "manager",
+      "support"
+    ],
+    "must_not_include": [
+      "\"reject_onsite_manager\":{\"matches\":true",
+      "\"reject_unrelated_low_pay\":{\"matches\":true"
+    ],
+    "grounding_rules": [
+      "API",
+      "database",
+      "manager",
+      "support"
+    ]
+  }
+}

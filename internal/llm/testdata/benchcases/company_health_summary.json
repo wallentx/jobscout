@@ -1,0 +1,78 @@
+{
+  "id": "company_health_mixed_layoff_signals_v1",
+  "task": "company_health_summary",
+  "version": 1,
+  "input": {
+    "result": {
+      "company": "Northstar Analytics",
+      "score": 54,
+      "confidence": "medium",
+      "public": false,
+      "founded_year": 2014,
+      "age_years": 12,
+      "estimated_employees": 420,
+      "flags": [
+        "layoff_news_detected",
+        "negative_news_signal"
+      ],
+      "notes": [
+        "Overall: mixed/unknown (some positive signals, limited certainty).",
+        "Private stability bonus (+8 for >5y age).",
+        "Found 1 recent layoff headline (Contributing to Risk Score).",
+        "News titles contain some negative-risk keywords."
+      ],
+      "layoff_signals": [
+        {
+          "title": "Northstar Analytics cuts 8% of workforce after slower enterprise sales",
+          "url": "https://example.com/northstar-layoffs"
+        }
+      ],
+      "hn_signals": [
+        {
+          "title": "Northstar Analytics releases open source observability toolkit",
+          "points": 184,
+          "comments": 52
+        }
+      ],
+      "employer_reviews": [
+        {
+          "source": "glassdoor",
+          "rating": "3.5/5",
+          "snippet": "Employees mention strong technical work and uncertainty after restructuring.",
+          "flags": [
+            "restructuring",
+            "technical culture"
+          ]
+        }
+      ]
+    }
+  },
+  "checks": {
+    "json_required": true,
+    "required_fields": [
+      "summary",
+      "recommendation",
+      "risk_level",
+      "positive_signals",
+      "concerns",
+      "follow_up_questions"
+    ],
+    "expected_values": {
+      "risk_level": "medium"
+    },
+    "must_include": [
+      "layoff",
+      "restructuring",
+      "open source"
+    ],
+    "must_not_include": [
+      "bankruptcy",
+      "fraud"
+    ],
+    "grounding_rules": [
+      "layoff",
+      "Northstar Analytics",
+      "open source"
+    ]
+  }
+}

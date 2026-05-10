@@ -1,0 +1,54 @@
+# Build and release artifacts
+/jobscout
+/bin/
+/dist/
+/build/
+/release/
+/artifacts/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+*.tar.gz
+*.zip
+
+# Go workspace, toolchain helpers, and test output
+/.tools/
+/go.work
+/go.work.sum
+/coverage.out
+/coverage.html
+*.coverprofile
+*.prof
+*.pprof
+/cpu.prof
+/mem.prof
+/test-output/
+testdata/tmp/
+
+# Logs
+/*.log
+/logs/
+
+# Secrets and local environment
+/.env
+/.env.*
+/*.local
+/*.secret
+/secrets/
+*.pem
+*.key
+
+# Editor, OS, and misc local files
+/.vscode/
+/.idea/
+*.swp
+*.swo
+*~
+*.code-workspace
+.DS_Store
+Thumbs.db
+desktop.ini
+*.dSYM/

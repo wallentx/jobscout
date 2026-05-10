@@ -1,0 +1,78 @@
+{
+  "id": "job_identity_example_apps_v1",
+  "task": "job_identity",
+  "version": 1,
+  "input": {
+    "job": {
+      "company": "Example Apps",
+      "title": "Staff Platform Engineer",
+      "source": "Example Careers",
+      "apply_url": "https://jobs.example.com/example-apps/staff-platform-engineer"
+    },
+    "page": {
+      "url": "https://jobs.example.com/example-apps/staff-platform-engineer",
+      "text": "Example Apps builds workflow automation software for support teams. Learn more at https://www.exampleapps.test. This Staff Platform Engineer role works on reliability for the Example Apps product."
+    }
+  },
+  "checks": {
+    "json_required": true,
+    "required_fields": [
+      "company_website",
+      "company_summary",
+      "company_industry",
+      "website_confidence",
+      "summary_confidence",
+      "industry_confidence",
+      "industry_provisional",
+      "company_website_reason",
+      "company_summary_reason",
+      "company_industry_reason"
+    ],
+    "expected_values": {
+      "company_website": "https://www.exampleapps.test",
+      "company_industry": "Workflow Automation",
+      "website_confidence": "high",
+      "industry_provisional": false
+    },
+    "expected_contains": {
+      "company_summary": [
+        "support teams"
+      ]
+    },
+    "enum_values": {
+      "website_confidence": [
+        "high",
+        "medium",
+        "low",
+        ""
+      ],
+      "summary_confidence": [
+        "high",
+        "medium",
+        "low",
+        ""
+      ],
+      "industry_confidence": [
+        "high",
+        "medium",
+        "low",
+        ""
+      ]
+    },
+    "must_include": [
+      "Example Apps",
+      "workflow automation",
+      "support teams"
+    ],
+    "must_not_include": [
+      "Example Systems",
+      "job board",
+      "social profile"
+    ],
+    "grounding_rules": [
+      "Example Apps",
+      "workflow automation",
+      "support teams"
+    ]
+  }
+}
