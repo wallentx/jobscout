@@ -1,5 +1,7 @@
 # jobscout
 
+<img width="1520" height="2260" alt="1000035900" src="https://github.com/user-attachments/assets/b9e95064-b348-4293-8537-fd948b29d96c" />
+
 `jobscout` is a terminal job-search tracker. It can run from RSS feeds, site-search targets, and built-in source catalogs without any LLM provider, and it can optionally use an LLM to expand or refine results.
 
 ## Install
