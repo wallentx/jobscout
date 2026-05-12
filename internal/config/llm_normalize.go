@@ -6,7 +6,7 @@ import (
 )
 
 func defaultLLMPreferredOrder() []string {
-	return []string{"gemini", "openai", "anthropic", "ollama"}
+	return []string{"gemini", "openai", "openrouter", "anthropic", "ollama"}
 }
 
 func llmAuthConfigDefined(auth LLMAuthConfig) bool {

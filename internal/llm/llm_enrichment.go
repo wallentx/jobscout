@@ -105,6 +105,22 @@ func initLLM(ctx context.Context, provider string, providerCfg LLMProviderConfig
 			opts = append(opts, googleai.WithDefaultModel(modelName))
 		}
 		return googleai.New(ctx, opts...)
+	case "openrouter":
+		apiKey := os.Getenv("OPENROUTER_API_KEY")
+		if apiKey == "" {
+			return nil, fmt.Errorf("OPENROUTER_API_KEY environment variable is not set")
+		}
+		opts := []openai.Option{
+			openai.WithToken(apiKey),
+			openai.WithBaseURL("https://openrouter.ai/api/v1"),
+		}
+		if endpoint := strings.TrimSpace(providerCfg.Endpoint); endpoint != "" {
+			opts = append(opts, openai.WithBaseURL(endpoint))
+		}
+		if modelName != "" {
+			opts = append(opts, openai.WithModel(modelName))
+		}
+		return openai.New(opts...)
 	case "ollama":
 		opts := []ollama.Option{}
 		if modelName != "" {
@@ -115,7 +131,7 @@ func initLLM(ctx context.Context, provider string, providerCfg LLMProviderConfig
 		}
 		return ollama.New(opts...)
 	default:
-		return nil, fmt.Errorf("unsupported LLM provider: %s. Supported providers: openai, anthropic, gemini, ollama", provider)
+		return nil, fmt.Errorf("unsupported LLM provider: %s. Supported providers: openai, anthropic, gemini, openrouter, ollama", provider)
 	}
 }
 

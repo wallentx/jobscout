@@ -340,6 +340,37 @@ func TestEvaluateCapabilitiesFlagsDisabledLLMWithFeatureToggles(t *testing.T) {
 	}
 }
 
+func TestDefaultLLMProvidersIncludesOpenRouter(t *testing.T) {
+	providers := DefaultLLMProviders()
+	cfg, ok := providers["openrouter"]
+	if !ok {
+		t.Fatal("DefaultLLMProviders() does not contain openrouter")
+	}
+	if cfg.Model != "openai/gpt-4o" {
+		t.Fatalf("DefaultLLMProviders()[openrouter].Model = %q, want openai/gpt-4o", cfg.Model)
+	}
+	if cfg.Endpoint != "https://openrouter.ai/api/v1" {
+		t.Fatalf("DefaultLLMProviders()[openrouter].Endpoint = %q, want https://openrouter.ai/api/v1", cfg.Endpoint)
+	}
+	if cfg.Auth.EnvVar != "OPENROUTER_API_KEY" {
+		t.Fatalf("DefaultLLMProviders()[openrouter].Auth.EnvVar = %q, want OPENROUTER_API_KEY", cfg.Auth.EnvVar)
+	}
+}
+
+func TestEnvVarForProviderReturnsOpenRouterKey(t *testing.T) {
+	envVar := EnvVarForProvider("openrouter")
+	if envVar != "OPENROUTER_API_KEY" {
+		t.Fatalf("EnvVarForProvider(openrouter) = %q, want OPENROUTER_API_KEY", envVar)
+	}
+}
+
+func TestDefaultModelForProviderReturnsFirstForOpenRouter(t *testing.T) {
+	model := DefaultModelForProvider("openrouter")
+	if model != "openai/gpt-4o" {
+		t.Fatalf("DefaultModelForProvider(openrouter) = %q, want openai/gpt-4o", model)
+	}
+}
+
 func TestEvaluateRuntimeCapabilitiesUsesConfiguredRuntimePath(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")

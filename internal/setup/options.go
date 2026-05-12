@@ -29,6 +29,8 @@ func ProviderLabel(provider string) string {
 		return "Google"
 	case "openai":
 		return "OpenAI"
+	case "openrouter":
+		return "OpenRouter"
 	case "ollama":
 		return "Local"
 	default:

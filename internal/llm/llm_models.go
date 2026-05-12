@@ -62,6 +62,8 @@ func fetchAvailableLLMModels(ctx context.Context, cfg AppConfig) ([]string, erro
 		return fetchAnthropicModels(ctx, &cfg)
 	case "gemini", "googleai":
 		return fetchGeminiModels(ctx, &cfg)
+	case "openrouter":
+		return fetchOpenRouterModels(ctx, &cfg)
 	case "ollama":
 		return fetchOllamaModels(ctx, providerCfg)
 	default:
@@ -269,6 +271,62 @@ func fetchOllamaModels(ctx context.Context, providerCfg LLMProviderConfig) ([]st
 	}
 	sortModels(models)
 	return models, nil
+}
+
+func fetchOpenRouterModels(ctx context.Context, cfg *AppConfig) ([]string, error) {
+	apiKey, _, err := resolveLLMAuth(cfg)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://openrouter.ai/api/v1/models", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	var resp struct {
+		Data []struct {
+			ID     string `json:"id"`
+			Name   string `json:"name"`
+			Pricing struct {
+				Prompt string `json:"prompt"`
+			} `json:"pricing"`
+		} `json:"data"`
+	}
+	if err := doModelListRequest(req, &resp); err != nil {
+		return nil, err
+	}
+
+	models := make([]string, 0, len(resp.Data))
+	for _, model := range resp.Data {
+		id := strings.TrimSpace(model.ID)
+		if id == "" || !isOpenRouterChatModel(id) {
+			continue
+		}
+		models = appendUniqueString(models, id)
+	}
+	sortModels(models)
+	return models, nil
+}
+
+func isOpenRouterChatModel(id string) bool {
+	lower := strings.ToLower(id)
+	excluded := []string{
+		"embedding",
+		"moderation",
+		"whisper",
+		"tts",
+		"dall-e",
+		"veo",
+		"janus",
+		"/embed",
+	}
+	for _, token := range excluded {
+		if strings.Contains(lower, token) {
+			return false
+		}
+	}
+	return true
 }
 
 func doModelListRequest(req *http.Request, target any) error {

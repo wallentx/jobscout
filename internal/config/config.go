@@ -157,7 +157,7 @@ func defaultAppConfig() AppConfig {
 	cfg.LLM.JobFiltering = true
 	cfg.LLM.CompanyHealth = true
 	cfg.LLM.FallbackToNonLLM = true
-	cfg.LLM.PreferredOrder = []string{"gemini", "openai", "anthropic", "ollama"}
+	cfg.LLM.PreferredOrder = []string{"gemini", "openai", "openrouter", "anthropic", "ollama"}
 	cfg.LLM.Auth.Mode = llmAuthModeEnv
 	cfg.LLM.Auth.EnvVar = envVarForProvider(cfg.LLM.Provider)
 	cfg.LLM.Providers = defaultLLMProviders()
@@ -217,6 +217,22 @@ func defaultLLMProviders() map[string]LLMProviderConfig {
 			Auth: LLMAuthConfig{
 				Mode:   llmAuthModeEnv,
 				EnvVar: "ANTHROPIC_API_KEY",
+			},
+		},
+		"openrouter": {
+			Model:    "openai/gpt-4o",
+			Endpoint: "https://openrouter.ai/api/v1",
+			Models: map[string]string{
+				llmTaskJobSearch:        "openai/gpt-4o",
+				llmTaskCompanyHealth:    "openai/gpt-4o",
+				llmTaskFiltering:        "openai/gpt-4o",
+				llmTaskJobIdentity:      "openai/gpt-4o",
+				llmTaskResumeCriteria:   "openai/gpt-4o",
+				llmTaskBenchmarkDefault: "openai/gpt-4o",
+			},
+			Auth: LLMAuthConfig{
+				Mode:   llmAuthModeEnv,
+				EnvVar: "OPENROUTER_API_KEY",
 			},
 		},
 		"ollama": {
