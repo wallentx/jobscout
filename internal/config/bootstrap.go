@@ -60,7 +60,7 @@ func modelOptionsForProvider(provider string) []string {
 	case "anthropic":
 		return []string{"claude-opus-4-1-20250805", "claude-sonnet-4-20250514", "claude-3-7-sonnet-latest", "claude-3-5-haiku-latest"}
 	case "openrouter":
-		return []string{"openai/gpt-4o", "anthropic/claude-sonnet-4", "deepseek/deepseek-chat"}
+		return []string{"anthropic/claude-sonnet-4", "deepseek/deepseek-chat", "openai/gpt-4o"}
 	case "ollama":
 		return []string{"llama3", "mistral", "qwen2.5"}
 	default:

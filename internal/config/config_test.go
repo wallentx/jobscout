@@ -346,8 +346,8 @@ func TestDefaultLLMProvidersIncludesOpenRouter(t *testing.T) {
 	if !ok {
 		t.Fatal("DefaultLLMProviders() does not contain openrouter")
 	}
-	if cfg.Model != "openai/gpt-4o" {
-		t.Fatalf("DefaultLLMProviders()[openrouter].Model = %q, want openai/gpt-4o", cfg.Model)
+	if cfg.Model != "anthropic/claude-sonnet-4" {
+		t.Fatalf("DefaultLLMProviders()[openrouter].Model = %q, want anthropic/claude-sonnet-4", cfg.Model)
 	}
 	if cfg.Endpoint != "https://openrouter.ai/api/v1" {
 		t.Fatalf("DefaultLLMProviders()[openrouter].Endpoint = %q, want https://openrouter.ai/api/v1", cfg.Endpoint)
@@ -366,8 +366,8 @@ func TestEnvVarForProviderReturnsOpenRouterKey(t *testing.T) {
 
 func TestDefaultModelForProviderReturnsFirstForOpenRouter(t *testing.T) {
 	model := DefaultModelForProvider("openrouter")
-	if model != "openai/gpt-4o" {
-		t.Fatalf("DefaultModelForProvider(openrouter) = %q, want openai/gpt-4o", model)
+	if model != "anthropic/claude-sonnet-4" {
+		t.Fatalf("DefaultModelForProvider(openrouter) = %q, want anthropic/claude-sonnet-4", model)
 	}
 }
 

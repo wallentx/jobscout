@@ -278,7 +278,7 @@ func fetchOpenRouterModels(ctx context.Context, cfg *AppConfig) ([]string, error
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://openrouter.ai/api/v1/models", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://openrouter.ai/api/v1/models/user", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -305,7 +305,7 @@ func fetchOpenRouterModels(ctx context.Context, cfg *AppConfig) ([]string, error
 		}
 		models = appendUniqueString(models, id)
 	}
-	sortModels(models)
+	sort.Strings(models)
 	return models, nil
 }
 

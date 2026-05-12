@@ -220,15 +220,15 @@ func defaultLLMProviders() map[string]LLMProviderConfig {
 			},
 		},
 		"openrouter": {
-			Model:    "openai/gpt-4o",
+			Model:    "anthropic/claude-sonnet-4",
 			Endpoint: "https://openrouter.ai/api/v1",
 			Models: map[string]string{
-				llmTaskJobSearch:        "openai/gpt-4o",
-				llmTaskCompanyHealth:    "openai/gpt-4o",
-				llmTaskFiltering:        "openai/gpt-4o",
-				llmTaskJobIdentity:      "openai/gpt-4o",
-				llmTaskResumeCriteria:   "openai/gpt-4o",
-				llmTaskBenchmarkDefault: "openai/gpt-4o",
+				llmTaskJobSearch:        "anthropic/claude-sonnet-4",
+				llmTaskCompanyHealth:    "anthropic/claude-sonnet-4",
+				llmTaskFiltering:        "anthropic/claude-sonnet-4",
+				llmTaskJobIdentity:      "anthropic/claude-sonnet-4",
+				llmTaskResumeCriteria:   "anthropic/claude-sonnet-4",
+				llmTaskBenchmarkDefault: "anthropic/claude-sonnet-4",
 			},
 			Auth: LLMAuthConfig{
 				Mode:   llmAuthModeEnv,
