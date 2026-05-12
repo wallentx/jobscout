@@ -346,8 +346,8 @@ func TestDefaultLLMProvidersIncludesOpenRouter(t *testing.T) {
 	if !ok {
 		t.Fatal("DefaultLLMProviders() does not contain openrouter")
 	}
-	if cfg.Model != "anthropic/claude-sonnet-4" {
-		t.Fatalf("DefaultLLMProviders()[openrouter].Model = %q, want anthropic/claude-sonnet-4", cfg.Model)
+	if cfg.Model != "deepseek/deepseek-v4-flash" {
+		t.Fatalf("DefaultLLMProviders()[openrouter].Model = %q, want deepseek/deepseek-v4-flash", cfg.Model)
 	}
 	if cfg.Endpoint != "https://openrouter.ai/api/v1" {
 		t.Fatalf("DefaultLLMProviders()[openrouter].Endpoint = %q, want https://openrouter.ai/api/v1", cfg.Endpoint)
@@ -366,8 +366,8 @@ func TestEnvVarForProviderReturnsOpenRouterKey(t *testing.T) {
 
 func TestDefaultModelForProviderReturnsFirstForOpenRouter(t *testing.T) {
 	model := DefaultModelForProvider("openrouter")
-	if model != "anthropic/claude-sonnet-4" {
-		t.Fatalf("DefaultModelForProvider(openrouter) = %q, want anthropic/claude-sonnet-4", model)
+	if model != "deepseek/deepseek-v4-flash" {
+		t.Fatalf("DefaultModelForProvider(openrouter) = %q, want deepseek/deepseek-v4-flash", model)
 	}
 }
 

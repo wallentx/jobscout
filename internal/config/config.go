@@ -220,15 +220,15 @@ func defaultLLMProviders() map[string]LLMProviderConfig {
 			},
 		},
 		"openrouter": {
-			Model:    "anthropic/claude-sonnet-4",
+			Model:    "deepseek/deepseek-v4-flash",
 			Endpoint: "https://openrouter.ai/api/v1",
 			Models: map[string]string{
-				llmTaskJobSearch:        "anthropic/claude-sonnet-4",
-				llmTaskCompanyHealth:    "anthropic/claude-sonnet-4",
-				llmTaskFiltering:        "anthropic/claude-sonnet-4",
-				llmTaskJobIdentity:      "anthropic/claude-sonnet-4",
-				llmTaskResumeCriteria:   "anthropic/claude-sonnet-4",
-				llmTaskBenchmarkDefault: "anthropic/claude-sonnet-4",
+				llmTaskJobSearch:        "deepseek/deepseek-v4-flash",
+				llmTaskCompanyHealth:    "deepseek/deepseek-v4-flash",
+				llmTaskFiltering:        "deepseek/deepseek-v4-flash",
+				llmTaskJobIdentity:      "deepseek/deepseek-v4-flash",
+				llmTaskResumeCriteria:   "deepseek/deepseek-v4-flash",
+				llmTaskBenchmarkDefault: "deepseek/deepseek-v4-flash",
 			},
 			Auth: LLMAuthConfig{
 				Mode:   llmAuthModeEnv,

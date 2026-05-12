@@ -118,7 +118,7 @@ func TestIsOpenRouterChatModelFiltersNonChatFamilies(t *testing.T) {
 		want bool
 	}{
 		{name: "openai chat model", id: "openai/gpt-4o", want: true},
-		{name: "anthropic chat model", id: "anthropic/claude-sonnet-4", want: true},
+		{name: "anthropic chat model", id: "deepseek/deepseek-v4-flash", want: true},
 		{name: "deepseek chat model", id: "deepseek/deepseek-chat", want: true},
 		{name: "meta chat model", id: "meta-llama/llama-3.3-70b-instruct", want: true},
 		{name: "google chat model", id: "google/gemini-2.5-flash", want: true},
