@@ -27,8 +27,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  make-all:
-    name: make all
+  make-check:
+    name: make check
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -52,5 +52,5 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Run release gate
-        run: make all
+      - name: Run merge gate
+        run: make check
