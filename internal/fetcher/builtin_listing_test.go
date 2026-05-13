@@ -1,6 +1,7 @@
 package fetcher
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -84,6 +85,45 @@ func TestExtractBuiltInJobsFromListingParsesExpandedCards(t *testing.T) {
 	}
 	if jobs[1].Remote != "Remote or Hybrid" {
 		t.Fatalf("jobs[1].Remote = %q; want Remote or Hybrid", jobs[1].Remote)
+	}
+}
+
+func TestParseBuiltInSiteSearchHTMLRecordsExistingListingCard(t *testing.T) {
+	rawHTML := `<html><body>
+		<div id="job-card-7934986" data-id="job-card">
+			<a data-id="company-title"><span>Cadence</span></a>
+			<h2><a href="/job/staff-devops-engineer/7934986" data-id="job-card-title">Staff DevOps Engineer</a></h2>
+			<span>Remote</span>
+			<span>United States</span>
+			<div id="drop-data-7934986" class="collapse">
+				<div class="fs-sm fw-regular mb-md text-gray-04">Lead cloud infrastructure and improve DevOps practices.</div>
+			</div>
+		</div>
+	</body></html>`
+	criteria := &CriteriaConfig{}
+	criteria.Filters.WorkSettings.Remote = true
+	existing := newExistingJobIndex([]Job{{
+		Company:  "Cadence",
+		Title:    "Staff DevOps Engineer",
+		ApplyURL: "https://builtin.com/job/staff-devops-engineer/7934986",
+	}})
+
+	jobs, filtered, handled, err := parseBuiltInSiteSearchHTML(context.Background(), rawHTML, "https://builtin.com/jobs/remote?search=staff", "Site Search: Built In", criteria, nil, nil, existing)
+
+	if err != nil {
+		t.Fatalf("parseBuiltInSiteSearchHTML() error = %v, want nil", err)
+	}
+	if !handled {
+		t.Fatal("parseBuiltInSiteSearchHTML() handled = false, want true")
+	}
+	if len(jobs) != 0 {
+		t.Fatalf("parseBuiltInSiteSearchHTML() jobs len = %d, want 0", len(jobs))
+	}
+	if got := len(filtered["already saved"]); got != 1 {
+		t.Fatalf("parseBuiltInSiteSearchHTML() filtered[already saved] len = %d, want 1", got)
+	}
+	if got := filtered["already saved"][0].ApplyURL; got != "https://builtin.com/job/staff-devops-engineer/7934986" {
+		t.Fatalf("parseBuiltInSiteSearchHTML() filtered[already saved][0].ApplyURL = %q, want canonical Built In job URL", got)
 	}
 }
 

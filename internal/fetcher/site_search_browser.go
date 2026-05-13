@@ -342,6 +342,10 @@ func fetchBuiltInSiteSearch(ctx context.Context, targetURL string, sourceName st
 		}
 		return nil, nil, true, err
 	}
+	return parseBuiltInSiteSearchHTML(ctx, rawHTML, finalURL, sourceName, criteria, detailCache, profileEnricher, existing)
+}
+
+func parseBuiltInSiteSearchHTML(ctx context.Context, rawHTML string, finalURL string, sourceName string, criteria *CriteriaConfig, detailCache *builtInDetailCache, profileEnricher *sourceProfileEnricher, existing *existingJobIndex) ([]Job, map[string][]Job, bool, error) {
 	hrefs := extractHTMLHrefs(rawHTML)
 	listingJobs, cardCount := extractBuiltInListingJobs(rawHTML, finalURL, sourceName, criteria)
 	if cardCount > 0 {
@@ -349,6 +353,9 @@ func fetchBuiltInSiteSearch(ctx context.Context, targetURL string, sourceName st
 		var skippedExisting []Job
 		acceptedListingJobs, skippedExisting = skipExistingBuiltInListingJobs(acceptedListingJobs, existing)
 		if len(skippedExisting) > 0 {
+			if cardFiltered == nil {
+				cardFiltered = make(map[string][]Job)
+			}
 			cardFiltered["already saved"] = append(cardFiltered["already saved"], skippedExisting...)
 			logDebug("site search built-in %s: skipped %d already saved listing cards before profile hydration", finalURL, len(skippedExisting))
 		}
