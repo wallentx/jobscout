@@ -286,8 +286,8 @@ func fetchOpenRouterModels(ctx context.Context, cfg *AppConfig) ([]string, error
 
 	var resp struct {
 		Data []struct {
-			ID     string `json:"id"`
-			Name   string `json:"name"`
+			ID      string `json:"id"`
+			Name    string `json:"name"`
 			Pricing struct {
 				Prompt string `json:"prompt"`
 			} `json:"pricing"`
