@@ -110,3 +110,33 @@ func TestIsGeminiTextModelFiltersNonTextFamilies(t *testing.T) {
 		})
 	}
 }
+
+func TestIsOpenRouterChatModelFiltersNonChatFamilies(t *testing.T) {
+	tests := []struct {
+		name string
+		id   string
+		want bool
+	}{
+		{name: "openai chat model", id: "openai/gpt-4o", want: true},
+		{name: "anthropic chat model", id: "deepseek/deepseek-v4-flash", want: true},
+		{name: "deepseek chat model", id: "deepseek/deepseek-chat", want: true},
+		{name: "meta chat model", id: "meta-llama/llama-3.3-70b-instruct", want: true},
+		{name: "google chat model", id: "google/gemini-2.5-flash", want: true},
+		{name: "embedding model", id: "openai/text-embedding-3-large", want: false},
+		{name: "moderation model", id: "openai/omni-moderation-latest", want: false},
+		{name: "image model", id: "openai/dall-e-3", want: false},
+		{name: "whisper model", id: "openai/whisper-1", want: false},
+		{name: "tts model", id: "openai/tts-1", want: false},
+		{name: "video model", id: "google/veo-3.1-generate-preview", want: false},
+		{name: "janus embed model", id: "deepseek/deepseek-ai/deepseek-janus-pro", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isOpenRouterChatModel(tt.id)
+			if got != tt.want {
+				t.Fatalf("isOpenRouterChatModel(%q) = %t, want %t", tt.id, got, tt.want)
+			}
+		})
+	}
+}

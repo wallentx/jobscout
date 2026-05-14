@@ -453,6 +453,9 @@ func (m model) buildSetupOverlaySpec() popupSpec {
 		if maxModelLines < 4 {
 			maxModelLines = 4
 		}
+		if maxModelLines > 14 {
+			maxModelLines = 14
+		}
 		viewport := renderPopupMenuViewport(items, dialogWidth-6, maxModelLines, m.setup.choiceIdx)
 		content.WriteString("\n\n")
 		content.WriteString(viewport.content)
@@ -586,6 +589,9 @@ func (m model) buildSetupOverlaySpec() popupSpec {
 		maxModelLines := popupMaxViewportLines(m.termHeight, 4) - 5
 		if maxModelLines < 4 {
 			maxModelLines = 4
+		}
+		if maxModelLines > 14 {
+			maxModelLines = 14
 		}
 		viewport := renderPopupMenuViewport(items, dialogWidth-6, maxModelLines, m.setup.choiceIdx)
 		content.WriteString("\n\n")

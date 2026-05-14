@@ -157,7 +157,7 @@ func defaultAppConfig() AppConfig {
 	cfg.LLM.JobFiltering = true
 	cfg.LLM.CompanyHealth = true
 	cfg.LLM.FallbackToNonLLM = true
-	cfg.LLM.PreferredOrder = []string{"gemini", "openai", "anthropic", "ollama"}
+	cfg.LLM.PreferredOrder = []string{"gemini", "openai", "openrouter", "anthropic", "ollama"}
 	cfg.LLM.Auth.Mode = llmAuthModeEnv
 	cfg.LLM.Auth.EnvVar = envVarForProvider(cfg.LLM.Provider)
 	cfg.LLM.Providers = defaultLLMProviders()
@@ -217,6 +217,22 @@ func defaultLLMProviders() map[string]LLMProviderConfig {
 			Auth: LLMAuthConfig{
 				Mode:   llmAuthModeEnv,
 				EnvVar: "ANTHROPIC_API_KEY",
+			},
+		},
+		"openrouter": {
+			Model:    "deepseek/deepseek-v4-flash",
+			Endpoint: "https://openrouter.ai/api/v1",
+			Models: map[string]string{
+				llmTaskJobSearch:        "deepseek/deepseek-v4-flash",
+				llmTaskCompanyHealth:    "deepseek/deepseek-v4-flash",
+				llmTaskFiltering:        "deepseek/deepseek-v4-flash",
+				llmTaskJobIdentity:      "deepseek/deepseek-v4-flash",
+				llmTaskResumeCriteria:   "deepseek/deepseek-v4-flash",
+				llmTaskBenchmarkDefault: "deepseek/deepseek-v4-flash",
+			},
+			Auth: LLMAuthConfig{
+				Mode:   llmAuthModeEnv,
+				EnvVar: "OPENROUTER_API_KEY",
 			},
 		},
 		"ollama": {

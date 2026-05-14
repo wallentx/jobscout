@@ -149,6 +149,27 @@ func TestProviderOptionsIncludeOllama(t *testing.T) {
 	}
 }
 
+func TestProviderOptionsIncludeOpenRouter(t *testing.T) {
+	options := config.ProviderOptions()
+	found := false
+	for _, option := range options {
+		if option == "openrouter" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("config.ProviderOptions() = %#v, want openrouter included", options)
+	}
+}
+
+func TestProviderOptionsCountIsFive(t *testing.T) {
+	options := config.ProviderOptions()
+	if len(options) != 5 {
+		t.Fatalf("config.ProviderOptions() len = %d, want 5 (gemini, openai, anthropic, openrouter, ollama)", len(options))
+	}
+}
+
 func TestInitialModelOpensRepairMenuWhenOnlyPromptIsMissing(t *testing.T) {
 	tmpDir := t.TempDir()
 
