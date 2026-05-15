@@ -10,6 +10,12 @@ make all
 tests, runs the race detector where the platform supports it, and builds the
 CLI.
 
+Most `make` targets silently install the repository's managed pre-commit hook
+when it is missing. The hook accepts a current local check stamp from `make fix`,
+`make check`, or `make all`; if the stamp is missing or stale, it runs
+`make check` before allowing the commit. Use `git commit --no-verify` only when
+you intentionally need to bypass local checks.
+
 ## Requirements
 
 - Go 1.26.1 or newer

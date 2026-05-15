@@ -1,0 +1,76 @@
+name: CodeQL
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/codeql/**'
+      - '.github/workflows/codeql.yml'
+      - 'cmd/**'
+      - 'internal/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Makefile'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/codeql/**'
+      - '.github/workflows/codeql.yml'
+      - 'cmd/**'
+      - 'internal/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Makefile'
+  schedule:
+    - cron: "37 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: analyze go
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Actions Toolbox
+        uses: wallentx/gh-actions/composite/actions-toolbox@main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          checkout: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: go
+          build-mode: manual
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Build for CodeQL
+        run: make build
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4

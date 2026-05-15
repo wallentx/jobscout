@@ -1,0 +1,169 @@
+changed-files-labels-limit: 8
+max-files-changed: 100
+
+added:
+  - head-branch:
+      - '^feat/'
+      - '^feature/'
+      - '^add/'
+
+fixed:
+  - head-branch:
+      - '^fix/'
+      - '^bugfix/'
+      - '^hotfix/'
+
+changed:
+  - head-branch:
+      - '^change/'
+      - '^changed/'
+      - '^chore/'
+      - '^cleanup/'
+      - '^refactor/'
+      - '^perf/'
+
+cleanup:
+  - head-branch:
+      - '^cleanup/'
+      - '^format/'
+
+dependencies:
+  - head-branch:
+      - '^dependabot/'
+
+exclude-notes:
+  - changed-files:
+      - any-glob-to-all-files:
+          - '.github/**'
+
+github-actions:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/workflows/**'
+          - '.github/actions/**'
+
+gomod:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'go.mod'
+          - 'go.sum'
+
+build:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'Makefile'
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/workflows/*.yml'
+          - '.github/dependabot.yml'
+          - '.github/labeler.yml'
+
+release:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/workflows/release.yml'
+          - '.github/release.yml'
+          - 'Makefile'
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/*_test.go'
+          - 'internal/config/testdata/**'
+
+tooling:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/**'
+          - '.gitignore'
+          - 'Makefile'
+          - 'scripts/**'
+
+component:benchmarks:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'internal/llm/llm_bench*'
+          - 'docs/BENCHMARKS.md'
+          - 'docs/benchmarks/**'
+
+component:cli:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'cmd/**'
+          - 'internal/jobscout/**'
+
+component:cliui:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'internal/cliui/**'
+
+component:config:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'internal/config/**'
+
+component:domain:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'internal/domain/**'
+
+component:fetcher:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'internal/fetcher/**'
+
+component:health:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'internal/health/**'
+
+component:llm:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'internal/llm/**'
+
+component:runtime:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'internal/runtime/**'
+
+component:setup:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'internal/setup/**'
+
+component:storage:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'internal/storage/**'
+
+component:tui:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'internal/tui/**'
+
+component:tuiapp:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'internal/tuiapp/**'
+
+component:updatecheck:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'internal/updatecheck/**'
+
+component:company-health:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'internal/domain/company_health*'
+          - 'internal/fetcher/company_health*'
+          - 'internal/health/**'
+          - 'internal/tuiapp/health*'
+
+component:job-search:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'internal/fetcher/**'
+          - 'internal/config/source_selection.go'

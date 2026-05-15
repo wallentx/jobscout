@@ -22,6 +22,7 @@ For task-specific details, see:
 
 ## Component View
 
+<!-- BEGIN GENERATED C4 COMPONENT VIEW -->
 ```mermaid
 C4Component
 title jobscout component view
@@ -62,6 +63,7 @@ Rel(fetcher, store, "Checks existing jobs and identity cache")
 Rel(health, store, "Reads and writes health cache")
 Rel(update, githubReleases, "Checks latest release")
 ```
+<!-- END GENERATED C4 COMPONENT VIEW -->
 
 ## How A Fetch Works
 

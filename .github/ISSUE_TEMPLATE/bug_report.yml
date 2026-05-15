@@ -1,0 +1,56 @@
+name: Bug Report
+description: File a bug report
+title: "[bug] "
+labels: ["bug"]
+assignees: ["wallentx"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please include a clear description of the bug. If this is a support question instead of a bug, please open a Discussion instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe what happened, how to reproduce it, and what you expected to happen.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: What version of Jobscout are you running?
+      placeholder: "jobscout --version"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      multiple: false
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Termux / Android
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: interface
+    attributes:
+      label: Interface
+      multiple: false
+      options:
+        - TUI
+        - CLI
+        - Setup
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: Paste any relevant log output. This will be formatted as shell output.
+      render: shell

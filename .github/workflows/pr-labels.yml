@@ -1,0 +1,97 @@
+name: PR Labels
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_numbers:
+        description: One or more PR numbers to label. Separate multiple PRs with spaces, commas, or new lines.
+        required: true
+        type: string
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - labeled
+      - unlabeled
+      - synchronize
+      - edited
+
+concurrency:
+  group: pr-labels-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  labeler:
+    name: apply labels
+    if: github.repository == 'wallentx/jobscout'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Normalize manual PR numbers
+        id: pr-numbers
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          INPUT_PR_NUMBERS: ${{ inputs.pr_numbers }}
+        run: |
+          set -eu
+
+          pr_numbers=$(
+            printf '%s\n' "$INPUT_PR_NUMBERS" |
+              tr ',;' '\n' |
+              tr ' ' '\n' |
+              awk '
+                NF {
+                  if ($0 !~ /^[0-9]+$/) {
+                    printf "Invalid PR number: %s\n", $0 > "/dev/stderr"
+                    exit 1
+                  }
+                  print
+                }
+              '
+          )
+
+          if [ -z "$pr_numbers" ]; then
+            echo "No PR numbers provided" >&2
+            exit 1
+          fi
+
+          {
+            echo "value<<EOF"
+            printf '%s\n' "$pr_numbers"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Label pull request
+        uses: actions/labeler@v6
+        with:
+          configuration-path: .github/labeler.yml
+          pr-number: ${{ github.event_name == 'workflow_dispatch' && steps.pr-numbers.outputs.value || github.event.pull_request.number }}
+
+  required-release-label:
+    name: require release label
+    needs: labeler
+    if: github.repository == 'wallentx/jobscout' && github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      checks: write
+      pull-requests: read
+      statuses: write
+
+    steps:
+      - id: check-labels
+        name: Check release note labels
+        uses: mheap/github-action-required-labels@v5
+        with:
+          mode: exactly
+          count: 1
+          labels: |
+            added
+            changed
+            fixed
+            dependencies
