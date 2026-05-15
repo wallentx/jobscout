@@ -149,27 +149,6 @@ component:updatecheck:
       - any-glob-to-any-file:
           - 'internal/updatecheck/**'
 
-component:docs:
-  - changed-files:
-      - any-glob-to-any-file:
-          - '*.md'
-          - 'docs/**'
-          - 'scripts/update-c4-diagram.sh'
-
-component:ci:
-  - changed-files:
-      - any-glob-to-any-file:
-          - '.github/workflows/*.yml'
-          - '.github/dependabot.yml'
-          - '.github/labeler.yml'
-
-component:release:
-  - changed-files:
-      - any-glob-to-any-file:
-          - '.github/workflows/release.yml'
-          - '.github/release.yml'
-          - 'Makefile'
-
 component:company-health:
   - changed-files:
       - any-glob-to-any-file:

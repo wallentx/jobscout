@@ -67,5 +67,4 @@ jobs:
           delete-branch: true
           labels: |
             changed
-            component:docs
             documentation
