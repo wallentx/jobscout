@@ -1,0 +1,24 @@
+changelog:
+  exclude:
+    labels:
+      - cleanup
+      - exclude-notes
+    authors:
+      - 'github-actions[bot]'
+  categories:
+    - title: Added
+      labels:
+        - added
+        - enhancement
+    - title: Fixed
+      labels:
+        - fixed
+        - bug
+        - security
+    - title: Changed
+      labels:
+        - changed
+        - dependencies
+    - title: Other
+      labels:
+        - '*'
