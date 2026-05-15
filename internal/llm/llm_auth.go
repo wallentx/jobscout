@@ -16,12 +16,11 @@ const (
 	llmAuthModeLiteral = "literal"
 	llmAuthModeCommand = "command"
 
-	llmTaskJobSearch        = "llm_job_search"
-	llmTaskCompanyHealth    = "llm_company_health"
-	llmTaskFiltering        = "llm_job_filtering"
-	llmTaskJobIdentity      = "job_identity"
-	llmTaskResumeCriteria   = "resume_to_criteria"
-	llmTaskBenchmarkDefault = "benchmark"
+	llmTaskJobSearch      = "llm_job_search"
+	llmTaskCompanyHealth  = "llm_company_health"
+	llmTaskFiltering      = "llm_job_filtering"
+	llmTaskJobIdentity    = "job_identity"
+	llmTaskResumeCriteria = "resume_to_criteria"
 )
 
 func defaultLLMPreferredOrder() []string {
@@ -234,7 +233,7 @@ func normalizeLLMTaskKey(task string) string {
 	switch task {
 	case "default":
 		return "default"
-	case "filter", "filters", "filtering", "job_filter", "job_filtering", "auto_filter", "llm_job_filtering":
+	case "filter", "filters", "filtering", "job_filter", "job_filter_batch", "job_filtering", "auto_filter", "llm_job_filtering":
 		return llmTaskFiltering
 	case "identity", "job_identity", "job_enrichment", "identity_enrichment", "company_identity":
 		return llmTaskJobIdentity
@@ -242,7 +241,7 @@ func normalizeLLMTaskKey(task string) string {
 		return llmTaskResumeCriteria
 	case "health", "health_check", "health_checks", "company_health", "llm_company_health", "company_health_summary":
 		return llmTaskCompanyHealth
-	case "search", "job_search", "llm_search", "auto_search", "autonomous_search", "llm_job_search":
+	case "search", "job_search", "llm_search", "auto_search", "autonomous_search", "autonomous_job_search", "llm_job_search":
 		return llmTaskJobSearch
 	default:
 		return task

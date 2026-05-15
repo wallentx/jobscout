@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/tmc/langchaingo/llms"
@@ -23,7 +22,7 @@ func runLLMBenchmarkCase(
 		BenchmarkVersion:      benchmarkVersion,
 		Provider:              provider,
 		Model:                 model,
-		Task:                  benchCase.Task,
+		Task:                  normalizeBenchmarkTaskName(benchCase.Task),
 		CaseID:                benchCase.ID,
 		RequiredFieldsPresent: true,
 		SpeedScore:            100,
@@ -50,29 +49,9 @@ func runLLMBenchmarkCase(
 }
 
 func executeBenchmarkTask(ctx context.Context, llm llms.Model, benchCase llmBenchmarkCase) (string, LLMTokenUsage, error) {
-	switch strings.ToLower(strings.TrimSpace(benchCase.Task)) {
-	case "job_filter":
-		var input benchmarkJobFilterInput
-		if err := yaml.Unmarshal(benchCase.Input, &input); err != nil {
-			return "", LLMTokenUsage{}, fmt.Errorf("decode job_filter input: %w", err)
-		}
-		result, err := evaluateJobWithLLM(ctx, llm, input.Job, &input.Criteria)
-		if err != nil {
-			return "", LLMTokenUsage{}, err
-		}
-		output, err := marshalBenchmarkOutput(result)
-		return output, usageFromLLMEvaluationResult(result), err
-	case "job_filter_batch":
-		var input benchmarkJobFilterBatchInput
-		if err := yaml.Unmarshal(benchCase.Input, &input); err != nil {
-			return "", LLMTokenUsage{}, fmt.Errorf("decode job_filter_batch input: %w", err)
-		}
-		result, err := evaluateJobFilterBatchWithLLM(ctx, llm, input)
-		if err != nil {
-			return "", LLMTokenUsage{}, err
-		}
-		output, err := marshalBenchmarkOutput(result)
-		return output, usageFromJobFilterBatchOutput(result), err
+	switch normalizeBenchmarkTaskName(benchCase.Task) {
+	case llmTaskFiltering:
+		return executeBenchmarkJobFilteringTask(ctx, llm, benchCase)
 	case "job_identity":
 		var input benchmarkJobIdentityInput
 		if err := yaml.Unmarshal(benchCase.Input, &input); err != nil {
@@ -84,7 +63,7 @@ func executeBenchmarkTask(ctx context.Context, llm llms.Model, benchCase llmBenc
 		}
 		output, err := marshalBenchmarkOutput(benchmarkJobIdentityOutputFromEnrichment(result))
 		return output, usage, err
-	case "resume_to_criteria":
+	case llmTaskResumeCriteria:
 		var input benchmarkResumeInput
 		if err := yaml.Unmarshal(benchCase.Input, &input); err != nil {
 			return "", LLMTokenUsage{}, fmt.Errorf("decode resume_to_criteria input: %w", err)
@@ -95,10 +74,10 @@ func executeBenchmarkTask(ctx context.Context, llm llms.Model, benchCase llmBenc
 		}
 		output, err := marshalBenchmarkOutput(result)
 		return output, usage, err
-	case "company_health_summary":
+	case llmTaskCompanyHealth:
 		var input benchmarkCompanyHealthInput
 		if err := yaml.Unmarshal(benchCase.Input, &input); err != nil {
-			return "", LLMTokenUsage{}, fmt.Errorf("decode company_health_summary input: %w", err)
+			return "", LLMTokenUsage{}, fmt.Errorf("decode %s input: %w", llmTaskCompanyHealth, err)
 		}
 		result, err := evaluateCompanyHealthWithLLM(ctx, llm, &input.Result)
 		if err != nil {
@@ -106,9 +85,46 @@ func executeBenchmarkTask(ctx context.Context, llm llms.Model, benchCase llmBenc
 		}
 		output, err := marshalBenchmarkOutput(result)
 		return output, usageFromCompanyHealthAssessment(result), err
+	case llmTaskJobSearch:
+		var input benchmarkJobSearchInput
+		if err := yaml.Unmarshal(benchCase.Input, &input); err != nil {
+			return "", LLMTokenUsage{}, fmt.Errorf("decode %s input: %w", llmTaskJobSearch, err)
+		}
+		jobs, usage, err := executeLLMSearchWithUsage(ctx, llm, input.Prompt)
+		if err != nil {
+			return "", usage, err
+		}
+		output, err := marshalBenchmarkOutput(benchmarkJobSearchOutput{
+			Jobs:  jobs,
+			Count: len(jobs),
+		})
+		return output, usage, err
 	default:
 		return "", LLMTokenUsage{}, fmt.Errorf("unsupported benchmark task %q", benchCase.Task)
 	}
+}
+
+func executeBenchmarkJobFilteringTask(ctx context.Context, llm llms.Model, benchCase llmBenchmarkCase) (string, LLMTokenUsage, error) {
+	var batchInput benchmarkJobFilterBatchInput
+	if err := yaml.Unmarshal(benchCase.Input, &batchInput); err == nil && len(batchInput.Jobs) > 0 {
+		result, err := evaluateJobFilterBatchWithLLM(ctx, llm, batchInput)
+		if err != nil {
+			return "", LLMTokenUsage{}, err
+		}
+		output, err := marshalBenchmarkOutput(result)
+		return output, usageFromJobFilterBatchOutput(result), err
+	}
+
+	var input benchmarkJobFilterInput
+	if err := yaml.Unmarshal(benchCase.Input, &input); err != nil {
+		return "", LLMTokenUsage{}, fmt.Errorf("decode %s input: %w", llmTaskFiltering, err)
+	}
+	result, err := evaluateJobWithLLM(ctx, llm, input.Job, &input.Criteria)
+	if err != nil {
+		return "", LLMTokenUsage{}, err
+	}
+	output, err := marshalBenchmarkOutput(result)
+	return output, usageFromLLMEvaluationResult(result), err
 }
 
 func applyBenchmarkTokenUsage(record *llmBenchmarkRunRecord, usage LLMTokenUsage) {
@@ -131,6 +147,9 @@ func applyBenchmarkTokenUsage(record *llmBenchmarkRunRecord, usage LLMTokenUsage
 	}
 	if usage.ThinkingTokens != nil {
 		record.Details["thinking_tokens"] = *usage.ThinkingTokens
+	}
+	if cost, ok := benchmarkRecordCostUSD(*record); ok {
+		record.EstimatedCostUSD = &cost
 	}
 }
 

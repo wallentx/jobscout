@@ -595,12 +595,37 @@ func parseLLMJobsJSON(content string) ([]Job, error) {
 
 	var jobs []Job
 	if err := json.Unmarshal([]byte(jsonStr), &jobs); err != nil {
+		if jobs, ok := decodeLLMJobsObject(jsonStr); ok {
+			return jobs, nil
+		}
 		if jobs, ok := decodeFirstJSONJobArray(jsonStr); ok {
 			return jobs, nil
 		}
 		return nil, fmt.Errorf("failed to parse LLM JSON output: %v", err)
 	}
 	return jobs, nil
+}
+
+func decodeLLMJobsObject(content string) ([]Job, bool) {
+	var envelope struct {
+		Jobs []Job `json:"jobs"`
+	}
+	if err := json.Unmarshal([]byte(content), &envelope); err == nil && envelope.Jobs != nil {
+		return envelope.Jobs, true
+	}
+
+	var job Job
+	if err := json.Unmarshal([]byte(content), &job); err == nil && jobHasLLMSearchContent(job) {
+		return []Job{job}, true
+	}
+	return nil, false
+}
+
+func jobHasLLMSearchContent(job Job) bool {
+	return strings.TrimSpace(job.Company) != "" ||
+		strings.TrimSpace(job.Title) != "" ||
+		strings.TrimSpace(job.ApplyURL) != "" ||
+		strings.TrimSpace(job.Description) != ""
 }
 
 func decodeFirstJSONJobArray(content string) ([]Job, bool) {

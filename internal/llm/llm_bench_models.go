@@ -19,12 +19,15 @@ func benchmarkModelsForRun(ctx context.Context, appCfg *AppConfig, opts benchmar
 		return []string{current}, nil
 	}
 
-	models, err := fetchAvailableLLMModels(ctx, *appCfg)
+	available, err := fetchAvailableLLMModels(ctx, *appCfg)
+	models := available.IDs()
 	if err != nil || len(models) == 0 {
 		models = modelOptionsForProvider(provider)
+	} else {
+		current = available.RunIDFor(current)
 	}
 	models = appendUniqueString(models, current)
-	models = filterBenchmarkModelList(models)
+	models = filterBenchmarkModelListForProvider(provider, models)
 	if len(models) == 0 {
 		return nil, fmt.Errorf("no models available for %s", provider)
 	}
@@ -32,10 +35,14 @@ func benchmarkModelsForRun(ctx context.Context, appCfg *AppConfig, opts benchmar
 }
 
 func filterBenchmarkModelList(models []string) []string {
+	return filterBenchmarkModelListForProvider("", models)
+}
+
+func filterBenchmarkModelListForProvider(provider string, models []string) []string {
 	out := make([]string, 0, len(models))
 	for _, model := range models {
 		model = strings.TrimSpace(model)
-		if model == "" || model == manualModelOption {
+		if model == "" || model == manualModelOption || shouldExcludeModelForProvider(provider, model) {
 			continue
 		}
 		out = appendUniqueString(out, model)

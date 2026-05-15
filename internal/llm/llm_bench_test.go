@@ -52,10 +52,10 @@ func TestLoadLLMBenchmarkCasesFromEmbeddedFixtures(t *testing.T) {
 	}
 
 	for _, task := range []string{
-		"company_health_summary",
+		"llm_job_search",
+		"llm_company_health",
 		"job_identity",
-		"job_filter",
-		"job_filter_batch",
+		"llm_job_filtering",
 		"resume_to_criteria",
 	} {
 		if !seenTasks[task] {
@@ -209,6 +209,64 @@ numeric_ranges:
 	}
 }
 
+func TestScoreBenchmarkOutputCapsHallucinationPatterns(t *testing.T) {
+	record := llmBenchmarkRunRecord{
+		Task:           "llm_job_search",
+		SpeedScore:     100,
+		CostScore:      100,
+		StabilityScore: 100,
+	}
+	checks := benchmarkChecks{
+		JSONRequired: true,
+		RequiredFields: []string{
+			"jobs",
+			"count",
+		},
+		ExpectedValues: map[string]any{
+			"count": float64(1),
+		},
+		HallucinationPatterns: []string{
+			"https://example.com",
+			"hypothetical",
+		},
+	}
+	output := `{"jobs":[{"company":"Example Apps","apply_url":"https://example.com/jobs/123","description":"A hypothetical job."}],"count":1}`
+
+	scoreBenchmarkOutput(&record, checks, output)
+
+	if record.ScoreCap != 50 {
+		t.Fatalf("ScoreCap = %d, want 50 for hallucination pattern match", record.ScoreCap)
+	}
+	if record.FinalScore > 50 {
+		t.Fatalf("FinalScore = %.1f, want capped at 50", record.FinalScore)
+	}
+	if got, ok := record.Details["hallucination_patterns_matched"]; !ok || got != 2 {
+		t.Fatalf("hallucination_patterns_matched = %#v, %t; want 2, true", got, ok)
+	}
+}
+
+func TestLoadLLMBenchmarkCasesIncludesVariedResumeFormats(t *testing.T) {
+	cases, err := loadLLMBenchmarkCases()
+	if err != nil {
+		t.Fatalf("loadLLMBenchmarkCases() error = %v", err)
+	}
+	seen := make(map[string]bool, len(cases))
+	for _, benchCase := range cases {
+		seen[benchCase.ID] = true
+	}
+	for _, id := range []string{
+		"resume_to_criteria_software_developer_v1",
+		"resume_to_criteria_frontend_developer_v1",
+		"resume_to_criteria_devops_table_v1",
+		"resume_to_criteria_career_changer_v1",
+		"resume_to_criteria_contract_history_v1",
+	} {
+		if !seen[id] {
+			t.Fatalf("loadLLMBenchmarkCases() missing resume fixture %q", id)
+		}
+	}
+}
+
 func TestParseBenchmarkCLIOptionsRejectsAllModelsWithModel(t *testing.T) {
 	_, err := parseBenchmarkCLIOptions([]string{"--all-models", "--model", "example-model"})
 	if err == nil || !strings.Contains(err.Error(), "--all-models cannot be combined with --model") {
@@ -261,6 +319,85 @@ func TestFilterBenchmarkModelListRemovesManualOptionAndDuplicates(t *testing.T) 
 	}
 }
 
+func TestFilterBenchmarkModelListForProviderRemovesBlockedOpenAIModels(t *testing.T) {
+	got := filterBenchmarkModelListForProvider("openai", []string{
+		"gpt-4.1",
+		"gpt-4o",
+		"gpt-4o-2024-11-20",
+		"gpt-4.1-nano",
+		"gpt-4.1-nano-2025-04-14",
+		"gpt-4.5-preview",
+		"gpt-4-turbo",
+		"gpt-3.5-turbo",
+		"chat-latest",
+		"gpt-5-chat-latest",
+		"o1",
+		"o1-pro",
+		"o1-pro-2025-03-19",
+		"o1-2024-12-17",
+		"o3",
+		"o3-2025-04-16",
+		"o3-pro",
+		"o3-pro-2025-06-10",
+		"o3-mini",
+		"o4-mini",
+	})
+
+	for _, model := range []string{
+		"gpt-4o-2024-11-20",
+		"gpt-4.1-nano",
+		"gpt-4.1-nano-2025-04-14",
+		"gpt-4.5-preview",
+		"gpt-4-turbo",
+		"gpt-3.5-turbo",
+		"chat-latest",
+		"gpt-5-chat-latest",
+		"o1",
+		"o1-pro",
+		"o1-pro-2025-03-19",
+		"o1-2024-12-17",
+		"o3-2025-04-16",
+		"o3-pro",
+		"o3-pro-2025-06-10",
+		"o3-mini",
+		"o4-mini",
+	} {
+		if stringSliceContains(got, model) {
+			t.Fatalf("filterBenchmarkModelListForProvider(openai, ...) included blocked model %q in %#v", model, got)
+		}
+	}
+	for _, model := range []string{"gpt-4.1", "gpt-4o", "o3"} {
+		if !stringSliceContains(got, model) {
+			t.Fatalf("filterBenchmarkModelListForProvider(openai, ...) omitted usable model %q from %#v", model, got)
+		}
+	}
+}
+
+func TestFilterBenchmarkModelListForProviderRemovesGeminiAliases(t *testing.T) {
+	got := filterBenchmarkModelListForProvider("gemini", []string{
+		"gemini-2.5-flash",
+		"gemini-flash-latest",
+		"gemini-flash-lite-latest",
+		"gemini-pro-latest",
+		"gemini-3-pro-preview",
+		"gemini-3.1-flash-lite-preview",
+		"gemini-3.1-flash-lite",
+		"gemini-3.1-pro-preview",
+		"gemini-3-flash-preview",
+	})
+
+	for _, model := range []string{"gemini-2.5-flash", "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-pro-latest", "gemini-3-pro-preview", "gemini-3.1-flash-lite-preview"} {
+		if stringSliceContains(got, model) {
+			t.Fatalf("filterBenchmarkModelListForProvider(gemini, ...) included deprecated model %q in %#v", model, got)
+		}
+	}
+	for _, model := range []string{"gemini-3.1-flash-lite", "gemini-3.1-pro-preview", "gemini-3-flash-preview"} {
+		if !stringSliceContains(got, model) {
+			t.Fatalf("filterBenchmarkModelListForProvider(gemini, ...) omitted runnable model %q from %#v", model, got)
+		}
+	}
+}
+
 func TestScoreBenchmarkOutputAppliesInvalidJSONCap(t *testing.T) {
 	record := benchmarkRecordWithPerfectRunScores("job_filter")
 	checks := benchmarkChecks{
@@ -278,6 +415,34 @@ func TestScoreBenchmarkOutputAppliesInvalidJSONCap(t *testing.T) {
 	}
 	if record.FinalScore > 40 {
 		t.Fatalf("scoreBenchmarkOutput(invalid JSON).FinalScore = %v, want <= 40", record.FinalScore)
+	}
+}
+
+func TestFormatBenchmarkRecordSummaryUsesColorAndShortLines(t *testing.T) {
+	summary := formatBenchmarkRecordSummary(llmBenchmarkRunRecord{
+		Model:                 "gpt-4o-mini",
+		Task:                  "autonomous_job_search",
+		CaseID:                "llm_job_search_example_apps_v1",
+		LatencyMS:             1275,
+		JSONValid:             true,
+		RequiredFieldsPresent: true,
+		FinalScore:            91.25,
+	})
+
+	if !strings.Contains(summary, "\x1b[") {
+		t.Fatalf("formatBenchmarkRecordSummary(...) missing ANSI color styling:\n%s", summary)
+	}
+	if !strings.Contains(summary, "llm_job_search") {
+		t.Fatalf("formatBenchmarkRecordSummary(...) did not normalize task name:\n%s", summary)
+	}
+	lines := strings.Split(strings.TrimRight(summary, "\n"), "\n")
+	if len(lines) < 4 {
+		t.Fatalf("formatBenchmarkRecordSummary(...) lines = %d, want at least 4:\n%s", len(lines), summary)
+	}
+	for _, line := range lines {
+		if len(line) > 120 {
+			t.Fatalf("formatBenchmarkRecordSummary(...) line is too long (%d): %q", len(line), line)
+		}
 	}
 }
 
@@ -309,7 +474,7 @@ func TestRunLLMBenchmarkCaseMarksGenerationFailureIncomplete(t *testing.T) {
 func TestExecuteBenchmarkTaskSupportsJobFilterBatch(t *testing.T) {
 	benchCase := llmBenchmarkCase{
 		ID:      "job_filter_batch_same_source_v1",
-		Task:    "job_filter_batch",
+		Task:    "llm_job_filtering",
 		Version: 1,
 		Input: json.RawMessage(`{
 			"criteria": {
@@ -364,17 +529,63 @@ func TestExecuteBenchmarkTaskSupportsJobFilterBatch(t *testing.T) {
 
 	output, _, err := executeBenchmarkTask(context.Background(), llm, benchCase)
 	if err != nil {
-		t.Fatalf("executeBenchmarkTask(job_filter_batch) error = %v", err)
+		t.Fatalf("executeBenchmarkTask(llm_job_filtering batch) error = %v", err)
 	}
 	var parsed map[string]any
 	if err := json.Unmarshal([]byte(output), &parsed); err != nil {
-		t.Fatalf("executeBenchmarkTask(job_filter_batch) output is invalid JSON: %v\n%s", err, output)
+		t.Fatalf("executeBenchmarkTask(llm_job_filtering batch) output is invalid JSON: %v\n%s", err, output)
 	}
 	if got, ok := benchmarkValueAtPath(parsed, "results.accept_remote_engineer.matches"); !ok || got != true {
 		t.Fatalf("results.accept_remote_engineer.matches = %#v, %t; want true, true", got, ok)
 	}
 	if got, ok := benchmarkValueAtPath(parsed, "results.reject_manager.matches"); !ok || got != false {
 		t.Fatalf("results.reject_manager.matches = %#v, %t; want false, true", got, ok)
+	}
+}
+
+func TestExecuteBenchmarkTaskSupportsJobSearch(t *testing.T) {
+	benchCase := llmBenchmarkCase{
+		ID:      "llm_job_search_example_apps_v1",
+		Task:    "llm_job_search",
+		Version: 1,
+		Input: json.RawMessage(`{
+			"prompt": "Find one remote Software Developer job at Example Apps."
+		}`),
+	}
+	llm := fakeContentLLM{
+		content: `[{
+			"company": "Example Apps",
+			"title": "Software Developer",
+			"remote": "Remote - United States",
+			"compensation": "$120,000 base",
+			"apply_url": "https://example.com/jobs/software-developer",
+			"description": "Build APIs and database-backed services.",
+			"why_matches": ["software developer", "remote", "API work"]
+		}]`,
+		generationInfo: map[string]any{
+			"PromptTokens":     111,
+			"CompletionTokens": 44,
+			"TotalTokens":      155,
+		},
+	}
+
+	output, usage, err := executeBenchmarkTask(context.Background(), llm, benchCase)
+	if err != nil {
+		t.Fatalf("executeBenchmarkTask(llm_job_search) error = %v", err)
+	}
+	if usage.TotalTokens == nil || *usage.TotalTokens != 155 {
+		t.Fatalf("executeBenchmarkTask(llm_job_search) usage.TotalTokens = %v, want 155", intPtrValue(usage.TotalTokens))
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(output), &parsed); err != nil {
+		t.Fatalf("executeBenchmarkTask(llm_job_search) output is invalid JSON: %v\n%s", err, output)
+	}
+	if got, ok := benchmarkValueAtPath(parsed, "count"); !ok || got != float64(1) {
+		t.Fatalf("count = %#v, %t; want 1, true", got, ok)
+	}
+	jobs, ok := parsed["jobs"].([]any)
+	if !ok || len(jobs) != 1 {
+		t.Fatalf("jobs = %#v; want one job", parsed["jobs"])
 	}
 }
 
@@ -801,6 +1012,27 @@ func TestBenchmarkNumericValue(t *testing.T) {
 		if ok != tt.ok || got != tt.want {
 			t.Fatalf("benchmarkNumericValue(%#v) = %v, %t; want %v, %t", tt.input, got, ok, tt.want, tt.ok)
 		}
+	}
+}
+
+func TestBenchmarkRecordCostUSDEstimatesOpenAITokenCost(t *testing.T) {
+	record := llmBenchmarkRunRecord{
+		Provider:     "openai",
+		Model:        "gpt-4o-mini-2024-07-18",
+		InputTokens:  benchmarkTestIntPtr(1000),
+		OutputTokens: benchmarkTestIntPtr(500),
+		Details: map[string]any{
+			"cached_tokens": 200,
+		},
+	}
+
+	got, ok := benchmarkRecordCostUSD(record)
+	if !ok {
+		t.Fatal("benchmarkRecordCostUSD(...) ok = false, want true")
+	}
+	want := 0.000435
+	if diff := got - want; diff < -0.0000001 || diff > 0.0000001 {
+		t.Fatalf("benchmarkRecordCostUSD(...) = %.8f, want %.8f", got, want)
 	}
 }
 

@@ -13,17 +13,18 @@ type llmBenchmarkCase struct {
 }
 
 type benchmarkChecks struct {
-	JSONRequired     bool                             `json:"json_required"`
-	RequiredFields   []string                         `json:"required_fields"`
-	ExpectedValues   map[string]any                   `json:"expected_values"`
-	ExpectedContains map[string][]any                 `json:"expected_contains"`
-	EnumValues       map[string][]any                 `json:"enum_values" yaml:"enum_values"`
-	NumericMinimums  map[string]float64               `json:"numeric_minimums"`
-	NumericMaximums  map[string]float64               `json:"numeric_maximums" yaml:"numeric_maximums"`
-	NumericRanges    map[string]benchmarkNumericRange `json:"numeric_ranges" yaml:"numeric_ranges"`
-	MustInclude      []string                         `json:"must_include"`
-	MustNotInclude   []string                         `json:"must_not_include"`
-	GroundingRules   []string                         `json:"grounding_rules"`
+	JSONRequired          bool                             `json:"json_required"`
+	RequiredFields        []string                         `json:"required_fields"`
+	ExpectedValues        map[string]any                   `json:"expected_values"`
+	ExpectedContains      map[string][]any                 `json:"expected_contains"`
+	EnumValues            map[string][]any                 `json:"enum_values" yaml:"enum_values"`
+	NumericMinimums       map[string]float64               `json:"numeric_minimums"`
+	NumericMaximums       map[string]float64               `json:"numeric_maximums" yaml:"numeric_maximums"`
+	NumericRanges         map[string]benchmarkNumericRange `json:"numeric_ranges" yaml:"numeric_ranges"`
+	MustInclude           []string                         `json:"must_include"`
+	MustNotInclude        []string                         `json:"must_not_include"`
+	HallucinationPatterns []string                         `json:"hallucination_patterns" yaml:"hallucination_patterns"`
+	GroundingRules        []string                         `json:"grounding_rules"`
 }
 
 type benchmarkNumericRange struct {
@@ -102,6 +103,15 @@ type benchmarkResumeInput struct {
 
 type benchmarkCompanyHealthInput struct {
 	Result CompanyHealthResult `yaml:"result"`
+}
+
+type benchmarkJobSearchInput struct {
+	Prompt string `yaml:"prompt" json:"prompt"`
+}
+
+type benchmarkJobSearchOutput struct {
+	Jobs  []Job `json:"jobs"`
+	Count int   `json:"count"`
 }
 
 const benchmarkVersion = 1

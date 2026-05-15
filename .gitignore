@@ -42,6 +42,7 @@ testdata/tmp/
 *.key
 
 # Editor, OS, and misc local files
+/TODO.md
 /.vscode/
 /.idea/
 *.swp

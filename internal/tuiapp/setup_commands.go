@@ -188,10 +188,10 @@ func fetchSetupModelsCmd(appCfg AppConfig) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 
-		models, err := llmpkg.FetchAvailableLLMModels(ctx, appCfg)
+		available, err := llmpkg.FetchAvailableLLMModels(ctx, appCfg)
 		return setupModelsFetchedMsg{
 			provider: provider,
-			models:   models,
+			models:   available.OptionLabels(),
 			err:      err,
 		}
 	}

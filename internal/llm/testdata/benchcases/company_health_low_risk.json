@@ -1,6 +1,6 @@
 {
   "id": "company_health_low_risk_v1",
-  "task": "company_health_summary",
+  "task": "llm_company_health",
   "version": 1,
   "input": {
     "result": {

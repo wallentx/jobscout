@@ -11,11 +11,11 @@ import (
 
 func evaluateJobFilterBatchWithLLM(ctx context.Context, llm llms.Model, input benchmarkJobFilterBatchInput) (*jobFilterBatchOutput, error) {
 	if len(input.Jobs) == 0 {
-		return nil, fmt.Errorf("job_filter_batch input has no jobs")
+		return nil, fmt.Errorf("%s batch input has no jobs", llmTaskFiltering)
 	}
 	for _, entry := range input.Jobs {
 		if strings.TrimSpace(entry.ID) == "" {
-			return nil, fmt.Errorf("job_filter_batch input contains a job with empty id")
+			return nil, fmt.Errorf("%s batch input contains a job with empty id", llmTaskFiltering)
 		}
 	}
 
@@ -25,7 +25,7 @@ func evaluateJobFilterBatchWithLLM(ctx context.Context, llm llms.Model, input be
 		llms.TextParts(llms.ChatMessageTypeHuman, prompt),
 	}
 	logDebug("job filter batch: generation start jobs=%d source=%q prompt_chars=%d", len(input.Jobs), input.Source, len(prompt))
-	resp, err := llm.GenerateContent(ctx, messages, llms.WithTemperature(0.1), llms.WithMaxTokens(8192))
+	resp, err := llm.GenerateContent(ctx, messages, llmJSONCallOptions(0.1, 8192)...)
 	if err != nil {
 		logDebug("job filter batch: generation failed jobs=%d source=%q error=%v", len(input.Jobs), input.Source, err)
 		return nil, fmt.Errorf("LLM generation failed: %v", err)

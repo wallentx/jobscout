@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/wallentx/jobscout/internal/cliui"
 )
 
 func runLLMBenchmarkCLI(args []string) {
@@ -60,7 +62,7 @@ func runLLMBenchmarkCLI(args []string) {
 	records := make([]llmBenchmarkRunRecord, 0, len(selected)*len(models))
 	for _, modelName := range models {
 		if !opts.JSON {
-			fmt.Printf("==> Benchmarking %s/%s\n", provider, modelName)
+			fmt.Printf("%s %s\n", cliui.Style("==>", cliui.Cyan, cliui.Bold), cliui.Style(provider+"/"+modelName, cliui.Bold))
 		}
 		runCfg := benchmarkConfigForModel(*appCfg, provider, modelName)
 		llm, restoreAuth, err := initConfiguredLLM(ctx, &runCfg)
@@ -71,7 +73,7 @@ func runLLMBenchmarkCLI(args []string) {
 					BenchmarkVersion:      benchmarkVersion,
 					Provider:              provider,
 					Model:                 modelName,
-					Task:                  benchCase.Task,
+					Task:                  normalizeBenchmarkTaskName(benchCase.Task),
 					CaseID:                benchCase.ID,
 					RequiredFieldsPresent: false,
 					ScoreCap:              40,
@@ -86,7 +88,7 @@ func runLLMBenchmarkCLI(args []string) {
 		}
 		for _, benchCase := range selected {
 			if !opts.JSON {
-				fmt.Printf("  running %s...\n", benchCase.ID)
+				fmt.Printf("  %s %s\n", cliui.Style("running", cliui.Blue), benchCase.ID)
 			}
 			record := runLLMBenchmarkCase(ctx, llm, provider, modelName, benchCase)
 			records = append(records, record)
@@ -118,7 +120,7 @@ func runLLMBenchmarkCLI(args []string) {
 		return
 	}
 
-	fmt.Printf("\nWrote benchmark records to %s\n", outputPath)
+	fmt.Printf("\n%s %s\n", cliui.Style("Wrote benchmark records to", cliui.Green, cliui.Bold), outputPath)
 }
 
 func RunLLMBenchmarkCLI(args []string) {

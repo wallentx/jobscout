@@ -252,7 +252,7 @@ func (m *model) currentSetupModelOptions() []string {
 
 func (s *setupState) setCurrentSetupModel(modelName string) {
 	provider, providerCfg := s.currentSetupProviderConfig()
-	providerCfg.Model = strings.TrimSpace(modelName)
+	providerCfg.Model = llmpkg.ModelRunIDFromOption(modelName)
 	s.setCurrentSetupProviderConfig(provider, providerCfg)
 }
 
@@ -319,23 +319,35 @@ func (m *model) currentSetupTaskModelOptions() []string {
 	options := []string{setupTaskModelFallbackOption(m.setup.taskModelKey)}
 	models := llmpkg.SetupModelOptions(m.setup.appConfig.LLM.Provider, &m.setup.appConfig, m.setup.modelsByProvider)
 	for _, modelName := range models {
-		options = appendUniqueString(options, modelName)
+		options = appendUniqueSetupModelOption(options, modelName)
 	}
-	options = appendUniqueString(options, m.setup.currentSetupTaskModel())
+	options = appendUniqueSetupModelOption(options, m.setup.currentSetupTaskModel())
 	return options
 }
 
-func appendUniqueString(values []string, value string) []string {
+func appendUniqueSetupModelOption(values []string, value string) []string {
 	value = strings.TrimSpace(value)
-	if value == "" {
+	ids := llmpkg.ModelOptionIDs(value)
+	if len(ids) == 0 {
 		return values
 	}
 	for _, existing := range values {
-		if existing == value {
+		if setupModelOptionIDsOverlap(llmpkg.ModelOptionIDs(existing), ids) {
 			return values
 		}
 	}
 	return append(values, value)
+}
+
+func setupModelOptionIDsOverlap(left []string, right []string) bool {
+	for _, l := range left {
+		for _, r := range right {
+			if strings.TrimSpace(l) != "" && strings.TrimSpace(l) == strings.TrimSpace(r) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func setupTaskModelOptionIndex(options []string, currentModel string) int {
@@ -344,7 +356,7 @@ func setupTaskModelOptionIndex(options []string, currentModel string) int {
 		return 0
 	}
 	for idx, option := range options {
-		if option == currentModel {
+		if option == currentModel || setupModelOptionIDsOverlap(llmpkg.ModelOptionIDs(option), []string{currentModel}) {
 			return idx
 		}
 	}
@@ -369,7 +381,7 @@ func (s *setupState) setCurrentSetupTaskModel(modelName string) {
 	if key == "" {
 		return
 	}
-	modelName = strings.TrimSpace(modelName)
+	modelName = llmpkg.ModelRunIDFromOption(modelName)
 	if modelName == "" {
 		s.clearCurrentSetupTaskModel()
 		return

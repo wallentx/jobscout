@@ -1,32 +1,22 @@
 # Contributing
 
-This project uses the Makefile as the local contract. Before opening a pull
-request, run:
+Before opening a pull request, run:
 
 ```sh
 make all
 ```
 
-`make all` applies mechanical fixes, verifies modules, checks formatting and
-imports, runs static analysis, runs tests, runs the race detector where the
-platform supports it, and builds the CLI.
+`make all` formats the code, verifies modules, runs static analysis, runs
+tests, runs the race detector where the platform supports it, and builds the
+CLI.
 
-Use `make full-check` before a release when you also want the heavier security
-checks:
-
-```sh
-make full-check
-```
-
-## Development
-
-Requirements:
+## Requirements
 
 - Go 1.26.1 or newer
 - `make`
 - network access the first time the Makefile installs local Go tool helpers
 
-Useful targets:
+## Useful Commands
 
 ```sh
 make fix
@@ -36,16 +26,18 @@ make build
 make install
 ```
 
-Runtime data is intentionally ignored by git. Normal app usage writes under
-the OS-specific user config directory by default, and local runtime files such
-as `config.yaml`, `SEARCH_PROMPT.md`, `jobscout.db`, and JSON exports should not
-be committed.
+Use `make full-check` before a release when you also want heavier security
+checks.
 
-Test fixtures live beside the packages that need them. For example, config
-criteria coverage uses `internal/config/testdata/criteria-sample.yaml`.
+## What Not To Commit
 
-## LLM Configuration
+Runtime data is intentionally ignored by git. Do not commit provider tokens,
+local prompts, databases, caches, exported job data, or local benchmark record
+files.
 
-LLM features are optional. Do not commit provider tokens, local prompts,
-databases, caches, or exported job data. Hosted provider tokens should be
-passed through environment variables or commands, not literal config values.
+Normal app usage writes under the OS-specific user config directory by default.
+Test fixtures live beside the packages that need them, such as
+`internal/config/testdata/criteria-sample.yaml`.
+
+See [Release](docs/RELEASE.md) for release preparation and
+[Benchmark Reports](docs/BENCHMARKS.md) for benchmark output guidance.

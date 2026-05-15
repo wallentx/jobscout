@@ -1,6 +1,6 @@
 {
   "id": "job_filter_batch_same_source_v1",
-  "task": "job_filter_batch",
+  "task": "llm_job_filtering",
   "version": 1,
   "input": {
     "criteria": {

@@ -101,12 +101,11 @@ const (
 	llmAuthModeLiteral = "literal"
 	llmAuthModeCommand = "command"
 
-	llmTaskJobSearch        = "llm_job_search"
-	llmTaskCompanyHealth    = "llm_company_health"
-	llmTaskFiltering        = "llm_job_filtering"
-	llmTaskJobIdentity      = "job_identity"
-	llmTaskResumeCriteria   = "resume_to_criteria"
-	llmTaskBenchmarkDefault = "benchmark"
+	llmTaskJobSearch      = "llm_job_search"
+	llmTaskCompanyHealth  = "llm_company_health"
+	llmTaskFiltering      = "llm_job_filtering"
+	llmTaskJobIdentity    = "job_identity"
+	llmTaskResumeCriteria = "resume_to_criteria"
 )
 
 const (
@@ -152,7 +151,7 @@ func defaultAppConfig() AppConfig {
 
 	cfg.LLM.Enabled = true
 	cfg.LLM.Provider = "gemini"
-	cfg.LLM.Model = "gemini-2.5-flash-lite"
+	cfg.LLM.Model = "gemini-3.1-flash-lite"
 	cfg.LLM.JobSearch = true
 	cfg.LLM.JobFiltering = true
 	cfg.LLM.CompanyHealth = true
@@ -183,14 +182,13 @@ func DefaultCriteriaConfig() CriteriaConfig {
 func defaultLLMProviders() map[string]LLMProviderConfig {
 	return map[string]LLMProviderConfig{
 		"gemini": {
-			Model: "gemini-2.5-flash-lite",
+			Model: "gemini-3.1-flash-lite",
 			Models: map[string]string{
-				llmTaskJobSearch:        "gemini-2.5-flash-lite",
-				llmTaskCompanyHealth:    "gemini-flash-lite-latest",
-				llmTaskFiltering:        "gemini-2.5-flash-lite",
-				llmTaskJobIdentity:      "gemini-2.5-flash-lite",
-				llmTaskResumeCriteria:   "gemini-2.5-flash-lite",
-				llmTaskBenchmarkDefault: "gemini-2.5-flash-lite",
+				llmTaskJobSearch:      "gemini-3.1-flash-lite",
+				llmTaskCompanyHealth:  "gemini-3.1-flash-lite",
+				llmTaskFiltering:      "gemini-3.1-flash-lite",
+				llmTaskJobIdentity:    "gemini-3.1-flash-lite",
+				llmTaskResumeCriteria: "gemini-3.1-flash-lite",
 			},
 			Auth: LLMAuthConfig{
 				Mode:   llmAuthModeEnv,
@@ -198,14 +196,13 @@ func defaultLLMProviders() map[string]LLMProviderConfig {
 			},
 		},
 		"openai": {
-			Model: "gpt-4.1",
+			Model: "gpt-4o-mini",
 			Models: map[string]string{
-				llmTaskJobSearch:        "gpt-4.1",
-				llmTaskCompanyHealth:    "gpt-4o-2024-11-20",
-				llmTaskFiltering:        "gpt-4.1",
-				llmTaskJobIdentity:      "gpt-4.1",
-				llmTaskResumeCriteria:   "gpt-5.3-chat-latest",
-				llmTaskBenchmarkDefault: "gpt-4.1",
+				llmTaskJobSearch:      "gpt-4o-mini",
+				llmTaskCompanyHealth:  "gpt-4o-mini",
+				llmTaskFiltering:      "gpt-5.4-mini",
+				llmTaskJobIdentity:    "gpt-4o-mini",
+				llmTaskResumeCriteria: "gpt-4o-mini",
 			},
 			Auth: LLMAuthConfig{
 				Mode:   llmAuthModeEnv,
@@ -223,12 +220,11 @@ func defaultLLMProviders() map[string]LLMProviderConfig {
 			Model:    "deepseek/deepseek-v4-flash",
 			Endpoint: "https://openrouter.ai/api/v1",
 			Models: map[string]string{
-				llmTaskJobSearch:        "deepseek/deepseek-v4-flash",
-				llmTaskCompanyHealth:    "deepseek/deepseek-v4-flash",
-				llmTaskFiltering:        "deepseek/deepseek-v4-flash",
-				llmTaskJobIdentity:      "deepseek/deepseek-v4-flash",
-				llmTaskResumeCriteria:   "deepseek/deepseek-v4-flash",
-				llmTaskBenchmarkDefault: "deepseek/deepseek-v4-flash",
+				llmTaskJobSearch:      "deepseek/deepseek-v4-flash",
+				llmTaskCompanyHealth:  "deepseek/deepseek-v4-flash",
+				llmTaskFiltering:      "deepseek/deepseek-v4-flash",
+				llmTaskJobIdentity:    "deepseek/deepseek-v4-flash",
+				llmTaskResumeCriteria: "deepseek/deepseek-v4-flash",
 			},
 			Auth: LLMAuthConfig{
 				Mode:   llmAuthModeEnv,
