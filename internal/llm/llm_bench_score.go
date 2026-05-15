@@ -9,21 +9,26 @@ func normalizeBenchmarkRunScores(records []llmBenchmarkRunRecord) {
 	fastestByTask := make(map[string]int64)
 	cheapestByTask := make(map[string]float64)
 	for _, record := range records {
-		key := record.Task + "|" + record.CaseID
+		key := normalizeBenchmarkTaskName(record.Task) + "|" + record.CaseID
 		if record.Error == "" && record.LatencyMS > 0 {
 			if fastestByTask[key] == 0 || record.LatencyMS < fastestByTask[key] {
 				fastestByTask[key] = record.LatencyMS
 			}
 		}
-		if record.Error != "" || record.EstimatedCostUSD == nil || *record.EstimatedCostUSD <= 0 {
+		if record.Error != "" {
 			continue
 		}
-		if cheapestByTask[key] == 0 || *record.EstimatedCostUSD < cheapestByTask[key] {
-			cheapestByTask[key] = *record.EstimatedCostUSD
+		cost, ok := benchmarkRecordCostUSD(record)
+		if !ok {
+			continue
+		}
+		if cheapestByTask[key] == 0 || cost < cheapestByTask[key] {
+			cheapestByTask[key] = cost
 		}
 	}
 
 	for i := range records {
+		records[i].Task = normalizeBenchmarkTaskName(records[i].Task)
 		key := records[i].Task + "|" + records[i].CaseID
 		fastest := fastestByTask[key]
 		if fastest <= 0 || records[i].LatencyMS <= 0 {
@@ -39,8 +44,8 @@ func normalizeBenchmarkRunScores(records []llmBenchmarkRunRecord) {
 			records[i].SpeedScore = score
 		}
 		cheapest := cheapestByTask[key]
-		if cheapest > 0 && records[i].EstimatedCostUSD != nil && *records[i].EstimatedCostUSD > 0 {
-			score := int(cheapest / *records[i].EstimatedCostUSD * 100)
+		if cost, ok := benchmarkRecordCostUSD(records[i]); cheapest > 0 && ok {
+			score := int(cheapest / cost * 100)
 			if score < 0 {
 				score = 0
 			}
@@ -74,11 +79,18 @@ func scoreBenchmarkOutput(record *llmBenchmarkRunRecord, checks benchmarkChecks,
 	record.GroundingScore = benchmarkGroundingScore(checks, output)
 	record.Details = details
 
+	hallucinationMatches := benchmarkTextMatches(output, checks.HallucinationPatterns)
+	if len(hallucinationMatches) > 0 {
+		record.AccuracyScore = maxBenchmarkInt(0, record.AccuracyScore-(40*len(hallucinationMatches)))
+		record.Details["hallucination_patterns_matched"] = len(hallucinationMatches)
+		record.Details["hallucination_patterns"] = hallucinationMatches
+		record.ScoreCap = minPositiveBenchmarkCap(record.ScoreCap, 50)
+	}
 	if checks.JSONRequired && !record.JSONValid {
-		record.ScoreCap = 40
+		record.ScoreCap = minPositiveBenchmarkCap(record.ScoreCap, 40)
 	}
 	if record.JSONValid && !record.RequiredFieldsPresent {
-		record.ScoreCap = 60
+		record.ScoreCap = minPositiveBenchmarkCap(record.ScoreCap, 60)
 	}
 
 	record.FinalScore = weightedBenchmarkScore(*record)
@@ -306,11 +318,46 @@ func benchmarkTextCheckScore(output string, mustInclude []string, mustNotInclude
 	return int(float64(passed) / float64(total) * 100)
 }
 
+func benchmarkTextMatches(output string, patterns []string) []string {
+	if len(patterns) == 0 {
+		return nil
+	}
+	normalizedOutput := strings.ToLower(output)
+	matches := make([]string, 0)
+	for _, pattern := range patterns {
+		pattern = strings.TrimSpace(pattern)
+		if pattern == "" {
+			continue
+		}
+		if strings.Contains(normalizedOutput, strings.ToLower(pattern)) {
+			matches = append(matches, pattern)
+		}
+	}
+	return matches
+}
+
 func benchmarkGroundingScore(checks benchmarkChecks, output string) int {
 	if len(checks.GroundingRules) == 0 {
 		return 100
 	}
 	return benchmarkTextCheckScore(output, checks.GroundingRules, nil)
+}
+
+func maxBenchmarkInt(a int, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func minPositiveBenchmarkCap(existing int, candidate int) int {
+	if candidate <= 0 {
+		return existing
+	}
+	if existing <= 0 || candidate < existing {
+		return candidate
+	}
+	return existing
 }
 
 func valuesEquivalent(got any, want any) bool {
@@ -354,14 +401,14 @@ type benchmarkWeights struct {
 }
 
 func benchmarkWeightsForTask(task string) benchmarkWeights {
-	switch strings.ToLower(strings.TrimSpace(task)) {
-	case "company_health_summary":
+	switch normalizeBenchmarkTaskName(task) {
+	case llmTaskCompanyHealth:
 		return benchmarkWeights{Accuracy: 0.25, JSON: 0.25, Grounding: 0.30, Speed: 0.10, Cost: 0.05, Stability: 0.05}
-	case "job_filter", "job_filter_batch":
+	case llmTaskFiltering:
 		return benchmarkWeights{Accuracy: 0.40, JSON: 0.20, Grounding: 0.10, Speed: 0.10, Cost: 0.10, Stability: 0.10}
-	case "resume_to_criteria":
+	case llmTaskResumeCriteria:
 		return benchmarkWeights{Accuracy: 0.35, JSON: 0.20, Grounding: 0.15, Speed: 0.10, Cost: 0.10, Stability: 0.10}
-	case "autonomous_job_search":
+	case llmTaskJobSearch:
 		return benchmarkWeights{Accuracy: 0.35, JSON: 0.15, Grounding: 0.25, Speed: 0.05, Cost: 0.10, Stability: 0.10}
 	case "browser_reputation_research":
 		return benchmarkWeights{Accuracy: 0.30, JSON: 0.10, Grounding: 0.30, Speed: 0.05, Cost: 0.10, Stability: 0.15}

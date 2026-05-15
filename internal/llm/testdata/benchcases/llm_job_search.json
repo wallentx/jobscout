@@ -1,0 +1,51 @@
+{
+  "id": "llm_job_search_example_apps_v1",
+  "task": "llm_job_search",
+  "version": 1,
+  "input": {
+    "prompt": "Use only the supplied source snippets below. Do not invent companies, roles, URLs, compensation, or details. Return only jobs that match the target profile. If no supplied snippet matches, return an empty JSON array.\n\nTarget: remote backend or software developer role, builds APIs or database-backed services, base compensation at least $120,000.\n\nSource snippets:\n1. Example Apps careers page: Backend Developer, Remote - United States, builds Go APIs and PostgreSQL-backed services for workflow automation, base salary $132,000 to $156,000, apply URL https://careers.example.test/jobs/backend-developer-128\n2. Example Apps careers page: Contract Manager, Onsite - Denver, manages vendor renewals, base salary $95,000, apply URL https://careers.example.test/jobs/contract-manager-44\n3. Northwind Data careers page: Data Analyst, Hybrid - Chicago, dashboard reporting and SQL analytics, base salary $102,000, apply URL https://northwind.example.test/jobs/data-analyst-22"
+  },
+  "checks": {
+    "json_required": true,
+    "required_fields": [
+      "jobs",
+      "count"
+    ],
+    "numeric_minimums": {
+      "count": 1
+    },
+    "numeric_maximums": {
+      "count": 1
+    },
+    "must_include": [
+      "Example Apps",
+      "Backend Developer",
+      "Remote",
+      "Go APIs",
+      "PostgreSQL",
+      "$132,000",
+      "https://careers.example.test/jobs/backend-developer-128"
+    ],
+    "must_not_include": [
+      "Contract Manager",
+      "Data Analyst",
+      "onsite",
+      "https://example.com",
+      "https://exampleapps.com",
+      "hypothetical"
+    ],
+    "hallucination_patterns": [
+      "https://example.com",
+      "https://exampleapps.com",
+      "hypothetical",
+      "fictional",
+      "sample posting"
+    ],
+    "grounding_rules": [
+      "Example Apps",
+      "Backend Developer",
+      "Remote",
+      "https://careers.example.test/jobs/backend-developer-128"
+    ]
+  }
+}

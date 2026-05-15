@@ -1,6 +1,6 @@
 {
   "id": "job_filter_contract_manager_reject_v1",
-  "task": "job_filter",
+  "task": "llm_job_filtering",
   "version": 1,
   "input": {
     "criteria": {

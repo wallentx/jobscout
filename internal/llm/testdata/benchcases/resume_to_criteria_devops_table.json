@@ -1,0 +1,55 @@
+{
+  "id": "resume_to_criteria_devops_table_v1",
+  "task": "resume_to_criteria",
+  "version": 1,
+  "input": {
+    "resume_text": "Jordan Lee | Austin, TX, US\n\n| Area | Evidence |\n| --- | --- |\n| Experience | 7 years operating Linux services, Kubernetes clusters, Terraform modules, CI/CD pipelines, and incident response rotations. |\n| Recent role | Site Reliability Engineer for a payments platform; reduced deploy failures, built Prometheus dashboards, and automated runbooks. |\n| Search target | Remote or hybrid SRE, DevOps Engineer, Platform Engineer, or Infrastructure Engineer roles. |\n| Compensation | Looking for base salary of at least 130000 USD. |\n| Avoid | Pure management roles and desktop support roles. |"
+  },
+  "checks": {
+    "json_required": true,
+    "required_fields": [
+      "candidate.city",
+      "candidate.state",
+      "candidate.country_code",
+      "candidate.years_of_experience",
+      "filters.work_settings",
+      "filters.min_base_usd",
+      "role_families",
+      "priority_signals"
+    ],
+    "expected_values": {
+      "candidate.city": "Austin",
+      "candidate.state": "TX",
+      "candidate.country_code": "US",
+      "candidate.years_of_experience": 7,
+      "filters.work_settings.remote": true,
+      "filters.work_settings.hybrid": true
+    },
+    "expected_contains": {
+      "role_families": [
+        "devops_sre_systems"
+      ],
+      "priority_signals": [
+        "Kubernetes",
+        "Terraform",
+        "incident response"
+      ]
+    },
+    "numeric_minimums": {
+      "candidate.years_of_experience": 7,
+      "filters.min_base_usd": 130000
+    },
+    "must_include": [
+      "Austin",
+      "TX",
+      "Kubernetes",
+      "Terraform",
+      "remote"
+    ],
+    "grounding_rules": [
+      "Austin",
+      "Kubernetes",
+      "Terraform"
+    ]
+  }
+}

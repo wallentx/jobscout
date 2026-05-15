@@ -6,25 +6,29 @@ Run:
 jobscout --demo
 ```
 
-Demo mode lets someone explore `jobscout` without first creating config files or
-a local database.
+Demo mode lets you explore `jobscout` without creating config files or a local
+database.
 
-## Runtime Behavior
+## What It Does
 
-In demo mode, `jobscout` does not read or write the normal runtime files:
+In demo mode, `jobscout` does not read or write your normal runtime files:
 
 - `config.yaml`
 - `SEARCH_PROMPT.md`
 - `jobscout.db`
 
-Those files normally live under the OS-specific user config directory, such as
-`~/Library/Application Support/jobscout/` on macOS or
-`~/.config/jobscout/` on Linux.
+The app uses in-memory config, prompt, job storage, and health storage. Changes
+made in setup/config menus last only for the current session.
 
-The app uses in-memory config, prompt, job storage, and health cache storage.
-Changes made in setup/config menus are kept only for the current session.
+## LLM Behavior
 
-## Demo Profile
+LLM features remain available in demo mode. Demo mode does not provide provider
+credentials. If a supported provider token is already available in the
+environment, the app can use it. Otherwise startup offers the normal choice to
+continue without LLM or configure provider auth for the session.
+
+<details>
+<summary>Demo profile details</summary>
 
 The built-in profile is a generic two-year software engineer:
 
@@ -40,12 +44,16 @@ The built-in profile is a generic two-year software engineer:
 The profile excludes manager, lead, senior, staff, principal, director, and
 architect-style titles.
 
-## LLM Behavior
+</details>
 
-LLM features remain available in demo mode. Demo mode does not provide provider
-credentials. If a supported provider token is already available in the
-environment, the app can use it. Otherwise startup offers the normal choice to
-continue without LLM or configure provider auth for the session.
+<details>
+<summary>Runtime location details</summary>
+
+Normal runtime files live under the OS-specific user config directory, such as
+`~/Library/Application Support/jobscout/` on macOS,
+`~/.config/jobscout/` on Linux, or `%AppData%\jobscout\` on Windows.
 
 LLM web-search sources are not part of the default demo refresh. Use
 `--demo --sources llm_web` to test that path explicitly.
+
+</details>

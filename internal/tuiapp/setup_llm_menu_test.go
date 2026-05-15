@@ -90,12 +90,12 @@ func TestCurrentSetupTaskModelMenuOptions(t *testing.T) {
 			appConfig: AppConfig{
 				LLM: LLMConfig{
 					Provider: "gemini",
-					Model:    "gemini-flash-lite-latest",
+					Model:    "gemini-3.1-flash-lite",
 					Providers: map[string]LLMProviderConfig{
 						"gemini": {
-							Model: "gemini-flash-lite-latest",
+							Model: "gemini-3.1-flash-lite",
 							Models: map[string]string{
-								llmTaskFiltering: "gemini-2.5-flash-lite",
+								llmTaskFiltering: "gemini-3.1-flash-lite",
 							},
 						},
 					},
@@ -106,7 +106,7 @@ func TestCurrentSetupTaskModelMenuOptions(t *testing.T) {
 
 	options := m.currentSetupTaskModelMenuOptions()
 	for _, expected := range []string{
-		"LLM job filtering: gemini-2.5-flash-lite",
+		"LLM job filtering: gemini-3.1-flash-lite",
 		"LLM company health: provider default",
 	} {
 		found := false
@@ -133,7 +133,7 @@ func TestSetupProviderSwitchKeepsProviderAuthIsolated(t *testing.T) {
 	setup.appConfig.LLM.Provider = "gemini"
 	setup.appConfig.LLM.Providers = config.DefaultLLMProviders()
 	setup.appConfig.LLM.Providers["gemini"] = LLMProviderConfig{
-		Model: "gemini-2.5-flash",
+		Model: "gemini-3.1-flash-lite",
 		Auth: LLMAuthConfig{
 			Mode:   llmAuthModeEnv,
 			EnvVar: "GEMINI_API_KEY",
@@ -298,7 +298,7 @@ func TestSetupProviderConfigDefaultModelUsesDropdown(t *testing.T) {
 
 	updated, _ = got.Update(setupModelsFetchedMsg{
 		provider: "openai",
-		models:   []string{"gpt-5.3-chat-latest", "gpt-4.1"},
+		models:   []string{"gpt-5.3-chat", "gpt-4o-mini"},
 	})
 	gotValue := updated.(model)
 	gotValue.setup.providerModelDropdownIdx = 0
@@ -306,17 +306,45 @@ func TestSetupProviderConfigDefaultModelUsesDropdown(t *testing.T) {
 	updated, _ = gotValue.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	got = updated.(*model)
 
-	if got.setup.appConfig.LLM.Model != "gpt-5.3-chat-latest" {
-		t.Fatalf("LLM.Model = %q, want gpt-5.3-chat-latest", got.setup.appConfig.LLM.Model)
+	if got.setup.appConfig.LLM.Model != "gpt-4o-mini" {
+		t.Fatalf("LLM.Model = %q, want gpt-4o-mini", got.setup.appConfig.LLM.Model)
 	}
-	if got.setup.appConfig.LLM.Providers["openai"].Model != "gpt-5.3-chat-latest" {
-		t.Fatalf("provider model = %q, want gpt-5.3-chat-latest", got.setup.appConfig.LLM.Providers["openai"].Model)
+	if got.setup.appConfig.LLM.Providers["openai"].Model != "gpt-4o-mini" {
+		t.Fatalf("provider model = %q, want gpt-4o-mini", got.setup.appConfig.LLM.Providers["openai"].Model)
 	}
 	if got.setup.providerModelDropdownOpen {
 		t.Fatalf("providerModelDropdownOpen = true, want false")
 	}
 	if got.setup.step != setupStepProviderConfigMenu {
 		t.Fatalf("setup.step = %v, want setupStepProviderConfigMenu", got.setup.step)
+	}
+}
+
+func TestSetupProviderConfigDefaultModelSavesAliasTarget(t *testing.T) {
+	setup := newSetupState(setupModeEdit, setupSectionLLM)
+	setup.appConfig = AppConfig{
+		LLM: LLMConfig{
+			Provider: "gemini",
+			Model:    "gemini-3.1-flash-lite",
+			Providers: map[string]LLMProviderConfig{
+				"gemini": {
+					Model: "gemini-3.1-flash-lite",
+					Auth: LLMAuthConfig{
+						Mode:   llmAuthModeEnv,
+						EnvVar: "GEMINI_API_KEY",
+					},
+				},
+			},
+		},
+	}
+
+	setup.setCurrentSetupModel("gemini-flash-lite-preview -> gemini-3.1-flash-lite")
+
+	if setup.appConfig.LLM.Model != "gemini-3.1-flash-lite" {
+		t.Fatalf("LLM.Model = %q, want gemini-3.1-flash-lite", setup.appConfig.LLM.Model)
+	}
+	if setup.appConfig.LLM.Providers["gemini"].Model != "gemini-3.1-flash-lite" {
+		t.Fatalf("provider model = %q, want gemini-3.1-flash-lite", setup.appConfig.LLM.Providers["gemini"].Model)
 	}
 }
 
@@ -331,10 +359,10 @@ func TestSetupTaskModelChoiceSetsAndClearsOverride(t *testing.T) {
 	setup.appConfig = AppConfig{
 		LLM: LLMConfig{
 			Provider: "gemini",
-			Model:    "gemini-flash-lite-latest",
+			Model:    "gemini-3.1-flash-lite",
 			Providers: map[string]LLMProviderConfig{
 				"gemini": {
-					Model: "gemini-flash-lite-latest",
+					Model: "gemini-3.1-flash-lite",
 					Auth: LLMAuthConfig{
 						Mode:   llmAuthModeEnv,
 						EnvVar: "GEMINI_API_KEY",
@@ -344,7 +372,7 @@ func TestSetupTaskModelChoiceSetsAndClearsOverride(t *testing.T) {
 		},
 	}
 	setup.modelsByProvider = map[string][]string{
-		"gemini": {"gemini-2.5-flash-lite"},
+		"gemini": {"gemini-3.1-flash-lite"},
 	}
 	m := model{
 		setup:   setup,
@@ -354,8 +382,8 @@ func TestSetupTaskModelChoiceSetsAndClearsOverride(t *testing.T) {
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	got := updated.(*model)
 
-	if got.setup.appConfig.LLM.Providers["gemini"].Models[llmTaskFiltering] != "gemini-2.5-flash-lite" {
-		t.Fatalf("provider Models[%q] = %q, want gemini-2.5-flash-lite", llmTaskFiltering, got.setup.appConfig.LLM.Providers["gemini"].Models[llmTaskFiltering])
+	if got.setup.appConfig.LLM.Providers["gemini"].Models[llmTaskFiltering] != "gemini-3.1-flash-lite" {
+		t.Fatalf("provider Models[%q] = %q, want gemini-3.1-flash-lite", llmTaskFiltering, got.setup.appConfig.LLM.Providers["gemini"].Models[llmTaskFiltering])
 	}
 	if got.setup.step != setupStepTaskModelMenu {
 		t.Fatalf("setup.step = %v, want setupStepTaskModelMenu", got.setup.step)
@@ -372,6 +400,32 @@ func TestSetupTaskModelChoiceSetsAndClearsOverride(t *testing.T) {
 	}
 }
 
+func TestSetupTaskModelChoiceSavesAliasTarget(t *testing.T) {
+	setup := newSetupState(setupModeEdit, setupSectionLLM)
+	setup.taskModelKey = llmTaskFiltering
+	setup.appConfig = AppConfig{
+		LLM: LLMConfig{
+			Provider: "gemini",
+			Model:    "gemini-3.1-flash-lite",
+			Providers: map[string]LLMProviderConfig{
+				"gemini": {
+					Model: "gemini-3.1-flash-lite",
+					Auth: LLMAuthConfig{
+						Mode:   llmAuthModeEnv,
+						EnvVar: "GEMINI_API_KEY",
+					},
+				},
+			},
+		},
+	}
+
+	setup.setCurrentSetupTaskModel("gemini-flash-lite-preview -> gemini-3.1-flash-lite")
+
+	if setup.appConfig.LLM.Providers["gemini"].Models[llmTaskFiltering] != "gemini-3.1-flash-lite" {
+		t.Fatalf("provider Models[%q] = %q, want gemini-3.1-flash-lite", llmTaskFiltering, setup.appConfig.LLM.Providers["gemini"].Models[llmTaskFiltering])
+	}
+}
+
 func TestSetupTaskModelValueFieldAllowsManualModelEntry(t *testing.T) {
 	restoreRuntimePathsAfterTest(t)
 	runtimeConfigPath = filepath.Join(t.TempDir(), configFilePath)
@@ -382,10 +436,10 @@ func TestSetupTaskModelValueFieldAllowsManualModelEntry(t *testing.T) {
 	setup.appConfig = AppConfig{
 		LLM: LLMConfig{
 			Provider: "openai",
-			Model:    "gpt-4o-2024-11-20",
+			Model:    "gpt-4o",
 			Providers: map[string]LLMProviderConfig{
 				"openai": {
-					Model: "gpt-4o-2024-11-20",
+					Model: "gpt-4o",
 					Auth: LLMAuthConfig{
 						Mode:   llmAuthModeEnv,
 						EnvVar: "OPENAI_API_KEY",
@@ -395,7 +449,7 @@ func TestSetupTaskModelValueFieldAllowsManualModelEntry(t *testing.T) {
 		},
 	}
 	setup.modelsByProvider = map[string][]string{
-		"openai": {"gpt-4o-2024-11-20"},
+		"openai": {"gpt-4o"},
 	}
 	m := model{
 		setup:   setup,
@@ -463,10 +517,10 @@ func TestSetupModelChoiceUsesScrollableMenu(t *testing.T) {
 	if !strings.Contains(spec.body.content, "█") {
 		t.Fatalf("spec.body.content = %q; want scrollbar thumb", spec.body.content)
 	}
-	if !strings.Contains(body, "model-t") {
-		t.Fatalf("body = %q; want selected model-t visible", body)
+	if !strings.Contains(body, "model-a") {
+		t.Fatalf("body = %q; want selected model-a visible", body)
 	}
-	if strings.Contains(body, "model-a") {
+	if strings.Contains(body, "model-t") {
 		t.Fatalf("body = %q; did not want first model visible when selection is near end", body)
 	}
 	if !strings.Contains(ansi.Strip(spec.footer), "Scroll") {

@@ -78,7 +78,6 @@ func TaskModelSpecs() []TaskModelSpec {
 		{Key: "job_identity", Label: "Job identity enrichment"},
 		{Key: "llm_company_health", Label: "LLM company health"},
 		{Key: "resume_to_criteria", Label: "Resume criteria prefill"},
-		{Key: "benchmark", Label: "Benchmarks"},
 	}
 }
 

@@ -1,100 +1,63 @@
 # LLM Features
 
-LLM usage is optional. `jobscout` can run from RSS feeds, site-search targets,
-and built-in source catalogs without provider credentials. When LLM features are enabled, the
-app uses the configured provider only for the specific feature being run.
+LLM support is optional. `jobscout` can run from RSS feeds, site-search targets,
+and built-in source catalogs without provider credentials.
+
+When LLM features are enabled, the app uses your configured provider only for
+the feature being run.
 
 ## Providers
 
-`jobscout` supports these provider names:
+Supported provider names:
 
 - `gemini`
 - `openai`
 - `anthropic`
+- `openrouter`
 - `ollama`
 
 Hosted providers usually need a provider token. Use an environment variable or
 a command that prints the token. The setup flow does not store literal provider
 tokens in config. Ollama uses a local endpoint by default.
 
-## Current LLM Uses
+## What LLMs Can Do
 
-1. Model discovery during setup
+- Discover available models during setup.
+- Prefill search criteria from a resume you choose.
+- Search for jobs from `SEARCH_PROMPT.md` when LLM job search is enabled.
+- Review ambiguous job matches when LLM filtering is enabled.
+- Fill missing company identity details from supplied page text.
+- Summarize deterministic Company Health evidence.
+- Run model benchmarks to compare quality, latency, token use, and failures.
 
-   After a provider and auth method are configured, setup calls the provider's
-   model-list endpoint to show available models. If the request fails or returns
-   unusable results, setup falls back to a curated static list and still allows
-   manual model entry.
+LLM failures should not stop normal non-LLM fetching. The app records a notice
+and continues with the deterministic sources that are available.
 
-2. Resume-assisted setup
+## Resume-Assisted Setup
 
-   During first-run setup, after provider auth succeeds and a provider model
-   list is fetched, setup can ask whether you want to prefill search criteria
-   from a resume. If you opt in, `jobscout` extracts text from the resume path
-   you provide and sends that text to your configured LLM provider to infer
-   starter criteria.
+During first-run setup, `jobscout` can read a resume file and ask your selected
+LLM provider to infer starter search criteria.
 
-   Supported inputs include ASCII/UTF-8 text files, Markdown, JSON/YAML/CSV,
-   DOCX, ODT, RTF, PDF when `pdftotext` or `mutool` is installed, and legacy DOC
-   when `antiword` or `catdoc` is installed.
+Supported inputs include text, Markdown, JSON, YAML, CSV, DOCX, ODT, RTF, PDF
+when `pdftotext` or `mutool` is installed, and legacy DOC when `antiword` or
+`catdoc` is installed.
 
-3. LLM job search
+## Models
 
-   When `llm.llm_job_search: true`, the fetch pipeline initializes the configured
-   provider, reads `SEARCH_PROMPT.md` from the OS-specific user config
-   directory, asks the LLM to return job postings as JSON, validates the returned
-   jobs, and merges them with the regular configured sources. If LLM
-   initialization or execution fails, the app records a notice and continues
-   with non-LLM sources.
+Setup fetches the provider's model list when it can. If that fails, it falls
+back to a curated list and still allows manual model entry.
 
-   LLM web-search sources are experimental and disabled during normal refreshes.
-   Use `--sources llm_web` when intentionally testing that path.
+Provider model lists are filtered to avoid known incompatible, deprecated,
+snapshot, and non-text models. When provider metadata exposes aliases, setup
+shows the relationship and saves the runnable model ID.
 
-4. Optional LLM job filtering
+For model comparisons, see [Benchmark Reports](BENCHMARKS.md).
 
-   When `llm.llm_job_filtering: true`, the app uses the configured LLM as a
-   targeted ambiguity resolver after deterministic fetch filtering. Jobs with
-   weak identity, weak descriptions, LLM-generated sources, or enough
-   deterministic data to keep without review bypass the model. Only jobs that
-   still need fit review are sent to the LLM.
+<details>
+<summary>Task-specific model config</summary>
 
-   Matching reviewed jobs may get normalized compensation, remote eligibility,
-   and `why_it_matches` details from the model. Reviewed jobs that the LLM marks
-   as non-matches are dropped. If the LLM is unavailable, the original fetched
-   jobs are preserved and a notice is shown.
-
-5. Job identity enrichment
-
-   When a job is missing company identity data, the deterministic enrichment
-   path checks the apply page and related public profile pages. If the
-   `job_identity` LLM task is configured, `jobscout` can ask the LLM to extract
-   the company website, company summary, and industry from supplied page text.
-   Deterministic parsing runs first. The LLM is called only when one of those
-   identity fields is still missing or weak after parsing. Missing compensation
-   alone does not trigger identity LLM work. LLM output still has to pass the
-   same validation as deterministic output.
-
-6. Optional Company Health review
-
-   When LLM assistance is enabled for Company Health, the deterministic health
-   check runs first, then the configured LLM summarizes the evidence into
-   positive signals, concerns, and follow-up questions. If the LLM is
-   unavailable, the deterministic Company Health report is still shown.
-
-7. LLM benchmarks
-
-   `jobscout --bench-llm` runs synthetic, public-safe benchmark cases against
-   the configured provider/model. These calls use the real provider and may
-   incur provider costs. Saved benchmark records are written under
-   `benchmarks/` in the OS-specific user config directory.
-
-   Current repeatable benchmark tasks cover Company Health summaries, job
-   filtering, same-source batch filtering, job identity extraction from supplied
-   page text, and resume-to-criteria extraction. Browser or live-search tasks
-   should only be compared against models that can actually retrieve live data
-   or use the required tools.
-
-## Config Example
+Task-specific model entries are optional. When a task model is missing,
+`jobscout` falls back to the provider's normal model.
 
 ```yaml
 llm:
@@ -105,24 +68,26 @@ llm:
   llm_company_health: true
   providers:
     gemini:
-      model: gemini-2.5-flash-lite
+      model: gemini-3.1-flash-lite
+      max_tokens: 4096
       models:
-        llm_job_search: gemini-2.5-flash-lite
-        llm_company_health: gemini-flash-lite-latest
-        llm_job_filtering: gemini-2.5-flash-lite
-        job_identity: gemini-2.5-flash-lite
-        resume_to_criteria: gemini-2.5-flash-lite
+        llm_job_search: gemini-3.1-flash-lite
+        llm_company_health: gemini-3.1-flash-lite
+        llm_job_filtering: gemini-3.1-flash-lite
+        job_identity: gemini-3.1-flash-lite
+        resume_to_criteria: gemini-3.1-flash-lite
       auth:
         mode: env
         env_var: GEMINI_API_KEY
     openai:
-      model: gpt-4.1
+      model: gpt-4o-mini
+      max_tokens: 4096
       models:
-        llm_job_search: gpt-4.1
-        llm_company_health: gpt-4o-2024-11-20
-        llm_job_filtering: gpt-4.1
-        job_identity: gpt-4.1
-        resume_to_criteria: gpt-5.3-chat-latest
+        llm_job_search: gpt-4o-mini
+        llm_company_health: gpt-4o-mini
+        llm_job_filtering: gpt-5.4-mini
+        job_identity: gpt-4o-mini
+        resume_to_criteria: gpt-4o-mini
       auth:
         mode: env
         env_var: OPENAI_API_KEY
@@ -138,20 +103,43 @@ llm:
         none: true
 ```
 
-Task-specific provider model entries are optional. Put them under the provider
-they apply to, for example `llm.providers.gemini.models.llm_job_filtering`. When a task
-model is missing, `jobscout` falls back to that provider's normal model.
-
-Supported task keys currently include:
+Supported task keys:
 
 - `llm_job_search`
 - `llm_job_filtering`
 - `job_identity`
 - `resume_to_criteria`
 - `llm_company_health`
-- `benchmark`
 
-## Implementation Map
+`max_tokens` is an optional provider-level ceiling for generated output. It
+caps every LLM task for that provider without raising lower per-call limits.
+
+</details>
+
+<details>
+<summary>How each LLM feature is used</summary>
+
+- Model discovery runs after a provider and auth method are configured.
+- Resume-assisted setup sends extracted resume text to your configured provider
+  only when you opt in.
+- LLM job search reads `SEARCH_PROMPT.md`, asks the LLM for jobs as JSON,
+  validates the returned jobs, and merges them with regular sources.
+- LLM filtering runs after deterministic fetch filtering and only reviews jobs
+  that still need fit review.
+- Job identity enrichment calls the LLM only when company identity fields are
+  missing or weak after deterministic parsing.
+- Company Health runs deterministic checks first, then asks the LLM to summarize
+  the gathered evidence when enabled.
+- Benchmarks use synthetic, public-safe cases against the real provider and may
+  incur provider costs.
+
+LLM web-search sources are experimental and disabled during normal refreshes.
+Use `--sources llm_web` when intentionally testing that path.
+
+</details>
+
+<details>
+<summary>Developer reference</summary>
 
 - Provider/model/auth setup: `internal/llm/llm_auth.go`,
   `internal/llm/llm_models.go`, and the setup flow in `internal/tuiapp`.
@@ -160,11 +148,10 @@ Supported task keys currently include:
 - LLM job search: `fetcher.FetchAllJobs` when `llm.llm_job_search` is true;
   `internal/tuiapp/fetch_flow.go` wires in `llm.ExecuteLLMSearch`.
 - LLM job filtering: `llm.FilterJobsWithLLM` from
-  `internal/tuiapp/fetch_flow.go`; selection happens before provider
-  initialization so unambiguous jobs bypass model calls.
+  `internal/tuiapp/fetch_flow.go`.
 - LLM job identity enrichment: `llm.EnrichJobIdentityWithLLM`, wired into
   `fetcher.FetchAllJobs` and repair flows.
 - LLM Company Health review: `health.ApplyOptionalLLMCompanyHealth`, which
   calls `llm.EvaluateCompanyHealthWithLLM`.
-- Setup preview and `--fetch-dry-run` reuse the same fetch/filter functions, so
-  LLM behavior is consistent between preview, TUI fetch, and CLI dry runs.
+
+</details>

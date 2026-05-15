@@ -6,6 +6,7 @@ import (
 	"runtime/debug"
 	"strings"
 
+	"github.com/wallentx/jobscout/internal/cliui"
 	"github.com/wallentx/jobscout/internal/config"
 	"github.com/wallentx/jobscout/internal/fetcher"
 	healthpkg "github.com/wallentx/jobscout/internal/health"
@@ -152,30 +153,57 @@ func runDeleteDBCLI(options appruntime.Options) int {
 }
 
 func printHelp() {
-	fmt.Print(`jobscout is a terminal job-search tracker.
+	restoreColor := cliui.ConfigureColor(cliui.ColorEnabledForFile(os.Stdout))
+	defer restoreColor()
+	fmt.Print(renderHelp())
+}
 
-Usage:
+func renderHelp() string {
+	return fmt.Sprintf(`%s is a terminal job-search tracker.
+
+%s:
   jobscout [options]
   jobscout [options] <command> [command options]
 
-Options:
+%s:
   --demo                  Run with in-memory demo data; read/write no user config or database
   -d, --debug             Show additional fetch and Company Health details
-  --sources <list>        Use only selected fetch sources for this run: rss, site, llm, llm_web
+  --sources <list>        Use selected active fetch sources: rss, site, llm, llm_web, all
+  --sources=<list>        Same as --sources <list>
                             llm_web is an opt-in experimental source
   --config <path>         Use an alternate config file
+  --config=<path>         Same as --config <path>
   -h, --help              Show this help
   -v, --version           Show version information
 
-Commands:
+%s:
   --fetch-dry-run [--json]       Fetch jobs without saving them
   --export-json [path|-]         Export saved jobs as JSON
   --import, -i                   Import jobs from stdin or editor JSON
   --delete-db                    Delete the SQLite database and exit
   --repair-job-identity          Repair missing company identity data
-  --bench-llm                   Run LLM benchmark cases
-  --bench-report                Summarize saved LLM benchmark results
+  --bench-llm [options]          Run LLM benchmark cases
+    --list                       List embedded benchmark cases and exit
+    --task <task|case>           Run only a benchmark task or case ID
+    --task=<task|case>           Same as --task <task|case>
+    --provider <name>            Override the configured LLM provider
+    --provider=<name>            Same as --provider <name>
+    --model <name>               Override the configured model
+    --model=<name>               Same as --model <name>
+    --all-models                 Run all discoverable provider models
+    --json                       Print run records as JSON after saving them
+    tasks: llm_job_search, llm_job_filtering, llm_company_health, job_identity, resume_to_criteria
+  --bench-report [options]       Summarize saved LLM benchmark results
+    --latest                     Only report the newest benchmark file
+    --format <text|md|json>      Select report output format
+    --format=<text|md|json>      Same as --format <text|md|json>
+    --json                       Print saved benchmark records as JSON
 
 Runtime files default to your operating system's user config directory. Use jobscout --demo to try the app without touching them.
-`)
+`,
+		cliui.Style("jobscout", cliui.Cyan, cliui.Bold),
+		cliui.Style("Usage", cliui.Cyan, cliui.Bold),
+		cliui.Style("Options", cliui.Cyan, cliui.Bold),
+		cliui.Style("Commands", cliui.Cyan, cliui.Bold),
+	)
 }

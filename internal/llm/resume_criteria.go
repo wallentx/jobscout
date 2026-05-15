@@ -43,7 +43,7 @@ func evaluateResumeCriteriaWithLLMUsage(ctx context.Context, llm llms.Model, res
 	}
 
 	logDebug("resume criteria: generation start resume_chars=%d prompt_chars=%d", len(resumeText), len(prompt))
-	resp, err := llm.GenerateContent(ctx, messages, llms.WithTemperature(0.1), llms.WithMaxTokens(4096))
+	resp, err := llm.GenerateContent(ctx, messages, llmJSONCallOptions(0.1, 4096)...)
 	if err != nil {
 		logDebug("resume criteria: generation failed error=%v", err)
 		return nil, LLMTokenUsage{}, fmt.Errorf("LLM generation failed: %v", err)

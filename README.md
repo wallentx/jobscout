@@ -1,61 +1,55 @@
 # jobscout
 
-<img width="1520" height="2260" alt="1000035900" src="https://github.com/user-attachments/assets/b9e95064-b348-4293-8537-fd948b29d96c" />
+![jobscout terminal UI](docs/assets/jobscout-demo.gif)
 
-`jobscout` is a terminal job-search tracker. It can run from RSS feeds, site-search targets, and built-in source catalogs without any LLM provider, and it can optionally use an LLM to expand or refine results.
+`jobscout` is a terminal job-search tracker. It finds jobs from configured
+sources, stores them locally, and helps review company fit from the terminal.
 
-## Install
+It works without an LLM provider. Optional LLM features can help with search,
+filtering, resume-assisted setup, and company summaries.
 
-Requires Go 1.26.1 or newer.
+## Quick Start
+
+Install with Go 1.26.1 or newer:
 
 ```sh
 go install github.com/wallentx/jobscout/cmd/jobscout@latest
 ```
 
-From a checkout, you can also build or install with the Makefile:
+Run the app:
+
+```sh
+jobscout
+```
+
+Try it without touching your normal config or database:
+
+```sh
+jobscout --demo
+```
+
+See [Demo Mode](docs/DEMO_MODE.md) for what the demo includes.
+
+<details>
+<summary>Build from a checkout</summary>
 
 ```sh
 make build
 make install
 ```
 
+For contributor checks, see [Contributing](CONTRIBUTING.md).
+
+</details>
+
 ## Privacy
 
-`jobscout` does not collect your information, run analytics, or send your data to the app author. Runtime data stays on your machine under the OS-specific user config directory unless you explicitly configure an LLM feature that sends the relevant prompt content to your selected provider.
+`jobscout` does not collect your information, run analytics, or send your data
+to the app author. Runtime data stays on your machine unless you enable an LLM
+feature that sends the relevant prompt content to your selected provider.
 
-On TUI startup, `jobscout` makes one unauthenticated request to GitHub releases
-to check whether a newer version is available. The check is silent when it
-fails or when the current build version cannot be compared. Set
-`JOBSCOUT_DISABLE_UPDATE_CHECK=1` to disable it.
-
-## Deterministic Mode
-
-The app can fully function with, or without LLM enhancements. When fetching jobs, it uses configured sources such as RSS feeds, site-search targets, and built-in source catalogs. Company Health also uses deterministic source checks such as SEC, Wikipedia/Wikidata, Google News RSS, Hacker News, and stock-history signals.
-
-Runtime files are created under the OS-specific user config directory by
-default. Choose "No, use non-LLM sources only" during setup, or disable LLM
-behavior in `config.yaml`:
-
-```yaml
-llm:
-  enabled: false
-  llm_job_filtering: false
-  llm_job_search: false
-  llm_company_health: false
-```
-
-## Optional LLM Enhancements
-
-LLM usage is optional. When enabled, `jobscout` can use an LLM for model
-discovery, resume-assisted setup, LLM job search, LLM job filtering, identity
-enrichment, and Company Health review. Hosted providers should use environment
-variables or commands for tokens; the setup flow does not store literal provider
-tokens in config.
-
-See [LLM features](docs/LLM_FEATURES.md) for provider setup, task-specific
-models, and the current LLM integration map.
-
-## Runtime Files
+<details>
+<summary>Runtime files and update checks</summary>
 
 By default, `jobscout` writes runtime files under the OS-specific user config
 directory:
@@ -70,20 +64,51 @@ Common locations are:
 - Linux and most Unix systems: `$XDG_CONFIG_HOME/jobscout/` or `~/.config/jobscout/`
 - Windows: `%AppData%\jobscout\`
 
-Personal config, prompts, databases, exports, and caches are ignored so normal
-app usage does not dirty the checkout.
+On TUI startup, `jobscout` makes one unauthenticated request to GitHub releases
+to check whether a newer version is available. The check is silent when it
+fails or when the current build version cannot be compared. Set
+`JOBSCOUT_DISABLE_UPDATE_CHECK=1` to disable it.
 
-## Demo Mode
+</details>
 
-Run `jobscout --demo` to explore the app without reading or writing your normal
-config, prompt, database, jobs, or health cache.
+## LLM Features
 
-See [Demo mode](docs/DEMO_MODE.md) for the in-memory profile and LLM behavior.
+LLM features are optional. During setup, choose non-LLM mode if you want all job
+fetching and filtering to stay deterministic.
 
-## CLI Helpers
+When enabled, LLM features can assist with:
 
-Most of these are only useful during development.
+- resume-assisted setup
+- LLM job search
+- LLM job filtering
+- company identity enrichment
+- company health summaries
+- model benchmarks
+
+Hosted provider tokens should be supplied through environment variables or
+commands. The setup flow does not store literal provider tokens in config.
+
+See [LLM Features](docs/LLM_FEATURES.md) for provider setup and model options.
+See [Benchmark Reports](docs/BENCHMARKS.md) when choosing a model.
+
+## Common Commands
+
 ```sh
+jobscout                       # open the TUI
+jobscout --demo                # try the app with in-memory demo data
+jobscout --fetch-dry-run       # fetch without saving
+jobscout --export-json jobs.json
+jobscout --import < jobs.json
+jobscout --help
+jobscout --version
+```
+
+<details>
+<summary>Full command-line help</summary>
+
+```sh
+jobscout is a terminal job-search tracker.
+
 Usage:
   jobscout [options]
   jobscout [options] <command> [command options]
@@ -91,9 +116,11 @@ Usage:
 Options:
   --demo                  Run with in-memory demo data; read/write no user config or database
   -d, --debug             Show additional fetch and Company Health details
-  --sources <list>        Use only selected fetch sources for this run: rss, site, llm, llm_web
+  --sources <list>        Use selected active fetch sources: rss, site, llm, llm_web, all
+  --sources=<list>        Same as --sources <list>
                             llm_web is an opt-in experimental source
   --config <path>         Use an alternate config file
+  --config=<path>         Same as --config <path>
   -h, --help              Show this help
   -v, --version           Show version information
 
@@ -103,17 +130,32 @@ Commands:
   --import, -i                   Import jobs from stdin or editor JSON
   --delete-db                    Delete the SQLite database and exit
   --repair-job-identity          Repair missing company identity data
-  --bench-llm                   Run LLM benchmark cases
-  --bench-report                Summarize saved LLM benchmark results
+  --bench-llm [options]          Run LLM benchmark cases
+    --list                       List embedded benchmark cases and exit
+    --task <task|case>           Run only a benchmark task or case ID
+    --task=<task|case>           Same as --task <task|case>
+    --provider <name>            Override the configured LLM provider
+    --provider=<name>            Same as --provider <name>
+    --model <name>               Override the configured model
+    --model=<name>               Same as --model <name>
+    --all-models                 Run all discoverable provider models
+    --json                       Print run records as JSON after saving them
+    tasks: llm_job_search, llm_job_filtering, llm_company_health, job_identity, resume_to_criteria
+  --bench-report [options]       Summarize saved LLM benchmark results
+    --latest                     Only report the newest benchmark file
+    --format <text|md|json>      Select report output format
+    --format=<text|md|json>      Same as --format <text|md|json>
+    --json                       Print saved benchmark records as JSON
+
+Runtime files default to your operating system's user config directory. Use jobscout --demo to try the app without touching them.
 ```
 
-## Development
+</details>
 
-Use the Makefile as the local release gate:
+## More Documentation
 
-```sh
-make all
-```
-
-See [Contributing](CONTRIBUTING.md) for development commands and
-[Release](docs/RELEASE.md) for versioned build notes.
+- [Architecture and Design](docs/README.md)
+- [LLM Features](docs/LLM_FEATURES.md)
+- [Benchmark Reports](docs/BENCHMARKS.md)
+- [Demo Mode](docs/DEMO_MODE.md)
+- [Contributing](CONTRIBUTING.md)

@@ -31,6 +31,32 @@ func TestParseLLMJobsJSONExtractsArrayFromText(t *testing.T) {
 	}
 }
 
+func TestParseLLMJobsJSONAcceptsJobsObject(t *testing.T) {
+	got, err := parseLLMJobsJSON(`{"jobs":[{"company":"Acme","title":"Software Engineer","apply_url":"https://example.com/jobs/1"}],"count":1}`)
+	if err != nil {
+		t.Fatalf("parseLLMJobsJSON(...) error = %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("parseLLMJobsJSON(...) len = %d, want 1", len(got))
+	}
+	if got[0].Company != "Acme" {
+		t.Fatalf("parseLLMJobsJSON(...)[0].Company = %q, want Acme", got[0].Company)
+	}
+}
+
+func TestParseLLMJobsJSONAcceptsSingleJobObject(t *testing.T) {
+	got, err := parseLLMJobsJSON(`{"company":"Acme","title":"Software Engineer","apply_url":"https://example.com/jobs/1"}`)
+	if err != nil {
+		t.Fatalf("parseLLMJobsJSON(...) error = %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("parseLLMJobsJSON(...) len = %d, want 1", len(got))
+	}
+	if got[0].Title != "Software Engineer" {
+		t.Fatalf("parseLLMJobsJSON(...)[0].Title = %q, want Software Engineer", got[0].Title)
+	}
+}
+
 func TestParseLLMJobsJSONEmptyResponse(t *testing.T) {
 	if _, err := parseLLMJobsJSON("   "); err == nil {
 		t.Fatal("parseLLMJobsJSON(empty) error = nil, want error")

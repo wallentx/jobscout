@@ -82,7 +82,8 @@ func initLLM(ctx context.Context, provider string, providerCfg LLMProviderConfig
 		if modelName != "" {
 			opts = append(opts, openai.WithModel(modelName))
 		}
-		return openai.New(opts...)
+		model, err := openai.New(opts...)
+		return capLLMMaxTokens(model, provider, providerCfg), err
 	case "anthropic":
 		if os.Getenv("ANTHROPIC_API_KEY") == "" {
 			return nil, fmt.Errorf("ANTHROPIC_API_KEY environment variable is not set")
@@ -91,7 +92,8 @@ func initLLM(ctx context.Context, provider string, providerCfg LLMProviderConfig
 		if modelName != "" {
 			opts = append(opts, anthropic.WithModel(modelName))
 		}
-		return anthropic.New(opts...)
+		model, err := anthropic.New(opts...)
+		return capLLMMaxTokens(model, provider, providerCfg), err
 	case "gemini", "googleai":
 		apiKey := os.Getenv("GEMINI_API_KEY")
 		if apiKey == "" {
@@ -104,7 +106,8 @@ func initLLM(ctx context.Context, provider string, providerCfg LLMProviderConfig
 		if modelName != "" {
 			opts = append(opts, googleai.WithDefaultModel(modelName))
 		}
-		return googleai.New(ctx, opts...)
+		model, err := googleai.New(ctx, opts...)
+		return capLLMMaxTokens(model, provider, providerCfg), err
 	case "openrouter":
 		apiKey := os.Getenv("OPENROUTER_API_KEY")
 		if apiKey == "" {
@@ -120,7 +123,8 @@ func initLLM(ctx context.Context, provider string, providerCfg LLMProviderConfig
 		if modelName != "" {
 			opts = append(opts, openai.WithModel(modelName))
 		}
-		return openai.New(opts...)
+		model, err := openai.New(opts...)
+		return capLLMMaxTokens(model, provider, providerCfg), err
 	case "ollama":
 		opts := []ollama.Option{}
 		if modelName != "" {
@@ -129,13 +133,19 @@ func initLLM(ctx context.Context, provider string, providerCfg LLMProviderConfig
 		if endpoint := strings.TrimSpace(providerCfg.Endpoint); endpoint != "" {
 			opts = append(opts, ollama.WithServerURL(endpoint))
 		}
-		return ollama.New(opts...)
+		model, err := ollama.New(opts...)
+		return capLLMMaxTokens(model, provider, providerCfg), err
 	default:
 		return nil, fmt.Errorf("unsupported LLM provider: %s. Supported providers: openai, anthropic, gemini, openrouter, ollama", provider)
 	}
 }
 
 func executeLLMSearch(ctx context.Context, llm llms.Model, prompt string) ([]Job, error) {
+	jobs, _, err := executeLLMSearchWithUsage(ctx, llm, prompt)
+	return jobs, err
+}
+
+func executeLLMSearchWithUsage(ctx context.Context, llm llms.Model, prompt string) ([]Job, LLMTokenUsage, error) {
 	// We append a JSON requirement so the Go app can parse the result,
 	// but we do absolutely no "prompt engineering" on how or where it searches.
 	fullPrompt := prompt + "\n\nCRITICAL SYSTEM INSTRUCTION: You must return your response ONLY as a valid JSON array of objects. Each object must include these string keys: \"company\", \"title\", \"remote\", \"compensation\", \"apply_url\", and \"description\". When available, include \"company_website\" for the actual company's website, not the job board or application URL, \"company_summary\" for a brief factual company summary, and \"company_industry\" for the company's industry. For any list of reasons it matches, put them in a string array under the key \"why_matches\". Do NOT wrap the JSON in markdown blocks, return ONLY the raw JSON array."
@@ -145,26 +155,26 @@ func executeLLMSearch(ctx context.Context, llm llms.Model, prompt string) ([]Job
 	}
 
 	logDebug("llm job search: generation start prompt_chars=%d", len(fullPrompt))
-	resp, err := llm.GenerateContent(ctx, messages, llms.WithTemperature(0.7), llms.WithMaxTokens(8192))
+	resp, err := llm.GenerateContent(ctx, messages, llmJSONCallOptions(0.7, 8192)...)
 	if err != nil {
 		logDebug("llm job search: generation failed: %v", err)
-		return nil, fmt.Errorf("LLM generation failed: %v", err)
+		return nil, LLMTokenUsage{}, fmt.Errorf("LLM generation failed: %v", err)
 	}
 	usage := ExtractTokenUsageFromContentResponse(resp)
 	logLLMTokenUsage("llm job search", usage)
 
 	if len(resp.Choices) == 0 {
 		logDebug("llm job search: generation returned no choices")
-		return nil, fmt.Errorf("LLM returned no choices")
+		return nil, usage, fmt.Errorf("LLM returned no choices")
 	}
 
 	jobs, err := parseLLMJobsJSON(resp.Choices[0].Content)
 	if err != nil {
 		logDebug("llm job search: parse failed response_chars=%d error=%v", len(resp.Choices[0].Content), err)
-		return nil, err
+		return nil, usage, err
 	}
 	logDebug("llm job search: parsed jobs=%d response_chars=%d", len(jobs), len(resp.Choices[0].Content))
-	return jobs, nil
+	return jobs, usage, nil
 }
 
 func ExecuteLLMSearch(ctx context.Context, llm llms.Model, prompt string) ([]Job, error) {
@@ -262,7 +272,7 @@ func enrichJobIdentityWithLLMUsage(ctx context.Context, llm llms.Model, job Job,
 	}
 
 	logDebug("llm job identity: generation start company=%q title=%q page_url=%q page_chars=%d prompt_chars=%d", job.Company, job.Title, page.URL, len(page.Text), len(prompt))
-	resp, err := llm.GenerateContent(ctx, messages, llms.WithTemperature(0.1), llms.WithMaxTokens(2048))
+	resp, err := llm.GenerateContent(ctx, messages, llmJSONCallOptions(0.1, 2048)...)
 	if err != nil {
 		logDebug("llm job identity: generation failed company=%q title=%q error=%v", job.Company, job.Title, err)
 		return nil, LLMTokenUsage{}, fmt.Errorf("LLM generation failed: %v", err)
@@ -490,7 +500,7 @@ func evaluateCompanyHealthWithLLM(ctx context.Context, llm llms.Model, result *C
 		promptStats.RejectedEvidenceIncluded,
 		promptStats.RejectedEvidenceOmitted,
 	)
-	resp, err := llm.GenerateContent(ctx, messages, llms.WithTemperature(0.1), llms.WithMaxTokens(2048))
+	resp, err := llm.GenerateContent(ctx, messages, llmJSONCallOptions(0.1, 2048)...)
 	if err != nil {
 		logDebug("llm company health: generation failed company=%q error=%v", company, err)
 		return nil, fmt.Errorf("LLM generation failed: %v", err)
@@ -631,7 +641,7 @@ func evaluateJobWithLLM(ctx context.Context, llm llms.Model, job Job, criteria *
 	}
 
 	logDebug("job evaluation: generation start company=%q title=%q prompt_chars=%d", job.Company, job.Title, len(prompt))
-	resp, err := llm.GenerateContent(ctx, messages, llms.WithTemperature(0.1), llms.WithMaxTokens(8192))
+	resp, err := llm.GenerateContent(ctx, messages, llmJSONCallOptions(0.1, 8192)...)
 	if err != nil {
 		logDebug("job evaluation: generation failed company=%q title=%q error=%v", job.Company, job.Title, err)
 		return nil, fmt.Errorf("LLM generation failed: %v", err)

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -42,7 +43,7 @@ func TestSaveAppConfigUsesPrivatePermissions(t *testing.T) {
 	cfg := defaultAppConfig()
 	cfg.LLM.Provider = "openai"
 	cfg.LLM.Providers["openai"] = LLMProviderConfig{
-		Model: "gpt-5.3-chat-latest",
+		Model: "gpt-5.3-chat",
 		Auth: LLMAuthConfig{
 			Mode:  llmAuthModeLiteral,
 			Value: "secret-token",
@@ -68,6 +69,93 @@ func TestSaveAppConfigUsesPrivatePermissions(t *testing.T) {
 	}
 	if strings.Contains(string(data), "mode: literal") {
 		t.Fatalf("saved config contains literal auth mode")
+	}
+}
+
+func TestModelOptionsForProviderIncludesCurrentOpenAITextModels(t *testing.T) {
+	options := ModelOptionsForProvider("openai")
+	for _, model := range []string{"gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-5-mini", "gpt-5-nano", "gpt-5.3-chat", "gpt-5.2-chat", "gpt-4o", "gpt-4o-mini", "o3"} {
+		if !slices.Contains(options, model) {
+			t.Fatalf("ModelOptionsForProvider(openai) missing %q in %#v", model, options)
+		}
+	}
+	for _, model := range []string{"gpt-5.5-pro", "gpt-5.4-pro", "gpt-5.2-pro", "gpt-5-pro", "gpt-4o-2024-11-20", "gpt-4.1-nano-2025-04-14", "gpt-4.1-nano", "gpt-4.5-preview", "gpt-4-turbo", "gpt-3.5-turbo", "chat-latest", "gpt-5.1-chat", "gpt-5-chat-latest", "o1", "o3-mini", "o4-mini"} {
+		if slices.Contains(options, model) {
+			t.Fatalf("ModelOptionsForProvider(openai) included blocked model %q in %#v", model, options)
+		}
+	}
+
+	options[0] = "mutated"
+	if got := ModelOptionsForProvider("openai")[0]; got == "mutated" {
+		t.Fatalf("ModelOptionsForProvider(openai) returned mutable shared backing array")
+	}
+}
+
+func TestGeminiModelDefaultsFollowDeprecationGuidance(t *testing.T) {
+	cfg := defaultAppConfig()
+	gemini := cfg.LLM.Providers["gemini"]
+
+	if gemini.Model != "gemini-3.1-flash-lite" {
+		t.Fatalf("default Gemini model = %q, want gemini-3.1-flash-lite", gemini.Model)
+	}
+	if got := DefaultModelForProvider("gemini"); got != "gemini-3.1-flash-lite" {
+		t.Fatalf("DefaultModelForProvider(gemini) = %q, want gemini-3.1-flash-lite", got)
+	}
+
+	for task, got := range gemini.Models {
+		if got != "gemini-3.1-flash-lite" {
+			t.Fatalf("Gemini Models[%q] = %q, want gemini-3.1-flash-lite", task, got)
+		}
+	}
+
+	options := ModelOptionsForProvider("gemini")
+	for _, model := range []string{"gemini-3.1-flash-lite", "gemini-3.1-pro-preview", "gemini-3-flash-preview"} {
+		if !slices.Contains(options, model) {
+			t.Fatalf("ModelOptionsForProvider(gemini) missing %q in %#v", model, options)
+		}
+	}
+	for _, model := range []string{"gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-3.1-flash-lite-preview", "gemini-3-pro-preview", "gemini-flash-lite-latest", "gemini-pro-latest"} {
+		if slices.Contains(options, model) {
+			t.Fatalf("ModelOptionsForProvider(gemini) included deprecated model %q in %#v", model, options)
+		}
+	}
+}
+
+func TestOpenAIModelDefaultsUseBenchmarkRecommendations(t *testing.T) {
+	cfg := defaultAppConfig()
+	openAI := cfg.LLM.Providers["openai"]
+
+	if openAI.Model != "gpt-4o-mini" {
+		t.Fatalf("default OpenAI model = %q, want gpt-4o-mini", openAI.Model)
+	}
+	if got := DefaultModelForProvider("openai"); got != "gpt-4o-mini" {
+		t.Fatalf("DefaultModelForProvider(openai) = %q, want gpt-4o-mini", got)
+	}
+
+	wantTaskModels := map[string]string{
+		llmTaskJobSearch:      "gpt-4o-mini",
+		llmTaskCompanyHealth:  "gpt-4o-mini",
+		llmTaskFiltering:      "gpt-5.4-mini",
+		llmTaskJobIdentity:    "gpt-4o-mini",
+		llmTaskResumeCriteria: "gpt-4o-mini",
+	}
+	for task, want := range wantTaskModels {
+		if got := openAI.Models[task]; got != want {
+			t.Fatalf("OpenAI Models[%q] = %q, want %q", task, got, want)
+		}
+	}
+}
+
+func TestOpenAIModelOptionsPrioritizeBenchmarkRecommendations(t *testing.T) {
+	options := ModelOptionsForProvider("openai")
+	wantPrefix := []string{"gpt-4o-mini", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-4.1-mini", "gpt-4o"}
+	if len(options) < len(wantPrefix) {
+		t.Fatalf("ModelOptionsForProvider(openai) len = %d, want at least %d", len(options), len(wantPrefix))
+	}
+	for i, want := range wantPrefix {
+		if options[i] != want {
+			t.Fatalf("ModelOptionsForProvider(openai)[%d] = %q in %#v, want %q", i, options[i], options, want)
+		}
 	}
 }
 

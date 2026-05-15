@@ -56,7 +56,7 @@ func ProviderOptions() []string {
 func modelOptionsForProvider(provider string) []string {
 	switch strings.ToLower(provider) {
 	case "openai":
-		return []string{"gpt-4.1", "gpt-4o-2024-11-20", "gpt-5.3-chat-latest", "gpt-5-chat-latest", "gpt-4.1-nano-2025-04-14", "gpt-4.1-mini", "gpt-5.4-mini"}
+		return []string{"gpt-4o-mini", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-4.1-mini", "gpt-4o", "gpt-4.1", "gpt-5.3-chat", "gpt-5.2-chat", "gpt-5.2", "gpt-5.1", "o3", "gpt-5.4", "gpt-5.5", "gpt-5-mini", "gpt-5", "gpt-5-nano"}
 	case "anthropic":
 		return []string{"claude-opus-4-1-20250805", "claude-sonnet-4-20250514", "claude-3-7-sonnet-latest", "claude-3-5-haiku-latest"}
 	case "openrouter":
@@ -64,8 +64,12 @@ func modelOptionsForProvider(provider string) []string {
 	case "ollama":
 		return []string{"llama3", "mistral", "qwen2.5"}
 	default:
-		return []string{"gemini-2.5-flash-lite", "gemini-flash-lite-latest", "gemini-3.1-flash-lite-preview", "gemini-2.5-flash", "gemini-pro-latest", "gemini-3-pro-preview", "gemini-3-flash-preview"}
+		return []string{"gemini-3.1-flash-lite", "gemini-3.1-pro-preview", "gemini-3.1-pro-preview-customtools", "gemini-3-flash-preview"}
 	}
+}
+
+func ModelOptionsForProvider(provider string) []string {
+	return append([]string(nil), modelOptionsForProvider(provider)...)
 }
 
 func defaultModelForProvider(provider string) string {

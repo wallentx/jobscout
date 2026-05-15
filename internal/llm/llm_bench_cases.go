@@ -35,6 +35,7 @@ func loadLLMBenchmarkCases() ([]llmBenchmarkCase, error) {
 		if err := validateLLMBenchmarkCase(benchCase); err != nil {
 			return nil, fmt.Errorf("validate %s: %w", entry.Name(), err)
 		}
+		benchCase.Task = normalizeBenchmarkTaskName(benchCase.Task)
 		cases = append(cases, benchCase)
 	}
 
@@ -68,10 +69,11 @@ func filterBenchmarkCases(cases []llmBenchmarkCase, task string) []llmBenchmarkC
 	if task == "" || task == "all" {
 		return cases
 	}
+	normalizedTask := normalizeBenchmarkTaskName(task)
 
 	var filtered []llmBenchmarkCase
 	for _, benchCase := range cases {
-		if strings.EqualFold(benchCase.Task, task) || strings.EqualFold(benchCase.ID, task) {
+		if strings.EqualFold(normalizeBenchmarkTaskName(benchCase.Task), normalizedTask) || strings.EqualFold(benchCase.ID, task) {
 			filtered = append(filtered, benchCase)
 		}
 	}
