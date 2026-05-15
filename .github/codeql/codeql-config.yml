@@ -1,0 +1,14 @@
+name: jobscout-codeql
+
+queries:
+  - uses: security-extended
+  - uses: security-and-quality
+
+paths:
+  - cmd
+  - internal
+
+paths-ignore:
+  - .tools
+  - dist
+  - docs
