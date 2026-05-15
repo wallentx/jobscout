@@ -31,6 +31,11 @@ dependencies:
   - head-branch:
       - '^dependabot/'
 
+exclude-notes:
+  - changed-files:
+      - any-glob-to-all-files:
+          - '.github/**'
+
 github-actions:
   - changed-files:
       - any-glob-to-any-file:
