@@ -229,6 +229,16 @@ release: ## Build a versioned release archive for RELEASE_GOOS/RELEASE_GOARCH
 		fi; \
 		printf 'OK: release archive: %s\n' "$$archive"
 
+.PHONY: c4-diagram
+c4-diagram: ## Regenerate the docs C4 component diagram
+	@printf '%s\n' '==> C4 diagram update'
+	@scripts/update-c4-diagram.sh
+
+.PHONY: c4-diagram-check
+c4-diagram-check: ## Check that the docs C4 component diagram is current
+	@printf '%s\n' '==> C4 diagram check'
+	@scripts/update-c4-diagram.sh --check
+
 .PHONY: tools
 tools: $(GOIMPORTS) $(STATICCHECK) $(GOLANGCI_LINT) $(ERRCHECK) $(GOSEC) $(GOVULNCHECK) ## Install local toolchain helpers
 

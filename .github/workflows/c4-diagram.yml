@@ -1,0 +1,71 @@
+name: C4 Diagram
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: c4-diagram-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  update:
+    name: update C4 diagram
+    if: github.repository == 'wallentx/jobscout'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      APP_CLIENT_ID: ${{ vars.APP_CLIENT_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Actions Toolbox
+        uses: wallentx/gh-actions/composite/actions-toolbox@main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          checkout: false
+
+      - name: Create bot token
+        id: bot-token
+        if: env.APP_CLIENT_ID != '' && env.APP_PRIVATE_KEY != ''
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ env.APP_CLIENT_ID }}
+          private-key: ${{ env.APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+
+      - name: Regenerate C4 diagram
+        run: make c4-diagram
+
+      - name: Create C4 diagram update PR
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ steps.bot-token.outputs.token || github.token }}
+          commit-message: "docs: update c4 diagram"
+          title: Update C4 architecture diagram
+          body: |
+            Regenerates the C4 component diagram after changes merged to `main`.
+
+            This PR is generated automatically when `make c4-diagram` changes the checked-in docs.
+          branch: automation/update-c4-diagram
+          delete-branch: true
+          labels: |
+            changed
+            component:docs
+            documentation
