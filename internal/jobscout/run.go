@@ -153,6 +153,8 @@ func runDeleteDBCLI(options appruntime.Options) int {
 }
 
 func printHelp() {
+	restoreColor := cliui.ConfigureColor(cliui.ColorEnabledForFile(os.Stdout))
+	defer restoreColor()
 	fmt.Print(renderHelp())
 }
 

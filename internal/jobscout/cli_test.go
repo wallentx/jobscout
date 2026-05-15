@@ -96,8 +96,15 @@ func TestPrintHelpDocumentsCommandLineOptions(t *testing.T) {
 	if strings.Contains(help, "--migrate") {
 		t.Fatalf("printHelp() includes stale --migrate text:\n%s", help)
 	}
+	if strings.Contains(help, "\x1b[") {
+		t.Fatalf("printHelp() should omit ANSI color styling when stdout is not a terminal:\n%s", help)
+	}
+}
+
+func TestRenderHelpIncludesANSIColorStyling(t *testing.T) {
+	help := renderHelp()
 	if !strings.Contains(help, "\x1b[") {
-		t.Fatalf("printHelp() should include ANSI color styling:\n%s", help)
+		t.Fatalf("renderHelp() should include ANSI color styling when colors are enabled:\n%s", help)
 	}
 }
 

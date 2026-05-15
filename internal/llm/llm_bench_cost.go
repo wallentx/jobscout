@@ -8,6 +8,10 @@ type benchmarkModelPricing struct {
 	OutputPerMillion      float64
 }
 
+// benchmarkOpenAIPricing estimates report costs from token counts when the
+// provider response does not include a cost. Values are USD per 1M tokens from
+// OpenAI API pricing, last reviewed 2026-05-15:
+// https://platform.openai.com/docs/pricing
 var benchmarkOpenAIPricing = map[string]benchmarkModelPricing{
 	"chat-latest":   {InputPerMillion: 5.00, CachedInputPerMillion: 0.50, OutputPerMillion: 30.00},
 	"gpt-3.5-turbo": {InputPerMillion: 0.50, CachedInputPerMillion: 0.50, OutputPerMillion: 1.50},

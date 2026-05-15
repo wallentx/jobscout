@@ -96,7 +96,10 @@ one run for a task or its average successful score for that task falls below
 75.0. These advisories do not change the raw scores.
 
 For OpenAI records, `jobscout` estimates USD cost from token usage with a
-built-in pricing table. Other providers may show `avgUSD` as `n/a` unless the
-provider reports cost data or `jobscout` has a pricing table for that provider.
+built-in pricing table sourced from OpenAI API pricing and last reviewed on
+2026-05-15. Other providers may show `avgUSD` as `n/a` unless the provider
+reports cost data or `jobscout` has a pricing table for that provider. Treat
+estimated costs as report guidance and verify current provider pricing before
+making cost-sensitive decisions.
 
 </details>
