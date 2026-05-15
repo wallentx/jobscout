@@ -39,5 +39,4 @@ Normal app usage writes under the OS-specific user config directory by default.
 Test fixtures live beside the packages that need them, such as
 `internal/config/testdata/criteria-sample.yaml`.
 
-See [Release](docs/RELEASE.md) for release preparation and
-[Benchmark Reports](docs/BENCHMARKS.md) for benchmark output guidance.
+See [Benchmark Reports](docs/BENCHMARKS.md) for benchmark output guidance.
