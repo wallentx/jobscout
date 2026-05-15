@@ -27,7 +27,7 @@ if ! grep -Fxq "$end" "$target"; then
 	exit 1
 fi
 
-tmpdir=$(mktemp -d "${TMPDIR:-.}/jobscout-c4.XXXXXX")
+tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/jobscout-c4.XXXXXX")
 trap 'rm -rf "$tmpdir"' EXIT
 
 block=$tmpdir/c4.md

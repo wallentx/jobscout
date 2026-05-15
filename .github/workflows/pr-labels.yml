@@ -95,15 +95,3 @@ jobs:
             changed
             fixed
             dependencies
-          exit_type: success
-
-      - name: Release label present
-        if: steps.check-labels.outputs.status == 'success'
-        run: echo "Release label check passed"
-
-      - name: Release label missing or ambiguous
-        if: steps.check-labels.outputs.status == 'failure'
-        run: |
-          echo "Exactly one release note label is required: added, changed, fixed, dependencies"
-          echo "Use cleanup or exclude-notes in addition when a changed PR should be omitted from generated release notes."
-          exit 1

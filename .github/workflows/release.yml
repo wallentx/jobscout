@@ -114,6 +114,11 @@ jobs:
             exit 1
           fi
 
+          if ! printf '%s\n' "$release_tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'; then
+            echo "Release tag must look like vX.Y.Z, optionally with SemVer prerelease/build metadata: $release_tag" >&2
+            exit 1
+          fi
+
           {
             printf 'release_tag=%s\n' "$release_tag"
             printf 'checkout_ref=%s\n' "$checkout_ref"
