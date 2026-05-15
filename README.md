@@ -154,6 +154,7 @@ Runtime files default to your operating system's user config directory. Use jobs
 
 ## More Documentation
 
+- [Architecture and Design](docs/README.md)
 - [LLM Features](docs/LLM_FEATURES.md)
 - [Benchmark Reports](docs/BENCHMARKS.md)
 - [Demo Mode](docs/DEMO_MODE.md)
