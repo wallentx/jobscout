@@ -9,7 +9,6 @@ For task-specific details, see:
 - [LLM Features](LLM_FEATURES.md)
 - [Benchmark Reports](BENCHMARKS.md)
 - [Demo Mode](DEMO_MODE.md)
-- [Release](RELEASE.md)
 
 ## Design Goals
 
