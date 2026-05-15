@@ -35,28 +35,34 @@ GOSEC_PKG := github.com/securego/gosec/v2/cmd/gosec@v2.24.6
 GOVULNCHECK_PKG := golang.org/x/vuln/cmd/govulncheck@v1.3.0
 
 .PHONY: all
-all: fix check ## Apply mechanical fixes, then run the standard local release gate
+all: ensure-hooks ## Apply mechanical fixes, then run the standard local release gate
+	@$(MAKE) --no-print-directory fix
+	@$(MAKE) --no-print-directory check
+	@scripts/git-hooks/stamp-checks.sh all
 
 .PHONY: check
-check: verify-modules format-check tidy-check lint test race build ## Run the standard local release gate
+check: ensure-hooks verify-modules format-check tidy-check lint test race build ## Run the standard local release gate
+	@scripts/git-hooks/stamp-checks.sh check
 
 .PHONY: full-check
-full-check: check security ## Run the standard gate plus security scanners
+full-check: ensure-hooks check security ## Run the standard gate plus security scanners
+	@scripts/git-hooks/stamp-checks.sh full-check
 
 .PHONY: security
-security: gosec govulncheck ## Run heavier security scanners
+security: ensure-hooks gosec govulncheck ## Run heavier security scanners
 
 .PHONY: fix
-fix: format tidy-fix ## Apply mechanical formatting/import/module fixes
+fix: ensure-hooks format tidy-fix ## Apply mechanical formatting/import/module fixes
+	@scripts/git-hooks/stamp-checks.sh fix
 
 .PHONY: qa
-qa: format-check tidy-check lint ## Run strict quality checks without tests or build
+qa: ensure-hooks format-check tidy-check lint ## Run strict quality checks without tests or build
 
 .PHONY: qa-simple
-qa-simple: format test ## Run basic quality checks with auto-formatting
+qa-simple: ensure-hooks format test ## Run basic quality checks with auto-formatting
 
 .PHONY: qa-relaxed
-qa-relaxed: ## Run quality checks and report failures without stopping
+qa-relaxed: ensure-hooks ## Run quality checks and report failures without stopping
 	@printf '%s\n' 'Running relaxed quality checks...'
 	@$(MAKE) format || printf '%s\n' 'WARN: formatting failed'
 	@$(MAKE) tidy-fix || printf '%s\n' 'WARN: go mod tidy failed'
@@ -65,23 +71,23 @@ qa-relaxed: ## Run quality checks and report failures without stopping
 	@printf '%s\n' 'Relaxed quality checks completed'
 
 .PHONY: lint
-lint: vet staticcheck golangci-lint errcheck ## Run static analysis checks
+lint: ensure-hooks vet staticcheck golangci-lint errcheck ## Run static analysis checks
 
 .PHONY: format
-format: fmt-fix imports-fix ## Format code with gofmt and goimports
+format: ensure-hooks fmt-fix imports-fix ## Format code with gofmt and goimports
 
 .PHONY: format-check
-format-check: fmt-check imports-check ## Check formatting with gofmt and goimports
+format-check: ensure-hooks fmt-check imports-check ## Check formatting with gofmt and goimports
 
 .PHONY: verify-modules
-verify-modules: ## Download and verify modules
+verify-modules: ensure-hooks ## Download and verify modules
 	@printf '%s\n' '==> Module verification'
 	@$(GO) mod download
 	@$(GO) mod verify
 	@printf '%s\n' 'OK: go mod verified'
 
 .PHONY: fmt-check
-fmt-check: ## Check gofmt formatting
+fmt-check: ensure-hooks ## Check gofmt formatting
 	@printf '%s\n' '==> gofmt check'
 	@if [ -n "$(GOFILES)" ]; then \
 		issues="$$(gofmt -l -s $(GOFILES))"; \
@@ -94,13 +100,13 @@ fmt-check: ## Check gofmt formatting
 	@printf '%s\n' 'OK: gofmt clean'
 
 .PHONY: fmt-fix
-fmt-fix: ## Apply gofmt formatting
+fmt-fix: ensure-hooks ## Apply gofmt formatting
 	@printf '%s\n' '==> gofmt fix'
 	@if [ -n "$(GOFILES)" ]; then gofmt -w -s $(GOFILES); fi
 	@printf '%s\n' 'OK: gofmt applied'
 
 .PHONY: imports-check
-imports-check: $(GOIMPORTS) ## Check goimports formatting
+imports-check: ensure-hooks $(GOIMPORTS) ## Check goimports formatting
 	@printf '%s\n' '==> goimports check'
 	@if [ -n "$(GOFILES)" ]; then \
 		issues="$$($(GOIMPORTS) -l $(GOFILES))"; \
@@ -113,13 +119,13 @@ imports-check: $(GOIMPORTS) ## Check goimports formatting
 	@printf '%s\n' 'OK: goimports clean'
 
 .PHONY: imports-fix
-imports-fix: $(GOIMPORTS) ## Apply goimports formatting
+imports-fix: ensure-hooks $(GOIMPORTS) ## Apply goimports formatting
 	@printf '%s\n' '==> goimports fix'
 	@if [ -n "$(GOFILES)" ]; then $(GOIMPORTS) -w $(GOFILES); fi
 	@printf '%s\n' 'OK: goimports applied'
 
 .PHONY: tidy-check
-tidy-check: ## Check go.mod/go.sum tidiness
+tidy-check: ensure-hooks ## Check go.mod/go.sum tidiness
 	@printf '%s\n' '==> go mod tidy check'
 	@tmpdir="$$(mktemp -d "$${TMPDIR:-.}/jobscout-build.XXXXXX")"; \
 		trap 'rm -rf "$$tmpdir"' EXIT; \
@@ -134,55 +140,55 @@ tidy-check: ## Check go.mod/go.sum tidiness
 	@printf '%s\n' 'OK: go mod tidy clean'
 
 .PHONY: tidy-fix
-tidy-fix: ## Apply go mod tidy
+tidy-fix: ensure-hooks ## Apply go mod tidy
 	@printf '%s\n' '==> go mod tidy fix'
 	@$(GO) mod tidy
 	@printf '%s\n' 'OK: go mod tidy applied'
 
 .PHONY: vet
-vet: ## Run go vet
+vet: ensure-hooks ## Run go vet
 	@printf '%s\n' '==> go vet'
 	@$(GO) vet $(PKGS)
 	@printf '%s\n' 'OK: go vet passed'
 
 .PHONY: staticcheck
-staticcheck: $(STATICCHECK) ## Run staticcheck
+staticcheck: ensure-hooks $(STATICCHECK) ## Run staticcheck
 	@printf '%s\n' '==> staticcheck'
 	@$(STATICCHECK) $(PKGS)
 	@printf '%s\n' 'OK: staticcheck passed'
 
 .PHONY: golangci-lint
-golangci-lint: $(GOLANGCI_LINT) ## Run golangci-lint
+golangci-lint: ensure-hooks $(GOLANGCI_LINT) ## Run golangci-lint
 	@printf '%s\n' '==> golangci-lint'
 	@$(GOLANGCI_LINT) run
 	@printf '%s\n' 'OK: golangci-lint passed'
 
 .PHONY: errcheck
-errcheck: $(ERRCHECK) ## Run errcheck
+errcheck: ensure-hooks $(ERRCHECK) ## Run errcheck
 	@printf '%s\n' '==> errcheck'
 	@$(ERRCHECK) $(PKGS)
 	@printf '%s\n' 'OK: errcheck passed'
 
 .PHONY: gosec
-gosec: $(GOSEC) ## Run gosec
+gosec: ensure-hooks $(GOSEC) ## Run gosec
 	@printf '%s\n' '==> gosec'
 	@$(GOSEC) -exclude-dir=.dump -exclude-dir=.tools ./...
 	@printf '%s\n' 'OK: gosec passed'
 
 .PHONY: govulncheck
-govulncheck: $(GOVULNCHECK) ## Run govulncheck
+govulncheck: ensure-hooks $(GOVULNCHECK) ## Run govulncheck
 	@printf '%s\n' '==> govulncheck'
 	@$(GOVULNCHECK) -test ./...
 	@printf '%s\n' 'OK: govulncheck passed'
 
 .PHONY: test
-test: ## Run tests
+test: ensure-hooks ## Run tests
 	@printf '%s\n' '==> go test'
 	@$(GO) test -timeout $(TIMEOUT) $(PKGS)
 	@printf '%s\n' 'OK: tests passed'
 
 .PHONY: race
-race: ## Run race detector where supported
+race: ensure-hooks ## Run race detector where supported
 	@printf '%s\n' '==> go test -race'
 	@if [ "$$($(GO) env GOOS)" = "android" ]; then \
 		printf 'Skipping race detector: unsupported on %s/%s\n' "$$($(GO) env GOOS)" "$$($(GO) env GOARCH)"; \
@@ -192,20 +198,20 @@ race: ## Run race detector where supported
 	fi
 
 .PHONY: build
-build: ## Build the jobscout binary
+build: ensure-hooks ## Build the jobscout binary
 	@printf '%s\n' '==> go build'
 	@$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o "$(BIN)" "$(CMD_PATH)"
 	@printf 'OK: Build successful: %s\n' "$(BIN)"
 	@printf '\nRun: %s\n' "$(BIN)"
 
 .PHONY: install
-install: ## Install jobscout into GOBIN or GOPATH/bin
+install: ensure-hooks ## Install jobscout into GOBIN or GOPATH/bin
 	@printf '%s\n' '==> go install'
 	@$(GO) install -trimpath -ldflags "$(LDFLAGS)" "$(CMD_PATH)"
 	@printf '%s\n' 'OK: jobscout installed'
 
 .PHONY: release
-release: ## Build a versioned release archive for RELEASE_GOOS/RELEASE_GOARCH
+release: ensure-hooks ## Build a versioned release archive for RELEASE_GOOS/RELEASE_GOARCH
 	@printf '==> release %s %s/%s\n' "$(VERSION)" "$(RELEASE_GOOS)" "$(RELEASE_GOARCH)"
 	@set -eu; \
 		base="jobscout_$(VERSION)_$(RELEASE_GOOS)_$(RELEASE_GOARCH)"; \
@@ -230,17 +236,17 @@ release: ## Build a versioned release archive for RELEASE_GOOS/RELEASE_GOARCH
 		printf 'OK: release archive: %s\n' "$$archive"
 
 .PHONY: c4-diagram
-c4-diagram: ## Regenerate the docs C4 component diagram
+c4-diagram: ensure-hooks ## Regenerate the docs C4 component diagram
 	@printf '%s\n' '==> C4 diagram update'
 	@scripts/update-c4-diagram.sh
 
 .PHONY: c4-diagram-check
-c4-diagram-check: ## Check that the docs C4 component diagram is current
+c4-diagram-check: ensure-hooks ## Check that the docs C4 component diagram is current
 	@printf '%s\n' '==> C4 diagram check'
 	@scripts/update-c4-diagram.sh --check
 
 .PHONY: tools
-tools: $(GOIMPORTS) $(STATICCHECK) $(GOLANGCI_LINT) $(ERRCHECK) $(GOSEC) $(GOVULNCHECK) ## Install local toolchain helpers
+tools: ensure-hooks $(GOIMPORTS) $(STATICCHECK) $(GOLANGCI_LINT) $(ERRCHECK) $(GOSEC) $(GOVULNCHECK) ## Install local toolchain helpers
 
 $(TOOLS_BIN):
 	@mkdir -p "$@"
@@ -268,6 +274,10 @@ $(TOOLS_BIN)/gosec: | $(TOOLS_BIN)
 $(TOOLS_BIN)/govulncheck: | $(TOOLS_BIN)
 	@printf '%s\n' '==> installing govulncheck'
 	@env GOBIN="$(TOOLS_BIN)" $(GO) install $(GOVULNCHECK_PKG)
+
+.PHONY: ensure-hooks
+ensure-hooks:
+	@scripts/git-hooks/install-pre-commit.sh
 
 .PHONY: clean
 clean: ## Remove local build artifacts
