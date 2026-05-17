@@ -175,11 +175,33 @@ jobs:
               --jq '.labels[].name'
           )"
 
-          for label in added changed fixed dependencies; do
+          release_labels="added changed fixed dependencies"
+          has_new_label=false
+          has_other_release_label=false
+
+          for label in $release_labels; do
             if printf '%s\n' "$existing" | grep -Fxq "$label"; then
+              if [ "$label" = "$NEW_LABEL" ]; then
+                has_new_label=true
+              else
+                has_other_release_label=true
+              fi
+            fi
+          done
+
+          if [ "$has_new_label" = true ] && [ "$has_other_release_label" = false ]; then
+            echo "Release label already set to $NEW_LABEL"
+            exit 0
+          fi
+
+          for label in $release_labels; do
+            if [ "$label" != "$NEW_LABEL" ] && printf '%s\n' "$existing" | grep -Fxq "$label"; then
               gh pr edit "$GH_PR" --repo "$GITHUB_REPOSITORY" --remove-label "$label"
             fi
           done
 
-          gh pr edit "$GH_PR" --repo "$GITHUB_REPOSITORY" --add-label "$NEW_LABEL"
+          if [ "$has_new_label" = false ]; then
+            gh pr edit "$GH_PR" --repo "$GITHUB_REPOSITORY" --add-label "$NEW_LABEL"
+          fi
+
           echo "Applied label: $NEW_LABEL"
