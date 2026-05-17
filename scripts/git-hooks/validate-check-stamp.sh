@@ -10,14 +10,14 @@ fi
 cd "$repo_root"
 
 mode="${1:-staged}"
-stamp_file=".jobscout/checks.env"
+stamp_file=".checks"
 
 if [ ! -f "$stamp_file" ]; then
 	exit 1
 fi
 
 # shellcheck disable=SC1090
-. "$stamp_file"
+. "./$stamp_file"
 
 if [ -z "${HEAD_SHA:-}" ] || [ -z "${CHECKED_TREE:-}" ]; then
 	exit 1

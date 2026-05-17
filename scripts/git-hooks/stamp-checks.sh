@@ -9,14 +9,12 @@ fi
 
 cd "$repo_root"
 
-stamp_dir=".jobscout"
-stamp_file="$stamp_dir/checks.env"
+stamp_file=".checks"
 head_sha="$(git rev-parse HEAD)"
 checked_tree="$(scripts/git-hooks/worktree-tree.sh)"
 source_target="${1:-manual}"
 updated_at="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 
-mkdir -p "$stamp_dir"
 tmp_file="${stamp_file}.tmp.$$"
 
 cat >"$tmp_file" <<EOF

@@ -15,7 +15,8 @@
 *.zip
 
 # Go workspace, toolchain helpers, and test output
-/.jobscout/
+/.checks
+/.checks.tmp.*
 /.tools/
 /go.work
 /go.work.sum
