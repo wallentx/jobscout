@@ -90,7 +90,7 @@ jobs:
       - name: Actions Toolbox
         uses: wallentx/gh-actions/composite/actions-toolbox@main
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           checkout: false
 
@@ -105,14 +105,13 @@ jobs:
       - name: Classify PR for release label
         id: classify
         env:
-          GH_TOKEN: ${{ github.token }}
-          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHIB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           : "${GH_PR:?Actions Toolbox did not set GH_PR}"
           : "${GH_PR_TITLE:?Actions Toolbox did not set GH_PR_TITLE}"
           : "${GH_PR_URL:?Actions Toolbox did not set GH_PR_URL}"
-          : "${COPILOT_GITHUB_TOKEN:?Missing repository secret COPILOT_GITHUB_TOKEN}"
 
           pr_body="$(printf '%s\n' "${GH_PR_BODY_JSON:-\"\"}" | jq -r '.')"
           pr_files="$(gh pr view "$GH_PR" --repo "$GITHUB_REPOSITORY" --json files --jq '.files[].path')"
