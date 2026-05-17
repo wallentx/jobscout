@@ -34,6 +34,32 @@ ERRCHECK_PKG := github.com/kisielk/errcheck@v1.10.0
 GOSEC_PKG := github.com/securego/gosec/v2/cmd/gosec@v2.24.6
 GOVULNCHECK_PKG := golang.org/x/vuln/cmd/govulncheck@v1.3.0
 
+COLOR ?= auto
+COLOR_ENABLED :=
+ifeq ($(COLOR),always)
+COLOR_ENABLED := 1
+else ifeq ($(COLOR),never)
+COLOR_ENABLED :=
+else ifneq ($(NO_COLOR),)
+COLOR_ENABLED :=
+else ifneq ($(MAKE_TERMOUT),)
+COLOR_ENABLED := 1
+endif
+
+ifeq ($(COLOR_ENABLED),1)
+COLOR_STEP := \033[1;36m
+COLOR_OK := \033[1;32m
+COLOR_WARN := \033[1;33m
+COLOR_FAIL := \033[1;31m
+COLOR_TITLE := \033[1;37m
+COLOR_TARGET := \033[36m
+COLOR_DIM := \033[2m
+COLOR_RESET := \033[0m
+endif
+
+PRINT_STEP = @printf '$(COLOR_STEP)==>$(COLOR_RESET) %s\n' '$(1)'
+PRINT_OK = @printf '$(COLOR_OK)OK:$(COLOR_RESET) %s\n' '$(1)'
+
 .PHONY: all
 all: ensure-hooks ## Apply mechanical fixes, then run the standard local release gate
 	@$(MAKE) --no-print-directory fix
@@ -63,12 +89,12 @@ qa-simple: ensure-hooks format test ## Run basic quality checks with auto-format
 
 .PHONY: qa-relaxed
 qa-relaxed: ensure-hooks ## Run quality checks and report failures without stopping
-	@printf '%s\n' 'Running relaxed quality checks...'
-	@$(MAKE) format || printf '%s\n' 'WARN: formatting failed'
-	@$(MAKE) tidy-fix || printf '%s\n' 'WARN: go mod tidy failed'
-	@$(MAKE) lint || printf '%s\n' 'WARN: lint checks failed'
-	@$(MAKE) test || printf '%s\n' 'WARN: tests failed'
-	@printf '%s\n' 'Relaxed quality checks completed'
+	@printf '$(COLOR_DIM)%s$(COLOR_RESET)\n' 'Running relaxed quality checks...'
+	@$(MAKE) format || printf '$(COLOR_WARN)WARN:$(COLOR_RESET) %s\n' 'formatting failed'
+	@$(MAKE) tidy-fix || printf '$(COLOR_WARN)WARN:$(COLOR_RESET) %s\n' 'go mod tidy failed'
+	@$(MAKE) lint || printf '$(COLOR_WARN)WARN:$(COLOR_RESET) %s\n' 'lint checks failed'
+	@$(MAKE) test || printf '$(COLOR_WARN)WARN:$(COLOR_RESET) %s\n' 'tests failed'
+	@printf '$(COLOR_DIM)%s$(COLOR_RESET)\n' 'Relaxed quality checks completed'
 
 .PHONY: lint
 lint: ensure-hooks vet staticcheck golangci-lint errcheck ## Run static analysis checks
@@ -81,52 +107,52 @@ format-check: ensure-hooks fmt-check imports-check ## Check formatting with gofm
 
 .PHONY: verify-modules
 verify-modules: ensure-hooks ## Download and verify modules
-	@printf '%s\n' '==> Module verification'
+	$(call PRINT_STEP,Module verification)
 	@$(GO) mod download
 	@$(GO) mod verify
-	@printf '%s\n' 'OK: go mod verified'
+	$(call PRINT_OK,go mod verified)
 
 .PHONY: fmt-check
 fmt-check: ensure-hooks ## Check gofmt formatting
-	@printf '%s\n' '==> gofmt check'
+	$(call PRINT_STEP,gofmt check)
 	@if [ -n "$(GOFILES)" ]; then \
 		issues="$$(gofmt -l -s $(GOFILES))"; \
 		if [ -n "$$issues" ]; then \
-			printf '%s\n' 'FAIL: gofmt issues found (run make fmt-fix or make fix)' >&2; \
+			printf '$(COLOR_FAIL)FAIL:$(COLOR_RESET) %s\n' 'gofmt issues found (run make fmt-fix or make fix)' >&2; \
 			printf '%s\n' "$$issues"; \
 			exit 1; \
 		fi; \
 	fi
-	@printf '%s\n' 'OK: gofmt clean'
+	$(call PRINT_OK,gofmt clean)
 
 .PHONY: fmt-fix
 fmt-fix: ensure-hooks ## Apply gofmt formatting
-	@printf '%s\n' '==> gofmt fix'
+	$(call PRINT_STEP,gofmt fix)
 	@if [ -n "$(GOFILES)" ]; then gofmt -w -s $(GOFILES); fi
-	@printf '%s\n' 'OK: gofmt applied'
+	$(call PRINT_OK,gofmt applied)
 
 .PHONY: imports-check
 imports-check: ensure-hooks $(GOIMPORTS) ## Check goimports formatting
-	@printf '%s\n' '==> goimports check'
+	$(call PRINT_STEP,goimports check)
 	@if [ -n "$(GOFILES)" ]; then \
 		issues="$$($(GOIMPORTS) -l $(GOFILES))"; \
 		if [ -n "$$issues" ]; then \
-			printf '%s\n' 'FAIL: goimports issues found (run make imports-fix or make fix)' >&2; \
+			printf '$(COLOR_FAIL)FAIL:$(COLOR_RESET) %s\n' 'goimports issues found (run make imports-fix or make fix)' >&2; \
 			printf '%s\n' "$$issues"; \
 			exit 1; \
 		fi; \
 	fi
-	@printf '%s\n' 'OK: goimports clean'
+	$(call PRINT_OK,goimports clean)
 
 .PHONY: imports-fix
 imports-fix: ensure-hooks $(GOIMPORTS) ## Apply goimports formatting
-	@printf '%s\n' '==> goimports fix'
+	$(call PRINT_STEP,goimports fix)
 	@if [ -n "$(GOFILES)" ]; then $(GOIMPORTS) -w $(GOFILES); fi
-	@printf '%s\n' 'OK: goimports applied'
+	$(call PRINT_OK,goimports applied)
 
 .PHONY: tidy-check
 tidy-check: ensure-hooks ## Check go.mod/go.sum tidiness
-	@printf '%s\n' '==> go mod tidy check'
+	$(call PRINT_STEP,go mod tidy check)
 	@tmpdir="$$(mktemp -d "$${TMPDIR:-.}/jobscout-build.XXXXXX")"; \
 		trap 'rm -rf "$$tmpdir"' EXIT; \
 		cp go.mod "$$tmpdir/go.mod"; \
@@ -134,85 +160,85 @@ tidy-check: ensure-hooks ## Check go.mod/go.sum tidiness
 		$(GO) mod tidy; \
 		if ! diff -q "$$tmpdir/go.mod" go.mod >/dev/null 2>&1 || \
 			{ [ -f "$$tmpdir/go.sum" ] && ! diff -q "$$tmpdir/go.sum" go.sum >/dev/null 2>&1; }; then \
-			printf '%s\n' 'FAIL: go.mod/go.sum not tidy (run make tidy-fix or make fix)' >&2; \
+			printf '$(COLOR_FAIL)FAIL:$(COLOR_RESET) %s\n' 'go.mod/go.sum not tidy (run make tidy-fix or make fix)' >&2; \
 			exit 1; \
 		fi
-	@printf '%s\n' 'OK: go mod tidy clean'
+	$(call PRINT_OK,go mod tidy clean)
 
 .PHONY: tidy-fix
 tidy-fix: ensure-hooks ## Apply go mod tidy
-	@printf '%s\n' '==> go mod tidy fix'
+	$(call PRINT_STEP,go mod tidy fix)
 	@$(GO) mod tidy
-	@printf '%s\n' 'OK: go mod tidy applied'
+	$(call PRINT_OK,go mod tidy applied)
 
 .PHONY: vet
 vet: ensure-hooks ## Run go vet
-	@printf '%s\n' '==> go vet'
+	$(call PRINT_STEP,go vet)
 	@$(GO) vet $(PKGS)
-	@printf '%s\n' 'OK: go vet passed'
+	$(call PRINT_OK,go vet passed)
 
 .PHONY: staticcheck
 staticcheck: ensure-hooks $(STATICCHECK) ## Run staticcheck
-	@printf '%s\n' '==> staticcheck'
+	$(call PRINT_STEP,staticcheck)
 	@$(STATICCHECK) $(PKGS)
-	@printf '%s\n' 'OK: staticcheck passed'
+	$(call PRINT_OK,staticcheck passed)
 
 .PHONY: golangci-lint
 golangci-lint: ensure-hooks $(GOLANGCI_LINT) ## Run golangci-lint
-	@printf '%s\n' '==> golangci-lint'
+	$(call PRINT_STEP,golangci-lint)
 	@$(GOLANGCI_LINT) run
-	@printf '%s\n' 'OK: golangci-lint passed'
+	$(call PRINT_OK,golangci-lint passed)
 
 .PHONY: errcheck
 errcheck: ensure-hooks $(ERRCHECK) ## Run errcheck
-	@printf '%s\n' '==> errcheck'
+	$(call PRINT_STEP,errcheck)
 	@$(ERRCHECK) $(PKGS)
-	@printf '%s\n' 'OK: errcheck passed'
+	$(call PRINT_OK,errcheck passed)
 
 .PHONY: gosec
 gosec: ensure-hooks $(GOSEC) ## Run gosec
-	@printf '%s\n' '==> gosec'
+	$(call PRINT_STEP,gosec)
 	@$(GOSEC) -exclude-dir=.dump -exclude-dir=.tools ./...
-	@printf '%s\n' 'OK: gosec passed'
+	$(call PRINT_OK,gosec passed)
 
 .PHONY: govulncheck
 govulncheck: ensure-hooks $(GOVULNCHECK) ## Run govulncheck
-	@printf '%s\n' '==> govulncheck'
+	$(call PRINT_STEP,govulncheck)
 	@$(GOVULNCHECK) -test ./...
-	@printf '%s\n' 'OK: govulncheck passed'
+	$(call PRINT_OK,govulncheck passed)
 
 .PHONY: test
 test: ensure-hooks ## Run tests
-	@printf '%s\n' '==> go test'
+	$(call PRINT_STEP,go test)
 	@$(GO) test -timeout $(TIMEOUT) $(PKGS)
-	@printf '%s\n' 'OK: tests passed'
+	$(call PRINT_OK,tests passed)
 
 .PHONY: race
 race: ensure-hooks ## Run race detector where supported
-	@printf '%s\n' '==> go test -race'
+	$(call PRINT_STEP,go test -race)
 	@if [ "$$($(GO) env GOOS)" = "android" ]; then \
-		printf 'Skipping race detector: unsupported on %s/%s\n' "$$($(GO) env GOOS)" "$$($(GO) env GOARCH)"; \
+		printf '$(COLOR_WARN)Skipping$(COLOR_RESET) race detector: unsupported on %s/%s\n' "$$($(GO) env GOOS)" "$$($(GO) env GOARCH)"; \
 	else \
 		$(GO) test -race -timeout $(TIMEOUT) $(PKGS); \
-		printf '%s\n' 'OK: race detector clean'; \
+		printf '$(COLOR_OK)OK:$(COLOR_RESET) %s\n' 'race detector clean'; \
 	fi
 
 .PHONY: build
 build: ensure-hooks ## Build the jobscout binary
-	@printf '%s\n' '==> go build'
+	$(call PRINT_STEP,go build)
 	@$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o "$(BIN)" "$(CMD_PATH)"
-	@printf 'OK: Build successful: %s\n' "$(BIN)"
-	@printf '\nRun: %s\n' "$(BIN)"
+	@printf '$(COLOR_OK)OK:$(COLOR_RESET) Build successful: %s\n' "$(BIN)"
+	@printf '\n$(COLOR_DIM)Run:$(COLOR_RESET) %s\n' "$(BIN)"
 
 .PHONY: install
 install: ensure-hooks ## Install jobscout into GOBIN or GOPATH/bin
-	@printf '%s\n' '==> go install'
+	$(call PRINT_STEP,go install)
 	@$(GO) install -trimpath -ldflags "$(LDFLAGS)" "$(CMD_PATH)"
-	@printf '%s\n' 'OK: jobscout installed'
+	$(call PRINT_OK,jobscout installed)
 
 .PHONY: release
 release: ensure-hooks ## Build a versioned release archive for RELEASE_GOOS/RELEASE_GOARCH
-	@printf '==> release %s %s/%s\n' "$(VERSION)" "$(RELEASE_GOOS)" "$(RELEASE_GOARCH)"
+	@printf '$(COLOR_STEP)==>$(COLOR_RESET) release %s %s/%s\n' "$(VERSION)" "$(RELEASE_GOOS)" "$(RELEASE_GOARCH)"
 	@set -eu; \
 		base="jobscout_$(VERSION)_$(RELEASE_GOOS)_$(RELEASE_GOARCH)"; \
 		outdir="$(DIST_DIR)/$$base"; \
@@ -224,7 +250,7 @@ release: ensure-hooks ## Build a versioned release archive for RELEASE_GOOS/RELE
 		cp README.md LICENSE "$$outdir/"; \
 		if [ "$(RELEASE_GOOS)" = "windows" ]; then \
 			if ! command -v zip >/dev/null 2>&1; then \
-				printf '%s\n' 'FAIL: zip is required for Windows release archives' >&2; \
+				printf '$(COLOR_FAIL)FAIL:$(COLOR_RESET) %s\n' 'zip is required for Windows release archives' >&2; \
 				exit 1; \
 			fi; \
 			archive="$(DIST_DIR)/$$base.zip"; \
@@ -233,16 +259,16 @@ release: ensure-hooks ## Build a versioned release archive for RELEASE_GOOS/RELE
 			archive="$(DIST_DIR)/$$base.tar.gz"; \
 			tar -C "$(DIST_DIR)" -czf "$$archive" "$$base"; \
 		fi; \
-		printf 'OK: release archive: %s\n' "$$archive"
+		printf '$(COLOR_OK)OK:$(COLOR_RESET) release archive: %s\n' "$$archive"
 
 .PHONY: c4-diagram
 c4-diagram: ensure-hooks ## Regenerate the docs C4 component diagram
-	@printf '%s\n' '==> C4 diagram update'
+	$(call PRINT_STEP,C4 diagram update)
 	@scripts/update-c4-diagram.sh
 
 .PHONY: c4-diagram-check
 c4-diagram-check: ensure-hooks ## Check that the docs C4 component diagram is current
-	@printf '%s\n' '==> C4 diagram check'
+	$(call PRINT_STEP,C4 diagram check)
 	@scripts/update-c4-diagram.sh --check
 
 .PHONY: tools
@@ -252,27 +278,27 @@ $(TOOLS_BIN):
 	@mkdir -p "$@"
 
 $(TOOLS_BIN)/goimports: | $(TOOLS_BIN)
-	@printf '%s\n' '==> installing goimports'
+	$(call PRINT_STEP,installing goimports)
 	@env GOBIN="$(TOOLS_BIN)" $(GO) install $(GOIMPORTS_PKG)
 
 $(TOOLS_BIN)/staticcheck: | $(TOOLS_BIN)
-	@printf '%s\n' '==> installing staticcheck'
+	$(call PRINT_STEP,installing staticcheck)
 	@env GOBIN="$(TOOLS_BIN)" $(GO) install $(STATICCHECK_PKG)
 
 $(TOOLS_BIN)/golangci-lint: | $(TOOLS_BIN)
-	@printf '%s\n' '==> installing golangci-lint'
+	$(call PRINT_STEP,installing golangci-lint)
 	@env GOBIN="$(TOOLS_BIN)" $(GO) install $(GOLANGCI_LINT_PKG)
 
 $(TOOLS_BIN)/errcheck: | $(TOOLS_BIN)
-	@printf '%s\n' '==> installing errcheck'
+	$(call PRINT_STEP,installing errcheck)
 	@env GOBIN="$(TOOLS_BIN)" $(GO) install $(ERRCHECK_PKG)
 
 $(TOOLS_BIN)/gosec: | $(TOOLS_BIN)
-	@printf '%s\n' '==> installing gosec'
+	$(call PRINT_STEP,installing gosec)
 	@env GOBIN="$(TOOLS_BIN)" $(GO) install $(GOSEC_PKG)
 
 $(TOOLS_BIN)/govulncheck: | $(TOOLS_BIN)
-	@printf '%s\n' '==> installing govulncheck'
+	$(call PRINT_STEP,installing govulncheck)
 	@env GOBIN="$(TOOLS_BIN)" $(GO) install $(GOVULNCHECK_PKG)
 
 .PHONY: ensure-hooks
@@ -281,12 +307,12 @@ ensure-hooks:
 
 .PHONY: clean
 clean: ## Remove local build artifacts
-	@printf '%s\n' '==> clean'
+	$(call PRINT_STEP,clean)
 	@rm -rf "$(TOOLS_BIN)" "$(BIN)" "$(DIST_DIR)"
-	@printf '%s\n' 'OK: clean complete'
+	$(call PRINT_OK,clean complete)
 
 .PHONY: help
 help: ## Show Makefile targets
-	@printf '%s\n' 'JobScout Development Commands'
-	@printf '%s\n' '=============================='
-	@awk 'BEGIN {FS = ":.*## "}; /^[A-Za-z0-9_.-]+:.*## / {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST) | sort
+	@printf '$(COLOR_TITLE)%s$(COLOR_RESET)\n' 'JobScout Development Commands'
+	@printf '$(COLOR_DIM)%s$(COLOR_RESET)\n' '=============================='
+	@awk -v c='$(COLOR_TARGET)' -v r='$(COLOR_RESET)' 'BEGIN {FS = ":.*## "}; /^[A-Za-z0-9_.-]+:.*## / {printf "%s%-20s%s %s\n", c, $$1, r, $$2}' $(MAKEFILE_LIST) | sort

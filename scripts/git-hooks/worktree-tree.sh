@@ -18,5 +18,5 @@ if [ -f "$git_index" ]; then
 	cp "$git_index" "$tmp_index"
 fi
 
-GIT_INDEX_FILE="$tmp_index" git add -A -- .
+GIT_INDEX_FILE="$tmp_index" git add -u -- .
 GIT_INDEX_FILE="$tmp_index" git write-tree
