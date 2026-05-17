@@ -131,7 +131,6 @@ jobs:
             } | copilot \
               -s \
               --no-color \
-              --no-banner \
               --no-auto-update \
               --no-ask-user \
               --deny-tool=shell \
