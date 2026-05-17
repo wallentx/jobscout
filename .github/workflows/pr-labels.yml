@@ -72,26 +72,114 @@ jobs:
           configuration-path: .github/labeler.yml
           pr-number: ${{ github.event_name == 'workflow_dispatch' && steps.pr-numbers.outputs.value || github.event.pull_request.number }}
 
-  required-release-label:
-    name: require release label
+  classify-release-label:
+    name: classify release label
     needs: labeler
     if: github.repository == 'wallentx/jobscout' && github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
-      checks: write
-      pull-requests: read
-      statuses: write
+      contents: read
+      pull-requests: write
+      issues: write
 
     steps:
-      - id: check-labels
-        name: Check release note labels
-        uses: mheap/github-action-required-labels@v5
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Actions Toolbox
+        uses: wallentx/gh-actions/composite/actions-toolbox@main
+        env:
+          GH_TOKEN: ${{ github.token }}
         with:
-          mode: exactly
-          count: 1
-          labels: |
-            added
-            changed
-            fixed
-            dependencies
+          checkout: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Copilot CLI
+        run: npm install -g @github/copilot
+
+      - name: Classify PR for release label
+        id: classify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          : "${GH_PR:?Actions Toolbox did not set GH_PR}"
+          : "${GH_PR_TITLE:?Actions Toolbox did not set GH_PR_TITLE}"
+          : "${GH_PR_URL:?Actions Toolbox did not set GH_PR_URL}"
+          : "${COPILOT_GITHUB_TOKEN:?Missing repository secret COPILOT_GITHUB_TOKEN}"
+
+          pr_body="$(printf '%s\n' "${GH_PR_BODY_JSON:-\"\"}" | jq -r '.')"
+          pr_files="$(gh pr view "$GH_PR" --repo "$GITHUB_REPOSITORY" --json files --jq '.files[].path')"
+
+          raw_label="$(
+            {
+              echo "Classify this pull request and return only the release-note label."
+              printf '\nPR CONTEXT:\n'
+              echo "PR TITLE:"
+              printf '%s\n' "$GH_PR_TITLE" | sed -n '1,80p'
+              printf '\nPR BODY:\n'
+              printf '%s\n' "$pr_body" | sed -n '1,240p'
+              printf '\nCHANGED FILES:\n'
+              printf '%s\n' "$pr_files" | sed -n '1,300p'
+              printf '\nDIFF:\n'
+              curl -fsSL "${GH_PR_URL}.diff" | sed -n '1,1500p'
+            } | copilot \
+              -s \
+              --no-color \
+              --no-banner \
+              --no-auto-update \
+              --no-ask-user \
+              --deny-tool=shell \
+              --deny-tool=write \
+              --deny-tool=read \
+              --deny-tool=url \
+              --deny-tool=memory \
+            | tr -d '\r' \
+            | awk 'NF { print; exit }'
+          )"
+
+          label="$(
+            printf '%s' "$raw_label" \
+              | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' \
+              | tr '[:upper:]' '[:lower:]'
+          )"
+
+          case "$label" in
+            added|changed|fixed|dependencies)
+              ;;
+            *)
+              echo "Copilot returned invalid label: ${raw_label:-<empty>}" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "label=$label" >> "$GITHUB_OUTPUT"
+
+      - name: Replace release-note labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEW_LABEL: ${{ steps.classify.outputs.label }}
+        run: |
+          set -euo pipefail
+
+          : "${GH_PR:?Actions Toolbox did not set GH_PR}"
+
+          existing="$(
+            gh pr view "$GH_PR" --repo "$GITHUB_REPOSITORY" --json labels \
+              --jq '.labels[].name'
+          )"
+
+          for label in added changed fixed dependencies; do
+            if printf '%s\n' "$existing" | grep -Fxq "$label"; then
+              gh pr edit "$GH_PR" --repo "$GITHUB_REPOSITORY" --remove-label "$label"
+            fi
+          done
+
+          gh pr edit "$GH_PR" --repo "$GITHUB_REPOSITORY" --add-label "$NEW_LABEL"
+          echo "Applied label: $NEW_LABEL"
