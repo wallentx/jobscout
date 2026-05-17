@@ -48,9 +48,9 @@ func (m model) buildDetailOverlaySpec() popupSpec {
 	maxDetailLines := popupMaxViewportLinesWithChrome(m.termHeight, 6, 8)
 	details := m.currentDetailText(innerW)
 	viewport := renderScrollablePopupText(details, innerW, maxDetailLines, m.overlay.detail.scrollOffset, nil)
-	footerText := "↑/↓: Prev/Next • u: Update • o: Open URL • Esc: Return"
+	footerText := "↑/↓: Prev/Next • u: Update • o: Open URL • Enter/Esc: Return"
 	if viewport.maxOffset > 0 {
-		footerText = "↑/↓: Prev/Next • u: Update • o: Open URL • j/k/PgUp/PgDn: Scroll • Esc: Return"
+		footerText = "↑/↓: Prev/Next • u: Update • o: Open URL • j/k/PgUp/PgDn: Scroll • Enter/Esc: Return"
 	}
 	return popupSpec{
 		width:  dialogWidth,
