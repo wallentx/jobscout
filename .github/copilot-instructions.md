@@ -58,9 +58,16 @@ Notes:
 - Risks, follow-ups, or intentionally deferred work
 ```
 
-Keep bullets concrete and easy to read. Mention changed commands, workflows,
-config files, user-visible behavior, and test results. Do not restate every file
-that changed unless the file list itself is important.
+Keep PR bodies terse:
+
+- Do not write an introductory paragraph.
+- Use at most three `Summary` bullets.
+- Prefer outcomes over implementation narration. Say `Uses the app token output for C4 diagram PR creation`, not every intermediate variable or step rename.
+- Do not create extra category headings like `Workflow improvements` or `Actionlint configuration` unless the PR genuinely has separate large areas of work.
+- Do not restate every file that changed unless the file list itself is important.
+- Do not mention obvious mechanical edits such as renamed step IDs, removed env blocks, or moved values unless they explain user-visible behavior or risk.
+- Include `Verification` only for commands or checks that were actually run.
+- Keep each bullet to one concise line when possible.
 
 ## High-level architecture (big picture)
 

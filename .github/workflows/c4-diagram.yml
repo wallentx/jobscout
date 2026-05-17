@@ -21,9 +21,6 @@ jobs:
     if: github.repository == 'wallentx/jobscout'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      APP_CLIENT_ID: ${{ vars.APP_CLIENT_ID }}
-      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 
     steps:
       - name: Check out repository
@@ -40,12 +37,11 @@ jobs:
           checkout: false
 
       - name: Create bot token
-        id: bot-token
-        if: env.APP_CLIENT_ID != '' && env.APP_PRIVATE_KEY != ''
+        id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          client-id: ${{ env.APP_CLIENT_ID }}
-          private-key: ${{ env.APP_PRIVATE_KEY }}
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
           permission-contents: write
           permission-issues: write
           permission-pull-requests: write
@@ -55,7 +51,7 @@ jobs:
 
       - name: Create C4 diagram update PR
         env:
-          GH_TOKEN: ${{ steps.bot-token.outputs.token || github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           BRANCH: automation/update-c4-diagram
         run: |
           set -euo pipefail
