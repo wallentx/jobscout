@@ -44,7 +44,7 @@ jobs:
         if: env.APP_CLIENT_ID != '' && env.APP_PRIVATE_KEY != ''
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ env.APP_CLIENT_ID }}
+          client-id: ${{ env.APP_CLIENT_ID }}
           private-key: ${{ env.APP_PRIVATE_KEY }}
           permission-contents: write
           permission-issues: write
@@ -54,17 +54,51 @@ jobs:
         run: make c4-diagram
 
       - name: Create C4 diagram update PR
-        uses: peter-evans/create-pull-request@v8
-        with:
-          token: ${{ steps.bot-token.outputs.token || github.token }}
-          commit-message: "docs: update c4 diagram"
-          title: Update C4 architecture diagram
-          body: |
-            Regenerates the C4 component diagram after changes merged to `main`.
+        env:
+          GH_TOKEN: ${{ steps.bot-token.outputs.token || github.token }}
+          BRANCH: automation/update-c4-diagram
+        run: |
+          set -euo pipefail
 
-            This PR is generated automatically when `make c4-diagram` changes the checked-in docs.
-          branch: automation/update-c4-diagram
-          delete-branch: true
-          labels: |
-            changed
-            documentation
+          if git diff --quiet; then
+            echo "C4 diagram is already current."
+            exit 0
+          fi
+
+          git config user.name "jobscout-bot[bot]"
+          git config user.email "jobscout-bot[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          git switch -c "$BRANCH"
+          git add docs/README.md
+          git commit -m "docs: update c4 diagram"
+          git push --force-with-lease origin "$BRANCH"
+
+          pr_number="$(
+            gh pr list \
+              --repo "$GITHUB_REPOSITORY" \
+              --head "$BRANCH" \
+              --state open \
+              --json number \
+              --jq '.[0].number // empty'
+          )"
+
+          if [ -n "$pr_number" ]; then
+            echo "C4 diagram update PR already exists: #$pr_number"
+          else
+            body="$(cat <<'EOF'
+          Regenerates the C4 component diagram after changes merged to main.
+
+          This PR is generated automatically when `make c4-diagram` changes the checked-in docs.
+          EOF
+          )"
+
+            gh pr create \
+              --repo "$GITHUB_REPOSITORY" \
+              --base main \
+              --head "$BRANCH" \
+              --title "Update C4 architecture diagram" \
+              --body "$body" \
+              --label changed \
+              --label documentation
+          fi
