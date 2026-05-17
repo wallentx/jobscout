@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
-	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -19,13 +17,13 @@ import (
 	"github.com/wallentx/jobscout/internal/storage"
 )
 
-func runImportCLI(stores appruntime.Stores) int {
+func runImportCLI(stores appruntime.Stores, args []string) int {
 	jobs, err := loadJobsOrEmpty(stores)
 	if err != nil {
 		jobs = []domain.Job{}
 	}
 
-	data, err := readImportData()
+	data, err := readImportFile(args)
 	if err != nil {
 		fmt.Printf("%v\n", err)
 		return 1
@@ -43,43 +41,14 @@ func runImportCLI(stores appruntime.Stores) int {
 	return 0
 }
 
-func readImportData() ([]byte, error) {
-	stat, _ := os.Stdin.Stat()
-	if (stat.Mode() & os.ModeCharDevice) == 0 {
-		data, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			return nil, fmt.Errorf("error reading stdin: %v", err)
-		}
-		return data, nil
+func readImportFile(args []string) ([]byte, error) {
+	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
+		return nil, fmt.Errorf("--import requires a JSON file path")
 	}
-
-	file, err := os.CreateTemp("", "jobs_import_*.json")
+	path := args[0]
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("error creating temp file: %v", err)
-	}
-	tmpPath := file.Name()
-	if err := file.Close(); err != nil {
-		return nil, fmt.Errorf("error closing temp file: %v", err)
-	}
-	defer func() {
-		_ = os.Remove(tmpPath)
-	}()
-
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = "nano"
-	}
-	cmd := exec.Command(editor, tmpPath)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("editor failed: %v", err)
-	}
-
-	data, err := os.ReadFile(tmpPath)
-	if err != nil {
-		return nil, fmt.Errorf("error reading temp file: %v", err)
+		return nil, fmt.Errorf("error reading import file %s: %v", path, err)
 	}
 	return data, nil
 }

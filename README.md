@@ -98,7 +98,7 @@ jobscout                       # open the TUI
 jobscout --demo                # try the app with in-memory demo data
 jobscout --fetch-dry-run       # fetch without saving
 jobscout --export-json jobs.json
-jobscout --import < jobs.json
+jobscout --import jobs.json
 jobscout --help
 jobscout --version
 ```
@@ -127,7 +127,7 @@ Options:
 Commands:
   --fetch-dry-run [--json]       Fetch jobs without saving them
   --export-json [path|-]         Export saved jobs as JSON
-  --import, -i                   Import jobs from stdin or editor JSON
+  --import <path>, -i <path>     Import jobs from a JSON file
   --delete-db                    Delete the SQLite database and exit
   --repair-job-identity          Repair missing company identity data
   --bench-llm [options]          Run LLM benchmark cases

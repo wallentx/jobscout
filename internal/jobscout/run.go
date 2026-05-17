@@ -71,7 +71,7 @@ func Run(args []string) int {
 
 	switch options.Command {
 	case appruntime.CommandImportShort, appruntime.CommandImport:
-		return runImportCLI(stores)
+		return runImportCLI(stores, options.CommandArgs)
 	case appruntime.CommandExportJSON:
 		outputPath := ""
 		if len(options.CommandArgs) > 0 {
@@ -179,7 +179,7 @@ func renderHelp() string {
 %s:
   --fetch-dry-run [--json]       Fetch jobs without saving them
   --export-json [path|-]         Export saved jobs as JSON
-  --import, -i                   Import jobs from stdin or editor JSON
+  --import <path>, -i <path>     Import jobs from a JSON file
   --delete-db                    Delete the SQLite database and exit
   --repair-job-identity          Repair missing company identity data
   --bench-llm [options]          Run LLM benchmark cases

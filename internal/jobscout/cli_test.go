@@ -50,9 +50,9 @@ func TestRunImportCLISavesDuplicateImportEnrichment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("json.Marshal() error = %v", err)
 	}
-	withImportStdin(t, imported)
+	importPath := writeImportFile(t, imported)
 
-	code := runImportCLI(appruntime.Stores{Jobs: store})
+	code := runImportCLI(appruntime.Stores{Jobs: store}, []string{importPath})
 	if code != 0 {
 		t.Fatalf("runImportCLI() = %d; want 0", code)
 	}
@@ -64,6 +64,19 @@ func TestRunImportCLISavesDuplicateImportEnrichment(t *testing.T) {
 	}
 	if store.saved[0].Compensation != "$180,000" {
 		t.Fatalf("saved compensation = %q; want imported enrichment", store.saved[0].Compensation)
+	}
+}
+
+func TestRunImportCLIRequiresFilePath(t *testing.T) {
+	store := &recordingJobStore{}
+	withImportStdin(t, []byte(`[{"company":"Acme","title":"Platform Engineer"}]`))
+
+	code := runImportCLI(appruntime.Stores{Jobs: store}, nil)
+	if code != 1 {
+		t.Fatalf("runImportCLI() = %d; want 1", code)
+	}
+	if store.saveCalls != 0 {
+		t.Fatalf("SaveJobs calls = %d; want 0", store.saveCalls)
 	}
 }
 
@@ -88,6 +101,7 @@ func TestPrintHelpDocumentsCommandLineOptions(t *testing.T) {
 		"--format <text|md|json>",
 		"--format=<text|md|json>",
 		"--json",
+		"--import <path>, -i <path>",
 	} {
 		if !strings.Contains(help, want) {
 			t.Fatalf("printHelp() missing %q in:\n%s", want, help)
@@ -152,4 +166,14 @@ func withImportStdin(t *testing.T, data []byte) {
 		os.Stdin = previous
 		_ = reader.Close()
 	})
+}
+
+func writeImportFile(t *testing.T, data []byte) string {
+	t.Helper()
+
+	path := t.TempDir() + "/jobs.json"
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+	return path
 }
