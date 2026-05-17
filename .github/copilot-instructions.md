@@ -47,8 +47,8 @@ Use this shape by default, omitting sections that do not add useful information:
 
 ```md
 Summary:
-- Short outcome-focused change
-- Short outcome-focused change
+- What changed
+- Why it changed
 
 Verification:
 - `make all`
