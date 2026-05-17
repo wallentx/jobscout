@@ -105,7 +105,7 @@ jobs:
       - name: Classify PR for release label
         id: classify
         env:
-          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHIB_TOKEN }}
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
