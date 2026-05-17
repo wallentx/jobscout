@@ -9,6 +9,28 @@ fi
 
 cd "$repo_root"
 
+staged_files="$(git diff --cached --name-only)"
+
+if [ -z "$staged_files" ]; then
+	exit 0
+fi
+
+requires_make_check=false
+while IFS= read -r file; do
+	case "$file" in
+		*.go|go.mod|go.sum)
+			requires_make_check=true
+			break
+			;;
+	esac
+done <<EOF
+$staged_files
+EOF
+
+if [ "$requires_make_check" != "true" ]; then
+	exit 0
+fi
+
 if scripts/git-hooks/validate-check-stamp.sh; then
 	exit 0
 fi

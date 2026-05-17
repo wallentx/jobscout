@@ -83,7 +83,7 @@ The canonical overview is `docs/README.md` (includes a generated C4 component di
 
 ## Key repo conventions (non-obvious)
 
-- **Repo-managed pre-commit hook:** most `make` targets run `scripts/git-hooks/install-pre-commit.sh` to install a managed `pre-commit` hook. The hook enforces `make check` unless a `.checks` stamp matches the current HEAD + tree; `make fix/check/all` write that stamp via `scripts/git-hooks/stamp-checks.sh`.
+- **Repo-managed pre-commit hook:** most `make` targets run `scripts/git-hooks/install-pre-commit.sh` to install a managed `pre-commit` hook. The hook only enforces the `.checks`/`make check` path for staged Go/module changes (`*.go`, `go.mod`, `go.sum`); `make fix/check/all` write that stamp via `scripts/git-hooks/stamp-checks.sh`.
 - **Runtime data stays out of git:** normal app usage writes under the OS user config directory (e.g. `config.yaml`, `SEARCH_PROMPT.md`, `jobscout.db`); `--demo` runs fully in-memory (no user config/db writes).
 - **Do not persist provider tokens:** config save logic intentionally sanitizes auth—if a user enters a literal API key, it is not saved; auth is reset to env-var mode so secrets aren’t written to disk.
 - **Experimental sources are opt-in:** `llm_web` and API sources are kept disabled during normal runs unless explicitly selected (e.g. via `--sources`), even if present in config.
