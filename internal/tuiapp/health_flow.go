@@ -533,7 +533,7 @@ func renderHealthIdentityUnresolvedText(errText string) string {
 	}
 	content.WriteString("Next steps:\n")
 	content.WriteString("Edit the job to add the company website, or run identity repair after fetching richer job data.\n\n")
-	content.WriteString("Press Esc to return.")
+	content.WriteString("Press Enter or Esc to return.")
 	return content.String()
 }
 
@@ -810,7 +810,7 @@ func (m model) buildHealthOverlaySpec() popupSpec {
 		viewport := renderScrollablePopupText(
 			renderLoadingBody(
 				m.overlay.health.loadingText,
-				"Loading company health data...\n\nPress Esc to cancel.",
+				"Loading company health data...\n\nPress Enter or Esc to close.",
 				m.loading.frame,
 				width-6,
 			),
@@ -820,20 +820,20 @@ func (m model) buildHealthOverlaySpec() popupSpec {
 			nil,
 		)
 		body = viewport.content
-		footer = popupHintStyle.Render("Esc: Return")
+		footer = popupHintStyle.Render("Enter/Esc: Return")
 		if viewport.maxOffset > 0 {
-			footer = popupHintStyle.Render("↑/↓/PgUp/PgDn: Scroll • Esc: Return")
+			footer = popupHintStyle.Render("↑/↓/PgUp/PgDn: Scroll • Enter/Esc: Return")
 		}
 	} else if m.overlay.health.err != "" {
-		errBody := fmt.Sprintf("Error loading health data:\n%s\n\nPress Esc to return.", m.overlay.health.err)
+		errBody := fmt.Sprintf("Error loading health data:\n%s\n\nPress Enter or Esc to return.", m.overlay.health.err)
 		if isHealthIdentityUnresolvedText(m.overlay.health.err) {
 			errBody = renderHealthIdentityUnresolvedText(m.overlay.health.err)
 		}
 		viewport := renderScrollablePopupText(errBody, width-6, maxHealthLines, m.overlay.health.scrollOffset, nil)
 		body = viewport.content
-		footer = popupHintStyle.Render("Esc: Return")
+		footer = popupHintStyle.Render("Enter/Esc: Return")
 		if viewport.maxOffset > 0 {
-			footer = popupHintStyle.Render("↑/↓/PgUp/PgDn: Scroll • Esc: Return")
+			footer = popupHintStyle.Render("↑/↓/PgUp/PgDn: Scroll • Enter/Esc: Return")
 		}
 	} else if m.overlay.health.report != nil {
 		targetLineWidth := width - 6
@@ -841,7 +841,7 @@ func (m model) buildHealthOverlaySpec() popupSpec {
 		lines := structuredPopupLines(fullReport, targetLineWidth)
 		viewport := renderPopupViewport(lines, targetLineWidth, maxHealthLines, m.overlay.health.scrollOffset, nil)
 		body = viewport.content
-		footerText := "u: Update • Esc: Return"
+		footerText := "u: Update • Enter/Esc: Return"
 		if viewport.maxOffset > 0 {
 			footerText = "↑/↓/PgUp/PgDn: Scroll • " + footerText
 		}

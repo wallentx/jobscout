@@ -550,6 +550,46 @@ func TestDetailShowsPendingEnrichmentAndRefreshesAfterCompletion(t *testing.T) {
 	}
 }
 
+func TestEnterAndEscapeCloseDetailAndHealthOverlays(t *testing.T) {
+	tests := []struct {
+		name    string
+		overlay overlayState
+	}{
+		{
+			name:    "detail",
+			overlay: overlayState{kind: overlayDetail},
+		},
+		{
+			name: "health",
+			overlay: overlayState{
+				kind: overlayHealth,
+				health: healthOverlayState{
+					report: &CompanyHealthResult{Company: "Acme", Score: 82},
+				},
+			},
+		},
+	}
+
+	keys := []tea.KeyType{tea.KeyEnter, tea.KeyEsc}
+	for _, tt := range tests {
+		for _, key := range keys {
+			t.Run(tt.name+"/"+key.String(), func(t *testing.T) {
+				m := model{
+					allJobs:      []Job{{Company: "Acme", Title: "Backend Engineer"}},
+					filteredJobs: []Job{{Company: "Acme", Title: "Backend Engineer"}},
+					overlay:      tt.overlay,
+				}
+
+				updated, _ := m.Update(tea.KeyMsg{Type: key})
+				got := updated.(model)
+				if got.overlay.kind != overlayNone {
+					t.Fatalf("overlay.kind = %v; want overlayNone", got.overlay.kind)
+				}
+			})
+		}
+	}
+}
+
 func TestBackgroundHealthOverlayCyclesTasksWithLeftRight(t *testing.T) {
 	m := model{
 		termWidth:  100,
