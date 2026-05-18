@@ -368,6 +368,7 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			jobs := jobsNeedingEnrichment(m.allJobs)
 			pendingFields := pendingFieldsForJobs(jobs)
 			if len(jobs) == 0 || len(pendingFields) == 0 {
+				m.showNotice("Update Missing", "No jobs need missing-field updates.", false)
 				return m, nil
 			}
 			m.nextBackgroundTask++

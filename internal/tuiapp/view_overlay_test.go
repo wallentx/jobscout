@@ -912,6 +912,12 @@ func TestMainListBulkUpdateNoopsWhenNoJobsNeedEnrichment(t *testing.T) {
 	if got.backgroundTask.active {
 		t.Fatalf("backgroundTask.active = true with no incomplete jobs; task = %#v", got.backgroundTask)
 	}
+	if got.overlay.kind != overlayNotice {
+		t.Fatalf("overlay.kind = %v; want notice when no jobs need enrichment", got.overlay.kind)
+	}
+	if !strings.Contains(got.overlay.notice.message, "No jobs need missing-field updates") {
+		t.Fatalf("overlay notice = %q; want no-op update message", got.overlay.notice.message)
+	}
 }
 
 func TestBackgroundJobEnrichedMsgKeepsListeningForUpdates(t *testing.T) {

@@ -29,7 +29,10 @@ type postingValidationCompleteMsg struct {
 	err     error
 }
 
-var verifyJobPosting = fetcher.VerifyJobPosting
+var (
+	verifyJobPosting               = fetcher.VerifyJobPosting
+	postingValidationPerJobTimeout = 20 * time.Second
+)
 
 func postingValidationTargets(jobs []Job) []postingValidationTarget {
 	targets := make([]postingValidationTarget, 0, len(jobs))
@@ -61,21 +64,18 @@ func validatePostingsCmd(taskID int, targets []postingValidationTarget, progress
 		if progressCh != nil {
 			defer close(progressCh)
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel()
 
 		results := make([]postingValidationResult, 0, len(targets))
 		for i, target := range targets {
 			reportPostingValidationProgress(progressCh, "Checking active postings %d of %d: %s - %s", i+1, len(targets), target.job.Company, target.job.Title)
+			ctx, cancel := context.WithTimeout(context.Background(), postingValidationPerJobTimeout)
 			active, reason := verifyJobPosting(ctx, target.job)
 			if err := ctx.Err(); err != nil {
-				return postingValidationCompleteMsg{
-					taskID:  taskID,
-					checked: len(results),
-					results: results,
-					err:     err,
-				}
+				active = true
+				reason = ""
+				reportPostingValidationProgress(progressCh, "Skipped posting check after timeout: %s - %s", target.job.Company, target.job.Title)
 			}
+			cancel()
 			results = append(results, postingValidationResult{
 				key:    target.key,
 				active: active,

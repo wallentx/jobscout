@@ -1,8 +1,10 @@
 package tuiapp
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -104,5 +106,39 @@ func TestMainListPostingValidationKeyStartsBackgroundTask(t *testing.T) {
 	}
 	if !strings.Contains(got.backgroundTask.progress, "Checking 2 active postings") {
 		t.Fatalf("backgroundTask.progress = %q, want active posting count", got.backgroundTask.progress)
+	}
+}
+
+func TestPostingValidationTimeoutAppliesPerJob(t *testing.T) {
+	previousVerify := verifyJobPosting
+	previousTimeout := postingValidationPerJobTimeout
+	verifyJobPosting = func(ctx context.Context, _ Job) (bool, string) {
+		<-ctx.Done()
+		return false, ctx.Err().Error()
+	}
+	postingValidationPerJobTimeout = time.Millisecond
+	t.Cleanup(func() {
+		verifyJobPosting = previousVerify
+		postingValidationPerJobTimeout = previousTimeout
+	})
+
+	acme := Job{Company: "Acme", Title: "Engineer", ApplyURL: "https://example.com/one"}
+	beta := Job{Company: "Beta", Title: "Designer", ApplyURL: "https://example.com/two"}
+	targets := []postingValidationTarget{
+		{key: backgroundJobKey(acme), job: acme},
+		{key: backgroundJobKey(beta), job: beta},
+	}
+
+	msg := validatePostingsCmd(9, targets, nil)().(postingValidationCompleteMsg)
+	if msg.err != nil {
+		t.Fatalf("expected per-job timeout not to fail the batch, got %v", msg.err)
+	}
+	if msg.checked != len(targets) || len(msg.results) != len(targets) {
+		t.Fatalf("expected all targets checked, got checked=%d results=%d", msg.checked, len(msg.results))
+	}
+	for _, result := range msg.results {
+		if !result.active {
+			t.Fatalf("expected timed out validation to keep posting active, got inactive reason %q", result.reason)
+		}
 	}
 }
