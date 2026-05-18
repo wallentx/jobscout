@@ -2,83 +2,115 @@
 
 ## Build, test, lint
 
-This repo is Go (`go 1.26.1` per `go.mod`) and is intended to be driven via the `Makefile` targets.
+This repo is Go (`go 1.26.1` per `go.mod`) and should be driven through the `Makefile`.
 
-**Common gates (preferred):**
+Preferred gates:
+- `make all` — run mechanical fixes, then the full local merge gate
+- `make check` — verify modules, formatting checks, `go mod tidy` check, static analysis, tests, race detector (skips on Android), and build
+- `make fix` — apply `gofmt`, `goimports`, and `go mod tidy`
 
-- `make all` — run mechanical fixes then the full local merge gate (this is what CONTRIBUTING asks before opening a PR).
-- `make check` — verify modules, formatting checks, `go mod tidy` check, static analysis, tests, race detector (skips on Android), and build.
-- `make fix` — apply gofmt + goimports + `go mod tidy`.
-
-**Individual targets:**
-
+Other useful targets:
 - `make test` — `go test -timeout 300s ./...`
 - `make lint` — `go vet` + `staticcheck` + `golangci-lint` + `errcheck`
-- `make build` — `go build` (injects version via `-X github.com/wallentx/jobscout/internal/jobscout.version=...`)
+- `make build` — `go build` with version injection via `-X github.com/wallentx/jobscout/internal/jobscout.version=...`
 - `make full-check` — `make check` + `gosec` + `govulncheck`
 
-**Run a single test:**
+Single-test examples:
+- `go test ./internal/updatecheck -run '^TestCheckLatestReleaseDetectsAvailableUpdate$'`
+- `go test ./internal/config -run '^TestDefaultArtifacts$'`
 
-- By package + test name:
-  - `go test ./internal/updatecheck -run '^TestCheckLatestReleaseDetectsAvailableUpdate$'`
-  - `go test ./internal/config -run '^TestDefaultArtifacts$'`
-
-**Tooling note:**
-
-`make` will install repo-managed helper tools into `./.tools/bin` when missing (goimports/staticcheck/golangci-lint/errcheck/gosec/govulncheck). Prefer `make …` over requiring globally-installed linters.
+Tooling:
+- Prefer `make ...` over globally installed tools
+- `make` installs repo-managed helper tools into `./.tools/bin` when missing
 
 ## Pull request titles and bodies
 
 When creating or editing PR titles and bodies, be direct and brief.
 
-For Copilot-generated PR summaries:
-- Default to the shortest useful output.
-- Prefer a terse bullet list over `Summary`/`Verification`/`Notes` sections.
-- Use sentence fragments and nested bullets.
-- Do not include a preamble or concluding sentence.
-- Do not use formal phrases like `This PR`, `This change`, `This update`, or `The purpose of this PR`.
-- Focus on observable behavior changes, meaningful tests, and notable risk.
-- Keep to 3–5 bullets total when possible.
-- Keep each bullet to one line when possible.
+### PR titles
 
-Example:
-- Changes overlay close behavior in the TUI.
-  - Allows `Enter` as well as `Esc` to close job detail overlays
-  - Allows `Enter` as well as `Esc` to close company health overlays
-  - Preserves the health refresh hint as `h/u: Refresh`
-  - Updates overlay footer text and tests for the new close behavior
+- Use one clear sentence fragment in imperative or noun style
+- Prefer a scope when it helps: `ci: classify PR release labels`, `docs: add benchmark sharing notes`, `fix: keep setup inputs editable`
+- Do not use vague titles like `updates`, `misc fixes`, `cleanup`, or `improvements`
 
-**Title:**
+### Copilot-generated PR summaries
 
-- Use one clear sentence fragment in imperative or noun style.
-- Prefer a scope when it helps: `ci: classify PR release labels`,
-  `docs: add benchmark sharing notes`, `fix: keep setup inputs editable`.
-- Do not use vague titles like `updates`, `misc fixes`, `cleanup`, or
-  `improvements`.
+These rules are mandatory unless the user explicitly asks for a different format.
 
-## High-level architecture (big picture)
+- MUST use a terse bullet list only
+- MUST NOT start with a prose paragraph, overview sentence, or preamble
+- MUST NOT use section headings like `Summary`, `Testing`, `Verification`, `Notes`, or similar
+- MUST keep the entire summary to 3–5 bullets total when possible
+- MUST keep each bullet to one line when possible
+- MUST use sentence fragments, not explanatory paragraphs
+- MUST focus only on observable behavior changes, meaningful tests, and notable risk
+- MUST avoid formal phrases like `This PR`, `This pull request`, `This change`, `This update`, or `The purpose of this PR`
+- If the first draft is prose, rewrite it as bullets instead
+- If there is little to say, prefer fewer bullets
 
-The canonical overview is `docs/README.md` (includes a generated C4 component diagram and a package map). At a high level:
+Preferred shape:
+- Short top-level behavior change
+  - Key detail
+  - Key detail
+- Test coverage update
 
-- **Entrypoint:** `cmd/jobscout/main.go` → `internal/jobscout.Run`.
-- **Command dispatch:** `internal/jobscout` handles one-shot commands (e.g. `--fetch-dry-run`, `--export-json`, `--import`, `--bench-*`) and otherwise starts the **Bubble Tea** TUI (`internal/tuiapp`).
-- **Runtime paths & stores:** `internal/runtime` resolves the OS user config directory paths (config, prompt, sqlite db) and opens either **SQLite-backed stores** or **in-memory stores** for `--demo`.
-- **Config/setup:** `internal/config` loads/sanitizes `config.yaml`, criteria, source selection, and LLM provider config (and keeps experimental sources inert unless explicitly selected).
-- **Fetch pipeline:** `internal/fetcher` resolves effective sources (built-in + user configured), fetches from:
-  - RSS feeds
-  - site-search targets (static parsing + a Rod-backed browser probe when needed)
-  - configured APIs (currently `type: remotive`)
-  - optional LLM job search / optional LLM web search
-  Then normalizes jobs into a single shape, applies deterministic filtering/validation/deduping, enriches company identity when possible, and produces a reviewable summary.
-- **LLM integration:** `internal/llm` provides provider auth/model discovery, task-specific LLM runners (search/filtering/identity/company health), and benchmark/report CLIs.
-- **Company Health:** `internal/health` + `internal/domain` compute a deterministic score from evidence sources and (optionally) ask an LLM to summarize evidence; the LLM does not replace the deterministic score.
-- **Storage:** `internal/storage` is SQLite (`modernc.org/sqlite`) with migrations; it stores jobs, health cache, and persistent company identities.
-- **Update check:** `internal/updatecheck` optionally hits GitHub Releases at startup; can be disabled via `JOBSCOUT_DISABLE_UPDATE_CHECK=1`.
+Good:
+- Changes overlay close behavior in the TUI
+  - Allows `Enter` and `Esc` to close job detail overlays
+  - Allows `Enter` and `Esc` to close company health overlays
+  - Updates overlay hints and tests for the new behavior
 
-## Key repo conventions (non-obvious)
+Bad:
+- This pull request updates the overlay behavior...
+- Summary:
+- Testing:
 
-- **Repo-managed pre-commit hook:** most `make` targets run `scripts/git-hooks/install-pre-commit.sh` to install a managed `pre-commit` hook. The hook only enforces the `.checks`/`make check` path for staged Go/module changes (`*.go`, `go.mod`, `go.sum`); `make fix/check/all` write that stamp via `scripts/git-hooks/stamp-checks.sh`.
-- **Runtime data stays out of git:** normal app usage writes under the OS user config directory (e.g. `config.yaml`, `SEARCH_PROMPT.md`, `jobscout.db`); `--demo` runs fully in-memory (no user config/db writes).
-- **Do not persist provider tokens:** config save logic intentionally sanitizes auth—if a user enters a literal API key, it is not saved; auth is reset to env-var mode so secrets aren’t written to disk.
-- **Experimental sources are opt-in:** `llm_web` and API sources are kept disabled during normal runs unless explicitly selected (e.g. via `--sources`), even if present in config.
-- **Generated architecture diagram:** `docs/README.md` contains a generated mermaid block between `BEGIN/END GENERATED C4 COMPONENT VIEW`; update with `make c4-diagram` (and CI can check it with `make c4-diagram-check`).
+## High-level architecture
+
+Canonical overview: `docs/README.md`.
+
+At a high level:
+- Entrypoint: `cmd/jobscout/main.go` → `internal/jobscout.Run`
+- Command dispatch: `internal/jobscout` handles one-shot commands (for example `--fetch-dry-run`, `--export-json`, `--import`, `--bench-*`) and otherwise starts the Bubble Tea TUI in `internal/tuiapp`
+- Runtime paths and stores: `internal/runtime` resolves OS user config paths and opens either SQLite-backed stores or in-memory stores for `--demo`
+- Config/setup: `internal/config` loads and sanitizes `config.yaml`, criteria, source selection, and LLM provider config
+- Fetch pipeline: `internal/fetcher` resolves effective sources, fetches jobs from supported sources, normalizes them, filters/validates/dedupes them, and enriches company identity when possible
+- LLM integration: `internal/llm` provides provider auth, model discovery, task-specific runners, and benchmark/report CLIs
+- Company health: `internal/health` and `internal/domain` compute a deterministic score from evidence sources; optional LLM output supplements but does not replace deterministic scoring
+- Storage: `internal/storage` is SQLite (`modernc.org/sqlite`) with migrations for jobs, health cache, and persistent company identities
+- Update check: `internal/updatecheck` optionally hits GitHub Releases at startup; disable with `JOBSCOUT_DISABLE_UPDATE_CHECK=1`
+
+## Repo conventions
+
+- Prefer small, targeted changes; do not refactor unrelated code opportunistically
+- Follow existing naming, package boundaries, and test patterns before introducing new structure
+- Keep runtime data out of git; normal app usage writes under the OS user config directory, while `--demo` stays fully in memory
+- Do not persist provider tokens; config save logic intentionally avoids writing literal API keys to disk
+- Treat experimental sources as opt-in; keep `llm_web` and API sources inactive unless explicitly selected
+- `docs/README.md` contains a generated Mermaid block between `BEGIN/END GENERATED C4 COMPONENT VIEW`; update it with `make c4-diagram` when needed
+- Many `make` targets install the repo-managed pre-commit hook via `scripts/git-hooks/install-pre-commit.sh`; do not remove or bypass this workflow casually
+
+## Change guidance
+
+- Fix the root cause when practical, not just the immediate symptom
+- Preserve user-visible behavior unless the change intentionally updates it
+- Update tests whenever behavior changes or regressions are possible
+- Prefer deterministic logic over heuristic or LLM-dependent behavior in core flows
+- Keep optional/demo/in-memory paths working when touching runtime or storage code
+- When changing CLI flags, config, or user-visible workflows, update related docs and help text
+
+## Verification expectations
+
+Before proposing work as complete, prefer the smallest relevant validation that gives confidence.
+
+- For broad or risky changes, prefer `make check`
+- For narrow changes, run the most relevant package tests first
+- If you could not run validation, say so plainly
+- Do not claim success without naming what was verified
+
+## Response style
+
+- Be concise by default
+- Lead with the answer or result, then supporting detail if needed
+- Prefer concrete file paths, commands, and observable effects over generalities
+- When summarizing code changes, emphasize what changed, why it matters, and how it was verified
