@@ -668,6 +668,14 @@ func targetedSiteSearchQueries(criteria *CriteriaConfig) []string {
 	case len(titles) == 0:
 		return prefixes
 	}
+	const maxTargetedQueryTerms = 10000
+	if len(prefixes) > maxTargetedQueryTerms {
+		prefixes = prefixes[:maxTargetedQueryTerms]
+	}
+	if len(titles) > maxTargetedQueryTerms {
+		titles = titles[:maxTargetedQueryTerms]
+	}
+
 
 	prefixCount := len(prefixes)
 	titleCount := len(titles)
