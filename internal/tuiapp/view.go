@@ -98,8 +98,6 @@ func (m model) View() string {
 		Height(m.tableHeight + 1).
 		Render(body.String())
 
-	filterText := enabledFilterEmojiSummary(m.activeFilters)
-
 	var helpView string
 	if m.isFiltering {
 		searchStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true)
@@ -112,6 +110,10 @@ func (m model) View() string {
 		if m.searchQuery != "" {
 			searchPrefix = helpValueStyle.Render(fmt.Sprintf("[Search: %s]", m.searchQuery))
 		}
+		filterLabel := "Filter"
+		if filterText := enabledFilterEmojiSummary(m.activeFilters); filterText != "" {
+			filterLabel = fmt.Sprintf("Filter %s", filterText)
+		}
 
 		items := []string{}
 		if searchPrefix != "" {
@@ -121,7 +123,7 @@ func (m model) View() string {
 			formatHelpItem("↑/↓", "Nav"),
 			formatHelpItem("Enter", "Details"),
 			formatHelpItem("h", "Health"),
-			formatHelpItem("H", "All"),
+			formatHelpItem("H", "All Health"),
 			formatHelpItem("l", "Legend"),
 			formatHelpItem("?", "Keys"),
 			formatHelpItem("s", "Status"),
@@ -134,7 +136,7 @@ func (m model) View() string {
 			formatHelpItem("E", "Edit"),
 			formatHelpItem("/", "Search"),
 			formatHelpItem("1-5", "Sort"),
-			formatHelpItem("f", fmt.Sprintf("Filter %s", filterText)),
+			formatHelpItem("f", filterLabel),
 		)
 		if m.backgroundTask.active || m.fetchingJobs || m.singleHealthTasksActive() {
 			items = append(items, formatHelpItem("t", "Task"))

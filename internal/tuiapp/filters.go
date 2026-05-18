@@ -62,7 +62,7 @@ func statusEmoji(status string) string {
 func enabledFilterEmojiSummary(values map[string]bool) string {
 	selected := selectedStatuses(values)
 	if len(selected) == 0 {
-		return "All"
+		return ""
 	}
 
 	emojis := make([]string, 0, len(selected))
@@ -70,9 +70,6 @@ func enabledFilterEmojiSummary(values map[string]bool) string {
 		if emoji := statusEmoji(status); emoji != "" {
 			emojis = append(emojis, emoji)
 		}
-	}
-	if len(emojis) == 0 {
-		return "All"
 	}
 	return strings.Join(emojis, " ")
 }

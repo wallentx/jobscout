@@ -1,40 +1,56 @@
 package tuiapp
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 func keyLegendMessage() string {
 	return strings.Join([]string{
-		"Main view",
+		keyLegendSection("Main view"),
 		"",
-		"↑/↓ or j/k: Move selection",
-		"Enter: Show job details",
-		"h: Show selected company health",
-		"H: Refresh health for all companies",
-		"l: Explain health symbols and colors",
-		"?: Show this key legend",
-		"s: Change status",
-		"m: Mark selected job viewed",
-		"r: Fetch jobs",
-		"U: Update missing job and company details",
-		"V: Check active postings",
-		"c: Configure Jobscout",
-		"D: Delete selected job",
-		"E: Edit selected job",
-		"/: Search",
-		"1-5: Sort",
-		"f: Filter statuses",
-		"t: Show or hide background task",
-		"q: Quit",
+		keyLegendItem("↑/↓ or j/k", "Move selection"),
+		keyLegendItem("Enter", "Show job details"),
+		keyLegendItem("h", "Show selected company health"),
+		keyLegendItem("H", "Refresh health for all companies"),
+		keyLegendItem("l", "Explain health symbols and colors"),
+		keyLegendItem("?", "Show this key legend"),
+		keyLegendItem("s", "Change status"),
+		keyLegendItem("m", "Mark selected job viewed"),
+		keyLegendItem("r", "Fetch jobs"),
+		keyLegendItem("U", "Update missing job and company details"),
+		keyLegendItem("V", "Check active postings"),
+		keyLegendItem("c", "Configure Jobscout"),
+		keyLegendItem("D", "Delete selected job"),
+		keyLegendItem("E", "Edit selected job"),
+		keyLegendItem("/", "Search"),
+		keyLegendItem("1-5", "Sort"),
+		keyLegendItem("f", "Filter"),
+		keyLegendItem("t", "Show or hide background task"),
+		keyLegendItem("q", "Quit"),
 		"",
-		"Detail window",
+		keyLegendSection("Detail window"),
 		"",
-		"u: Update selected job and company details",
-		"o: Open posting URL",
-		"Enter/Esc: Return",
+		keyLegendItem("u", "Update selected job and company details"),
+		keyLegendItem("o", "Open posting URL"),
+		keyLegendItem("Enter/Esc", "Return"),
 		"",
-		"Health window",
+		keyLegendSection("Health window"),
 		"",
-		"h: Refresh current company health",
-		"Enter/Esc: Return",
+		keyLegendItem("h", "Refresh current company health"),
+		keyLegendItem("Enter/Esc", "Return"),
 	}, "\n")
+}
+
+func keyLegendSection(text string) string {
+	style := lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+	return renderToken(style, text)
+}
+
+func keyLegendItem(key string, description string) string {
+	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("110")).Bold(true)
+	descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	return fmt.Sprintf("%s: %s", renderToken(keyStyle, key), renderToken(descStyle, description))
 }
