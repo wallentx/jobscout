@@ -29,9 +29,24 @@ This repo is Go (`go 1.26.1` per `go.mod`) and is intended to be driven via the 
 
 ## Pull request titles and bodies
 
-When creating or editing PR titles and bodies, be direct and brief. Do not write
-marketing copy, apology text, motivational language, or long narrative
-summaries. Optimize for a maintainer who is scanning the PR list.
+When creating or editing PR titles and bodies, be direct and brief.
+
+For Copilot-generated PR summaries:
+- Default to the shortest useful output.
+- Prefer a terse bullet list over `Summary`/`Verification`/`Notes` sections.
+- Use sentence fragments and nested bullets.
+- Do not include a preamble or concluding sentence.
+- Do not use formal phrases like `This PR`, `This change`, `This update`, or `The purpose of this PR`.
+- Focus on observable behavior changes, meaningful tests, and notable risk.
+- Keep to 3–5 bullets total when possible.
+- Keep each bullet to one line when possible.
+
+Example:
+- Changes overlay close behavior in the TUI.
+  - Allows `Enter` as well as `Esc` to close job detail overlays
+  - Allows `Enter` as well as `Esc` to close company health overlays
+  - Preserves the health refresh hint as `h/u: Refresh`
+  - Updates overlay footer text and tests for the new close behavior
 
 **Title:**
 
@@ -40,34 +55,6 @@ summaries. Optimize for a maintainer who is scanning the PR list.
   `docs: add benchmark sharing notes`, `fix: keep setup inputs editable`.
 - Do not use vague titles like `updates`, `misc fixes`, `cleanup`, or
   `improvements`.
-
-**Body:**
-
-Use this shape by default, omitting sections that do not add useful information:
-
-```md
-Summary:
-- What changed
-- Why it changed
-
-Verification:
-- `make all`
-- Any focused command or manual check that matters
-
-Notes:
-- Risks, follow-ups, or intentionally deferred work
-```
-
-Keep PR bodies terse:
-
-- Do not write an introductory paragraph.
-- Use at most three `Summary` bullets.
-- Prefer outcomes over implementation narration. Say `Uses the app token output for C4 diagram PR creation`, not every intermediate variable or step rename.
-- Do not create extra category headings like `Workflow improvements` or `Actionlint configuration` unless the PR genuinely has separate large areas of work.
-- Do not restate every file that changed unless the file list itself is important.
-- Do not mention obvious mechanical edits such as renamed step IDs, removed env blocks, or moved values unless they explain user-visible behavior or risk.
-- Include `Verification` only for commands or checks that were actually run.
-- Keep each bullet to one concise line when possible.
 
 ## High-level architecture (big picture)
 
