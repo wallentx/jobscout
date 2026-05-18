@@ -195,6 +195,60 @@ func TestBackgroundTaskRendersActivityAndLegendHotkey(t *testing.T) {
 	}
 }
 
+func TestMainListLegendKeyShowsHealthLegend(t *testing.T) {
+	m := model{
+		termWidth:     100,
+		termHeight:    30,
+		tableHeight:   calculateTableHeight(30),
+		activeFilters: filterValuesFromStatuses(nil),
+	}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+	got := updated.(model)
+
+	if cmd != nil {
+		t.Fatalf("Update(l) cmd = %v; want nil", cmd)
+	}
+	if got.overlay.kind != overlayNotice {
+		t.Fatalf("overlay.kind = %v; want health legend notice", got.overlay.kind)
+	}
+	if got.overlay.notice.title != "Health Legend" {
+		t.Fatalf("notice title = %q; want Health Legend", got.overlay.notice.title)
+	}
+	message := ansi.Strip(got.overlay.notice.message)
+	for _, want := range []string{
+		"● High confidence",
+		"◉ Medium confidence",
+		"○ Low confidence",
+		"75-100",
+		"60-74",
+		"45-59",
+		"30-44",
+		"0-29",
+		"Rejected",
+		"Ignore",
+		"Expired",
+	} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("health legend missing %q:\n%s", want, message)
+		}
+	}
+}
+
+func TestViewHelpIncludesHealthLegendHotkey(t *testing.T) {
+	m := model{
+		termWidth:     100,
+		termHeight:    30,
+		tableHeight:   calculateTableHeight(30),
+		activeFilters: filterValuesFromStatuses(nil),
+	}
+
+	rendered := ansi.Strip(m.View())
+	if !strings.Contains(rendered, "l: Legend") {
+		t.Fatalf("View() missing health legend hotkey:\n%s", rendered)
+	}
+}
+
 func TestViewRendersLogoWhenJobTableIsEmpty(t *testing.T) {
 	restoreRuntimePathsAfterTest(t)
 	runtimeBuildVersion = "v1.2.3-abcdef0"
