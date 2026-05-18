@@ -389,6 +389,30 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.restartLoadingIndicator(),
 			)
 		}
+	case "V":
+		if mainListKeysAvailable && !m.fetchingJobs && !m.bulkHealthFetching && !m.backgroundTask.active && len(m.allJobs) > 0 {
+			targets := postingValidationTargets(m.allJobs)
+			if len(targets) == 0 {
+				m.showNotice("Posting Check", "No Unopened or Viewed postings are available to check.", false)
+				return m, nil
+			}
+			m.nextBackgroundTask++
+			taskID := m.nextBackgroundTask
+			progressCh := make(chan string, 8)
+			m.backgroundTask = backgroundTaskState{
+				active:       true,
+				expanded:     true,
+				animProgress: 1,
+				id:           taskID,
+				title:        "Checking Active Postings",
+				progress:     fmt.Sprintf("Checking %d active postings in the background...", len(targets)),
+			}
+			return m, tea.Batch(
+				validatePostingsCmd(taskID, targets, progressCh),
+				waitForBackgroundTaskProgress(taskID, progressCh, nil),
+				m.restartLoadingIndicator(),
+			)
+		}
 	case "down", "j":
 		if m.cursor < len(m.filteredJobs)-1 {
 			m.cursor++

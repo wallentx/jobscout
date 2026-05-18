@@ -48,12 +48,8 @@ func logJobValidationRejection(job Job, reason string) {
 }
 
 func unusableJobReason(job Job) string {
-	applyURL := strings.TrimSpace(job.ApplyURL)
-	if applyURL == "" {
-		return "empty URL"
-	}
-	if isKnownNonJobApplyURL(applyURL) {
-		return "not a direct job URL"
+	if reason := unusableJobURLReason(job); reason != "" {
+		return reason
 	}
 	if isLLMGeneratedJob(job) && !jobHasRequiredCompanyIdentity(job) {
 		return "missing company identity"
@@ -61,8 +57,26 @@ func unusableJobReason(job Job) string {
 	return ""
 }
 
+func unusableJobURLReason(job Job) string {
+	applyURL := strings.TrimSpace(job.ApplyURL)
+	if applyURL == "" {
+		return "empty URL"
+	}
+	if isKnownNonJobApplyURL(applyURL) {
+		return "not a direct job URL"
+	}
+	return ""
+}
+
 func UnusableJobReason(job Job) string {
 	return unusableJobReason(job)
+}
+
+func VerifyJobPosting(ctx context.Context, job Job) (bool, string) {
+	if reason := unusableJobURLReason(job); reason != "" {
+		return false, reason
+	}
+	return validateJobURL(ctx, job.ApplyURL)
 }
 
 func isLLMGeneratedJob(job Job) bool {

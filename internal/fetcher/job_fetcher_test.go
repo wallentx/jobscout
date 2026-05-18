@@ -73,6 +73,25 @@ func TestValidateJobURL(t *testing.T) {
 	}
 }
 
+func TestVerifyJobPostingIgnoresLLMCompanyIdentity(t *testing.T) {
+	okServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer okServer.Close()
+
+	job := Job{
+		Company:  "Unknown",
+		Title:    "Platform Engineer",
+		ApplyURL: okServer.URL,
+		Source:   "llm:web_search",
+	}
+
+	got, reason := VerifyJobPosting(context.Background(), job)
+	if !got {
+		t.Fatalf("VerifyJobPosting(%#v) = false, %q; want true for reachable posting URL", job, reason)
+	}
+}
+
 func TestIsKnownNonJobApplyURLAllowsAggregatorJobDetails(t *testing.T) {
 	tests := []struct {
 		name string
