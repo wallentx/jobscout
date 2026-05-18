@@ -272,7 +272,7 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.overlay.health.scrollOffset = 0
 		case "end":
 			m.overlay.health.scrollOffset = m.getMaxHealthScroll()
-		case "h", "u":
+		case "h":
 			if len(m.filteredJobs) == 0 || m.cursor < 0 || m.cursor >= len(m.filteredJobs) {
 				return m, nil
 			}
@@ -363,6 +363,11 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// (Handled above in showHealth, but this is the main list view fallback if needed)
 		// No action defined for 'u' on main list currently.
 		return m, nil
+	case "?":
+		if mainListKeysAvailable {
+			m.showNotice("Key Legend", keyLegendMessage(), false)
+			return m, nil
+		}
 	case "l":
 		if mainListKeysAvailable {
 			m.showNotice("Health Legend", healthLegendMessage(), false)

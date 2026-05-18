@@ -827,7 +827,7 @@ func (m model) buildHealthOverlaySpec() popupSpec {
 		lines := structuredPopupLines(fullReport, targetLineWidth)
 		viewport := renderPopupViewport(lines, targetLineWidth, maxHealthLines, m.overlay.health.scrollOffset, nil)
 		body = viewport.content
-		footerText := "h/u: Refresh • Enter/Esc: Return"
+		footerText := "h: Refresh • Enter/Esc: Return"
 		if viewport.maxOffset > 0 {
 			footerText = "↑/↓/PgUp/PgDn: Scroll • " + footerText
 		}
