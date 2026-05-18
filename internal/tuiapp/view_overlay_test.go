@@ -388,6 +388,54 @@ func TestHealthLoadingCompletionStaysBackgroundedWhenMinimized(t *testing.T) {
 	t.Fatal("buildMainOverlaySpec() rendered completed health popup; want background completion")
 }
 
+func TestDismissedHealthLoadingCompletionStaysDismissed(t *testing.T) {
+	keys := []tea.KeyType{tea.KeyEnter, tea.KeyEsc}
+	for _, key := range keys {
+		t.Run(key.String(), func(t *testing.T) {
+			m := model{
+				healthCache: make(HealthCache),
+				overlay: overlayState{
+					kind: overlayHealth,
+					health: healthOverlayState{
+						loading:     true,
+						loadingText: "Refreshing Acme",
+					},
+				},
+				backgroundHealth: backgroundHealthState{
+					expanded: true,
+					progress: 1,
+					tasks: map[string]singleHealthTaskState{
+						"acme.example": {company: "Acme"},
+					},
+				},
+				termWidth:  90,
+				termHeight: 30,
+			}
+
+			dismissed, _ := m.Update(tea.KeyMsg{Type: key})
+			got := dismissed.(model)
+			if got.overlay.kind != overlayNone {
+				t.Fatalf("overlay.kind after %s = %v; want overlayNone", key, got.overlay.kind)
+			}
+
+			completed, _ := got.Update(healthLoadedMsg{
+				company:   "Acme",
+				taskKey:   "acme.example",
+				result:    &CompanyHealthResult{Company: "Acme", Sources: map[string]any{}},
+				fetchedAt: time.Now(),
+			})
+			got = completed.(model)
+
+			if got.overlay.kind != overlayNone {
+				t.Fatalf("overlay.kind after dismissed health load completes = %v; want overlayNone", got.overlay.kind)
+			}
+			if cached := got.healthCache["Acme"].Result; cached == nil || cached.Company != "Acme" {
+				t.Fatalf("healthCache[Acme] = %#v; want completed result cached", got.healthCache["Acme"])
+			}
+		})
+	}
+}
+
 func TestBackgroundHealthActivityUsesOneGenericLoadingLabel(t *testing.T) {
 	m := model{
 		termWidth:  100,
@@ -546,6 +594,46 @@ func TestDetailShowsPendingEnrichmentAndRefreshesAfterCompletion(t *testing.T) {
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("currentDetailText() missing %q after enrichment:\n%s", want, rendered)
+		}
+	}
+}
+
+func TestEnterAndEscapeCloseDetailAndHealthOverlays(t *testing.T) {
+	tests := []struct {
+		name    string
+		overlay overlayState
+	}{
+		{
+			name:    "detail",
+			overlay: overlayState{kind: overlayDetail},
+		},
+		{
+			name: "health",
+			overlay: overlayState{
+				kind: overlayHealth,
+				health: healthOverlayState{
+					report: &CompanyHealthResult{Company: "Acme", Score: 82},
+				},
+			},
+		},
+	}
+
+	keys := []tea.KeyType{tea.KeyEnter, tea.KeyEsc}
+	for _, tt := range tests {
+		for _, key := range keys {
+			t.Run(tt.name+"/"+key.String(), func(t *testing.T) {
+				m := model{
+					allJobs:      []Job{{Company: "Acme", Title: "Backend Engineer"}},
+					filteredJobs: []Job{{Company: "Acme", Title: "Backend Engineer"}},
+					overlay:      tt.overlay,
+				}
+
+				updated, _ := m.Update(tea.KeyMsg{Type: key})
+				got := updated.(model)
+				if got.overlay.kind != overlayNone {
+					t.Fatalf("overlay.kind = %v; want overlayNone", got.overlay.kind)
+				}
+			})
 		}
 	}
 }

@@ -252,7 +252,12 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.overlay.kind == overlayHealth && !m.overlay.health.minimized {
 		switch msg.String() {
-		case "esc":
+		case "enter", "esc":
+			if m.overlay.health.loading && m.singleHealthTasksActive() {
+				m.backgroundHealth.expanded = false
+				m.backgroundHealth.animating = false
+				m.backgroundHealth.progress = 0
+			}
 			m.clearOverlay()
 			return m, nil
 		case "up", "k":
@@ -286,7 +291,7 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.overlay.kind == overlayDetail {
 		switch msg.String() {
-		case "esc":
+		case "enter", "esc":
 			m.clearOverlay()
 		case "up", "p":
 			if m.cursor > 0 {
