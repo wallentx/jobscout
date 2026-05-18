@@ -20,11 +20,9 @@ func healthLegendMessage() string {
 	b.WriteString("  No symbol: no health data cached yet\n\n")
 
 	b.WriteString("Score colors\n")
-	b.WriteString(healthLegendScoreLine(80, "75-100", "Strong", "good stability signals"))
-	b.WriteString(healthLegendScoreLine(65, "60-74", "Stable", "mostly positive signals"))
-	b.WriteString(healthLegendScoreLine(50, "45-59", "Watch", "mixed or limited signals"))
-	b.WriteString(healthLegendScoreLine(35, "30-44", "Risk", "meaningful caution signals"))
-	b.WriteString(healthLegendScoreLine(15, "0-29", "Critical", "serious health concerns"))
+	for _, band := range healthScoreBands {
+		b.WriteString(healthLegendScoreLine(band))
+	}
 
 	b.WriteString("\nStatus overrides\n")
 	fmt.Fprintf(&b, "%s Rejected\n", renderToken(rejectedStyle, "●"))
@@ -33,7 +31,7 @@ func healthLegendMessage() string {
 	return b.String()
 }
 
-func healthLegendScoreLine(score int, band string, label string, description string) string {
-	dotStyle := lipgloss.NewStyle().Foreground(getHealthColor(score))
-	return fmt.Sprintf("%s %s: %s - %s\n", renderToken(dotStyle, "●"), band, label, description)
+func healthLegendScoreLine(band healthScoreBand) string {
+	dotStyle := lipgloss.NewStyle().Foreground(band.Color)
+	return fmt.Sprintf("%s %s: %s - %s\n", renderToken(dotStyle, "●"), band.Range, band.Label, band.Description)
 }

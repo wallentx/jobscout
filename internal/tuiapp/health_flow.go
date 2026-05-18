@@ -19,20 +19,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-func getHealthColor(score int) lipgloss.Color {
-	// Stricter Thresholds
-	if score >= 75 {
-		return lipgloss.Color("46") // Bright Green (Great)
-	} else if score >= 60 {
-		return lipgloss.Color("77") // Light Green (Okay)
-	} else if score >= 45 {
-		return lipgloss.Color("220") // Gold/Yellow (Warning)
-	} else if score >= 30 {
-		return lipgloss.Color("208") // Orange (Risk)
-	}
-	return lipgloss.Color("196") // Red (Critical)
-}
-
 func getStatusStyle(status string, text string) string {
 	switch status {
 	case "Rejected":
