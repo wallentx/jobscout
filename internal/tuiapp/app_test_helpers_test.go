@@ -15,6 +15,7 @@ type fakeHealthStore struct {
 	getTime   time.Time
 	err       error
 	setCalls  int
+	deleted   []string
 }
 
 func (s *fakeHealthStore) LoadHealthCache() (HealthCache, error) {
@@ -45,6 +46,14 @@ func (s *fakeHealthStore) SetHealth(company string, result *CompanyHealthResult,
 		s.cache = make(HealthCache)
 	}
 	s.cache[company] = HealthCacheEntry{Result: result, Timestamp: fetchedAt}
+	return s.err
+}
+
+func (s *fakeHealthStore) DeleteHealth(company string) error {
+	s.deleted = append(s.deleted, company)
+	if s.cache != nil {
+		delete(s.cache, company)
+	}
 	return s.err
 }
 

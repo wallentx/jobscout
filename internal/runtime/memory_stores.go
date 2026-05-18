@@ -76,6 +76,15 @@ func (s *memoryHealthStore) SetHealth(company string, result *storage.CompanyHea
 	return nil
 }
 
+func (s *memoryHealthStore) DeleteHealth(company string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.cache, company)
+	delete(s.cache, strings.ToLower(strings.TrimSpace(company)))
+	return nil
+}
+
 func (s *memoryHealthStore) ClearHealthCache() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

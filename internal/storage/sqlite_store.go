@@ -527,6 +527,21 @@ func (s *SQLiteStore) SetHealth(company string, result *CompanyHealthResult, fet
 	return nil
 }
 
+func (s *SQLiteStore) DeleteHealth(company string) error {
+	key := normalizeCompanyKey(company)
+	if key == "" {
+		return nil
+	}
+	if _, err := s.db.Exec(`
+		DELETE FROM health_cache
+		WHERE company_key = ?
+			OR lower(trim(company_display)) = ?
+	`, key, key); err != nil {
+		return fmt.Errorf("delete health cache row for %s: %w", company, err)
+	}
+	return nil
+}
+
 func (s *SQLiteStore) ClearHealthCache() error {
 	if _, err := s.db.Exec(`DELETE FROM health_cache`); err != nil {
 		return fmt.Errorf("clear health cache: %w", err)

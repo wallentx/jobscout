@@ -17,6 +17,7 @@ type HealthStore interface {
 	SaveHealthCache(cache HealthCache) error
 	GetHealth(company string) (*CompanyHealthResult, time.Time, error)
 	SetHealth(company string, result *CompanyHealthResult, fetchedAt time.Time) error
+	DeleteHealth(company string) error
 	ClearHealthCache() error
 }
 

@@ -3,6 +3,7 @@ package tuiapp
 import (
 	"fmt"
 	"os/exec"
+	"strings"
 
 	"github.com/wallentx/jobscout/internal/domain"
 	healthpkg "github.com/wallentx/jobscout/internal/health"
@@ -266,8 +267,12 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.overlay.health.scrollOffset = 0
 		case "end":
 			m.overlay.health.scrollOffset = m.getMaxHealthScroll()
-		case "u":
+		case "h", "u":
+			if len(m.filteredJobs) == 0 || m.cursor < 0 || m.cursor >= len(m.filteredJobs) {
+				return m, nil
+			}
 			job := m.filteredJobs[m.cursor]
+			m.clearStoredHealthForJob(job)
 			cmd := m.startSingleHealthTask(job, true, true)
 			if cmd == nil {
 				return m, nil
@@ -448,7 +453,7 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "h":
 		if mainListKeysAvailable && len(m.filteredJobs) > 0 {
 			job := m.filteredJobs[m.cursor]
-			if cached := healthpkg.StoredHealthForJob(m.healthCache, job); cached != nil {
+			if cached := healthpkg.CachedHealthForJob(m.healthCache, job); cached != nil {
 				m.openHealthOverlay(false, "", cached, "")
 				return m, nil
 			}
@@ -581,5 +586,24 @@ func (m model) setupAcceptsTextInput() bool {
 		return len(m.currentSetupCriteriaChoiceOptions(field.Key)) == 0
 	default:
 		return false
+	}
+}
+
+func (m *model) clearStoredHealthForJob(job Job) {
+	keys := []string{
+		healthpkg.CacheKeyForJob(job),
+		strings.TrimSpace(job.Company),
+		strings.ToLower(strings.TrimSpace(job.Company)),
+	}
+	seen := make(map[string]bool, len(keys))
+	for _, key := range keys {
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		delete(m.healthCache, key)
+		if err := runtimeHealthStore.DeleteHealth(key); err != nil {
+			logDebug("delete health cache failed key=%q error=%v", key, err)
+		}
 	}
 }
