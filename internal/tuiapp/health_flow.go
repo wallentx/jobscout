@@ -810,7 +810,7 @@ func (m model) buildHealthOverlaySpec() popupSpec {
 		viewport := renderScrollablePopupText(
 			renderLoadingBody(
 				m.overlay.health.loadingText,
-				"Loading company health data...\n\nPress Enter or Esc to close.",
+				"Loading company health data...\n\nPress Enter or Esc to return.",
 				m.loading.frame,
 				width-6,
 			),
