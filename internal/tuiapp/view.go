@@ -124,6 +124,8 @@ func (m model) View() string {
 			formatHelpItem("s", "Status"),
 			formatHelpItem("m", "Mark Viewed"),
 			formatHelpItem("r", "Fetch"),
+			formatHelpItem("U", "Update Missing"),
+			formatHelpItem("V", "Check Active"),
 			formatHelpItem("c", "Config"),
 			formatHelpItem("D", "Del"),
 			formatHelpItem("E", "Edit"),

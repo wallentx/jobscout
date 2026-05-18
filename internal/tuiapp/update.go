@@ -34,6 +34,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleBackgroundTaskProgressMsg(msg)
 	case backgroundJobEnrichedMsg:
 		return m.handleBackgroundJobEnrichedMsg(msg)
+	case postingValidationCompleteMsg:
+		return m.handlePostingValidationCompleteMsg(msg)
 	case backgroundTaskAnimMsg:
 		return m.handleBackgroundTaskAnimMsg(msg)
 	case updateCheckMsg:
