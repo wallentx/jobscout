@@ -142,3 +142,72 @@ func TestSQLiteStoreSkipsStaleHealthCacheSourceVersion(t *testing.T) {
 		t.Fatalf("GetHealth() = (%#v, %v), want stale row skipped", result, fetchedAt)
 	}
 }
+
+func TestSQLiteStoreDeleteHealth(t *testing.T) {
+	store := newTestSQLiteStore(t)
+	fetchedAt := time.Now().Add(-time.Hour)
+
+	if err := store.SetHealth("Acme", &CompanyHealthResult{
+		Company: "Acme",
+		Score:   72,
+	}, fetchedAt); err != nil {
+		t.Fatalf("SetHealth(%q) error = %v", "Acme", err)
+	}
+	if err := store.SetHealth("domain:acme.example", &CompanyHealthResult{
+		Company: "Acme",
+		Score:   88,
+	}, fetchedAt); err != nil {
+		t.Fatalf("SetHealth(%q) error = %v", "domain:acme.example", err)
+	}
+
+	if err := store.DeleteHealth("Acme"); err != nil {
+		t.Fatalf("DeleteHealth(%q) error = %v", "Acme", err)
+	}
+	assertNoSQLiteHealth(t, store, "Acme")
+	assertSQLiteHealthScore(t, store, "domain:acme.example", 88)
+
+	if err := store.DeleteHealth("domain:acme.example"); err != nil {
+		t.Fatalf("DeleteHealth(%q) error = %v", "domain:acme.example", err)
+	}
+	assertNoSQLiteHealth(t, store, "domain:acme.example")
+
+	loadedCache, err := store.LoadHealthCache()
+	if err != nil {
+		t.Fatalf("LoadHealthCache() error = %v", err)
+	}
+	if len(loadedCache) != 0 {
+		t.Fatalf("LoadHealthCache() = %#v, want empty after DeleteHealth calls", loadedCache)
+	}
+}
+
+func assertSQLiteHealthScore(t *testing.T, store *SQLiteStore, company string, want int) {
+	t.Helper()
+
+	result, fetchedAt, err := store.GetHealth(company)
+	if err != nil {
+		t.Fatalf("GetHealth(%q) error = %v", company, err)
+	}
+	if result == nil || result.Score != want {
+		t.Fatalf("GetHealth(%q) = (%#v, %v), want score %d", company, result, fetchedAt, want)
+	}
+}
+
+func assertNoSQLiteHealth(t *testing.T, store *SQLiteStore, company string) {
+	t.Helper()
+
+	result, fetchedAt, err := store.GetHealth(company)
+	if err != nil {
+		t.Fatalf("GetHealth(%q) error = %v", company, err)
+	}
+	if result != nil || !fetchedAt.IsZero() {
+		t.Fatalf("GetHealth(%q) = (%#v, %v), want no health row", company, result, fetchedAt)
+	}
+
+	loadedCache, err := store.LoadHealthCache()
+	if err != nil {
+		t.Fatalf("LoadHealthCache() error = %v", err)
+	}
+	if _, ok := loadedCache[company]; ok {
+		t.Fatalf("LoadHealthCache()[%q] exists after DeleteHealth: %#v", company, loadedCache)
+	}
+}
