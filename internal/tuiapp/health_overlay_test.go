@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	healthpkg "github.com/wallentx/jobscout/internal/health"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -58,7 +60,74 @@ func TestLoadCompanyHealthForJobRequiresCompanyWebsite(t *testing.T) {
 	}
 }
 
-func TestMainListHealthKeyShowsCachedReportWithStockGraph(t *testing.T) {
+func TestMainListHealthKeyShowsFreshCachedReport(t *testing.T) {
+	prevStore := runtimeHealthStore
+	fakeStore := &fakeHealthStore{}
+	runtimeHealthStore = fakeStore
+	t.Cleanup(func() {
+		runtimeHealthStore = prevStore
+	})
+
+	job := Job{
+		Company:        "Acme",
+		Title:          "Backend Engineer",
+		CompanyWebsite: "https://www.acme.example",
+	}
+	cached := &CompanyHealthResult{
+		Company:    "Acme",
+		Score:      82,
+		Confidence: "high",
+		Sources: map[string]interface{}{
+			"stock_history": []interface{}{10.0, 12.0, 11.0, 14.0, 16.0, 15.0, 18.0, 20.0, 19.0, 21.0, 24.0, 23.0},
+		},
+	}
+	m := model{
+		termWidth:     120,
+		termHeight:    40,
+		tableHeight:   calculateTableHeight(40),
+		allJobs:       []Job{job},
+		filteredJobs:  []Job{job},
+		activeFilters: filterValuesFromStatuses(nil),
+		healthCache: HealthCache{
+			"domain:acme.example": {
+				Result:    cached,
+				Timestamp: time.Now(),
+			},
+		},
+	}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	got := updated.(model)
+	if cmd != nil {
+		t.Fatalf("Update(h) cmd = %v; want nil when cached health is fresh", cmd)
+	}
+	if got.overlay.kind != overlayHealth {
+		t.Fatalf("overlay.kind = %v; want overlayHealth", got.overlay.kind)
+	}
+	if got.overlay.health.report != cached {
+		t.Fatalf("overlay.health.report = %#v; want cached report %#v", got.overlay.health.report, cached)
+	}
+	if gotCached := healthpkg.CachedHealthForJob(got.healthCache, job); gotCached != cached {
+		t.Fatalf("healthpkg.CachedHealthForJob(...) = %#v; want cached report %#v", gotCached, cached)
+	}
+	if len(fakeStore.deleted) != 0 {
+		t.Fatalf("deleted health keys = %#v; want none when showing fresh cached report", fakeStore.deleted)
+	}
+
+	rendered := ansi.Strip(got.buildHealthOverlaySpec().body.content)
+	if !strings.Contains(rendered, "1-Year Stock Chart") {
+		t.Fatalf("cached health popup missing stock chart:\n%s", rendered)
+	}
+}
+
+func TestMainListHealthKeyRefreshesStoredReportInsteadOfShowingOldInfo(t *testing.T) {
+	prevStore := runtimeHealthStore
+	fakeStore := &fakeHealthStore{}
+	runtimeHealthStore = fakeStore
+	t.Cleanup(func() {
+		runtimeHealthStore = prevStore
+	})
+
 	job := Job{
 		Company:        "Acme",
 		Title:          "Backend Engineer",
@@ -89,19 +158,75 @@ func TestMainListHealthKeyShowsCachedReportWithStockGraph(t *testing.T) {
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
 	got := updated.(model)
-	if cmd != nil {
-		t.Fatal("Update(h) cmd != nil for cached health report; want cached report shown without refresh")
+	if cmd == nil {
+		t.Fatal("Update(h) cmd = nil; want single health refresh command")
 	}
-	if got.singleHealthTasksActive() {
-		t.Fatal("single health task active after cached h; want no background refresh")
+	if !got.singleHealthTasksActive() {
+		t.Fatal("single health task active = false; want refresh in progress")
 	}
-	if got.overlay.kind != overlayHealth || got.overlay.health.report != cached {
-		t.Fatalf("overlay health report = %#v; want cached report", got.overlay.health.report)
+	if got.overlay.kind != overlayNone {
+		t.Fatalf("overlay.kind = %v; want overlayNone while refresh task owns progress", got.overlay.kind)
+	}
+	if cached := healthpkg.CachedHealthForJob(got.healthCache, job); cached != nil {
+		t.Fatalf("healthpkg.CachedHealthForJob(...) = %#v; want stale cached report ignored", cached)
+	}
+}
+
+func TestHealthOverlayHealthKeyDumpsExistingReportAndRefreshes(t *testing.T) {
+	prevStore := runtimeHealthStore
+	fakeStore := &fakeHealthStore{}
+	runtimeHealthStore = fakeStore
+	t.Cleanup(func() {
+		runtimeHealthStore = prevStore
+	})
+
+	job := Job{
+		Company:        "Acme",
+		Title:          "Backend Engineer",
+		CompanyWebsite: "https://www.acme.example",
+	}
+	report := &CompanyHealthResult{
+		Company:    "Acme",
+		Score:      82,
+		Confidence: "high",
+	}
+	m := model{
+		termWidth:     120,
+		termHeight:    40,
+		tableHeight:   calculateTableHeight(40),
+		allJobs:       []Job{job},
+		filteredJobs:  []Job{job},
+		activeFilters: filterValuesFromStatuses(nil),
+		overlay: overlayState{
+			kind: overlayHealth,
+			health: healthOverlayState{
+				report: report,
+			},
+		},
+		healthCache: HealthCache{
+			"domain:acme.example": {
+				Result:    report,
+				Timestamp: time.Now(),
+			},
+		},
 	}
 
-	rendered := ansi.Strip(got.buildHealthOverlaySpec().body.content)
-	if !strings.Contains(rendered, "1-Year Stock Chart") {
-		t.Fatalf("cached health popup missing stock chart:\n%s", rendered)
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	got := updated.(model)
+	if cmd == nil {
+		t.Fatal("Update(h) cmd = nil; want forced health refresh command from health overlay")
+	}
+	if !got.singleHealthTasksActive() {
+		t.Fatal("single health task active = false; want forced refresh in progress")
+	}
+	if got.overlay.kind != overlayNone {
+		t.Fatalf("overlay.kind = %v; want old health overlay cleared before refresh", got.overlay.kind)
+	}
+	if cached := healthpkg.CachedHealthForJob(got.healthCache, job); cached != nil {
+		t.Fatalf("healthpkg.CachedHealthForJob(...) = %#v; want dumped report removed from memory cache", cached)
+	}
+	if len(fakeStore.deleted) == 0 || fakeStore.deleted[0] != "domain:acme.example" {
+		t.Fatalf("deleted health keys = %#v; want domain:acme.example first", fakeStore.deleted)
 	}
 }
 
