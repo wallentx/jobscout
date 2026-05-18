@@ -363,6 +363,32 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// (Handled above in showHealth, but this is the main list view fallback if needed)
 		// No action defined for 'u' on main list currently.
 		return m, nil
+	case "U":
+		if mainListKeysAvailable && !m.fetchingJobs && !m.bulkHealthFetching && !m.backgroundTask.active && len(m.allJobs) > 0 {
+			jobs := jobsNeedingEnrichment(m.allJobs)
+			pendingFields := pendingFieldsForJobs(jobs)
+			if len(jobs) == 0 || len(pendingFields) == 0 {
+				return m, nil
+			}
+			m.nextBackgroundTask++
+			taskID := m.nextBackgroundTask
+			progressCh := make(chan string, 8)
+			jobCh := make(chan Job, 16)
+			m.backgroundTask = backgroundTaskState{
+				active:        true,
+				expanded:      true,
+				animProgress:  1,
+				id:            taskID,
+				title:         "Updating Job Details",
+				progress:      fmt.Sprintf("Updating missing job and company fields for %d jobs in the background...", len(jobs)),
+				pendingFields: pendingFields,
+			}
+			return m, tea.Batch(
+				enrichAcceptedFetchCmd(taskID, m.sessionLLMDisabled, jobs, progressCh, jobCh),
+				waitForBackgroundTaskProgress(taskID, progressCh, jobCh),
+				m.restartLoadingIndicator(),
+			)
+		}
 	case "down", "j":
 		if m.cursor < len(m.filteredJobs)-1 {
 			m.cursor++

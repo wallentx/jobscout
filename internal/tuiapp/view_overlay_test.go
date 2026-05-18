@@ -829,6 +829,91 @@ func TestRealTimeJobEnrichmentUpdatesDetailView(t *testing.T) {
 	}
 }
 
+func TestMainListBulkUpdateTargetsOnlyJobsWithMissingEnrichment(t *testing.T) {
+	complete := Job{
+		Company:         "Complete",
+		Title:           "Platform Engineer",
+		ApplyURL:        "https://complete.example/jobs/platform-engineer",
+		CompanyWebsite:  "https://complete.example",
+		CompanySummary:  "Complete builds deployment software for infrastructure teams and platform operators.",
+		CompanyIndustry: "Developer Tools",
+		Compensation:    "$120,000 - $150,000",
+	}
+	missingWebsite := Job{
+		Company:         "NeedsWebsite",
+		Title:           "Site Reliability Engineer",
+		ApplyURL:        "https://jobs.example/needswebsite-sre",
+		CompanySummary:  "NeedsWebsite builds incident response tools for production engineering teams.",
+		CompanyIndustry: "Developer Tools",
+		Compensation:    "$130,000 - $160,000",
+	}
+	missingCompensation := Job{
+		Company:         "NeedsPay",
+		Title:           "Backend Engineer",
+		ApplyURL:        "https://needspay.example/jobs/backend-engineer",
+		CompanyWebsite:  "https://needspay.example",
+		CompanySummary:  "NeedsPay provides payroll automation software for distributed operations teams.",
+		CompanyIndustry: "HR Tech",
+		Compensation:    "Not listed",
+	}
+	m := model{
+		allJobs:      []Job{complete, missingWebsite, missingCompensation},
+		filteredJobs: []Job{complete, missingWebsite, missingCompensation},
+	}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("U")})
+	got := updated.(model)
+
+	if cmd == nil {
+		t.Fatal("Update(U) cmd = nil; want bulk enrichment command")
+	}
+	if !got.backgroundTask.active || !got.backgroundTask.expanded {
+		t.Fatalf("backgroundTask = %#v; want active expanded update task", got.backgroundTask)
+	}
+	if got.backgroundTask.title != "Updating Job Details" {
+		t.Fatalf("backgroundTask.title = %q; want Updating Job Details", got.backgroundTask.title)
+	}
+	if fields := got.backgroundTask.pendingFields[backgroundJobKey(complete)]; len(fields) != 0 {
+		t.Fatalf("pendingFields[%q] = %#v; want complete job skipped", backgroundJobKey(complete), fields)
+	}
+	websiteFields := got.backgroundTask.pendingFields[backgroundJobKey(missingWebsite)]
+	if !websiteFields["company_website"] {
+		t.Fatalf("pendingFields[%q] = %#v; want company_website pending", backgroundJobKey(missingWebsite), websiteFields)
+	}
+	compensationFields := got.backgroundTask.pendingFields[backgroundJobKey(missingCompensation)]
+	if !compensationFields["compensation"] {
+		t.Fatalf("pendingFields[%q] = %#v; want compensation pending", backgroundJobKey(missingCompensation), compensationFields)
+	}
+	if len(got.backgroundTask.pendingFields) != 2 {
+		t.Fatalf("pendingFields len = %d; want 2 incomplete jobs: %#v", len(got.backgroundTask.pendingFields), got.backgroundTask.pendingFields)
+	}
+}
+
+func TestMainListBulkUpdateNoopsWhenNoJobsNeedEnrichment(t *testing.T) {
+	jobs := []Job{
+		{
+			Company:         "Complete",
+			Title:           "Platform Engineer",
+			ApplyURL:        "https://complete.example/jobs/platform-engineer",
+			CompanyWebsite:  "https://complete.example",
+			CompanySummary:  "Complete builds deployment software for infrastructure teams and platform operators.",
+			CompanyIndustry: "Developer Tools",
+			Compensation:    "$120,000 - $150,000",
+		},
+	}
+	m := model{allJobs: jobs, filteredJobs: jobs}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("U")})
+	got := updated.(model)
+
+	if cmd != nil {
+		t.Fatalf("Update(U) cmd = %v; want nil when no jobs need enrichment", cmd)
+	}
+	if got.backgroundTask.active {
+		t.Fatalf("backgroundTask.active = true with no incomplete jobs; task = %#v", got.backgroundTask)
+	}
+}
+
 func TestBackgroundJobEnrichedMsgKeepsListeningForUpdates(t *testing.T) {
 	job := Job{Company: "TestCorp", Title: "Dev"}
 	progressCh := make(chan string)

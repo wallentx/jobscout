@@ -98,6 +98,23 @@ func pendingFieldsForJobs(jobs []Job) map[string]map[string]bool {
 	return pending
 }
 
+func jobsNeedingEnrichment(jobs []Job) []Job {
+	targets := make([]Job, 0, len(jobs))
+	seen := make(map[string]bool, len(jobs))
+	for _, job := range jobs {
+		if len(pendingEnrichmentFields(job)) == 0 {
+			continue
+		}
+		key := backgroundJobKey(job)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		targets = append(targets, job)
+	}
+	return targets
+}
+
 func (m model) pendingField(job Job, field string) bool {
 	if !m.backgroundTask.active || len(m.backgroundTask.pendingFields) == 0 {
 		return false
