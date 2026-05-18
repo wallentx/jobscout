@@ -363,6 +363,11 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// (Handled above in showHealth, but this is the main list view fallback if needed)
 		// No action defined for 'u' on main list currently.
 		return m, nil
+	case "l":
+		if mainListKeysAvailable {
+			m.showNotice("Health Legend", healthLegendMessage(), false)
+			return m, nil
+		}
 	case "U":
 		if mainListKeysAvailable && !m.fetchingJobs && !m.bulkHealthFetching && !m.backgroundTask.active && len(m.allJobs) > 0 {
 			jobs := jobsNeedingEnrichment(m.allJobs)

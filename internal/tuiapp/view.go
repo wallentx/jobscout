@@ -121,6 +121,7 @@ func (m model) View() string {
 			formatHelpItem("↑/↓", "Nav"),
 			formatHelpItem("Enter", "Details"),
 			formatHelpItem("h", "Health"),
+			formatHelpItem("l", "Legend"),
 			formatHelpItem("s", "Status"),
 			formatHelpItem("m", "Mark Viewed"),
 			formatHelpItem("r", "Fetch"),
