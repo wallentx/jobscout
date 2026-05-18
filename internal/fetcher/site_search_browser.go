@@ -667,7 +667,7 @@ func targetedSiteSearchQueries(criteria *CriteriaConfig) []string {
 	case len(titles) == 0:
 		return prefixes
 	}
-	queries := make([]string, 0, len(prefixes)*len(titles))
+	var queries []string
 	seen := make(map[string]bool)
 	for _, prefix := range prefixes {
 		for _, title := range titles {
