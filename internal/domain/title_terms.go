@@ -77,7 +77,7 @@ func normalizeTargetTitleName(value string, roleFamilies []RoleFamilyID) string 
 		return ""
 	}
 	tokens := strings.Fields(value)
-	normalized := make([]string, 0, len(tokens)+1)
+	normalized := make([]string, 0, len(tokens))
 	for _, token := range tokens {
 		token = strings.Trim(token, ".,;:()[]{}")
 		if token == "" {

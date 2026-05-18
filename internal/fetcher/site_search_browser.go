@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -667,9 +668,10 @@ func targetedSiteSearchQueries(criteria *CriteriaConfig) []string {
 	case len(titles) == 0:
 		return prefixes
 	}
-	queries := make([]string, 0, len(prefixes)*len(titles))
+	var queries []string
 	seen := make(map[string]bool)
 	for _, prefix := range prefixes {
+		queries = slices.Grow(queries, len(titles))
 		for _, title := range titles {
 			query := combinedTitleSearchQuery(prefix, title)
 			key := strings.ToLower(query)

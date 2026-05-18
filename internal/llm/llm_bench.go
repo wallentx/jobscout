@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/wallentx/jobscout/internal/cliui"
@@ -59,8 +60,9 @@ func runLLMBenchmarkCLI(args []string) {
 		os.Exit(1)
 	}
 
-	records := make([]llmBenchmarkRunRecord, 0, len(selected)*len(models))
+	var records []llmBenchmarkRunRecord
 	for _, modelName := range models {
+		records = slices.Grow(records, len(selected))
 		if !opts.JSON {
 			fmt.Printf("%s %s\n", cliui.Style("==>", cliui.Cyan, cliui.Bold), cliui.Style(provider+"/"+modelName, cliui.Bold))
 		}
