@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"os"
 	"regexp"
@@ -671,8 +672,7 @@ func targetedSiteSearchQueries(criteria *CriteriaConfig) []string {
 	prefixCount := len(prefixes)
 	titleCount := len(titles)
 	queryCap := 0
-	maxInt := int(^uint(0) >> 1)
-	if titleCount > 0 && prefixCount <= maxInt/titleCount {
+	if titleCount > 0 && prefixCount <= math.MaxInt/titleCount {
 		queryCap = prefixCount * titleCount
 	}
 
