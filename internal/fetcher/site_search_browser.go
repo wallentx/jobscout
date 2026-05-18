@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"os"
 	"regexp"
@@ -667,7 +668,23 @@ func targetedSiteSearchQueries(criteria *CriteriaConfig) []string {
 	case len(titles) == 0:
 		return prefixes
 	}
-	queries := make([]string, 0, len(prefixes)*len(titles))
+	const maxTargetedQueryTerms = 10000
+	if len(prefixes) > maxTargetedQueryTerms {
+		prefixes = prefixes[:maxTargetedQueryTerms]
+	}
+	if len(titles) > maxTargetedQueryTerms {
+		titles = titles[:maxTargetedQueryTerms]
+	}
+
+
+	prefixCount := len(prefixes)
+	titleCount := len(titles)
+	queryCap := 0
+	if titleCount > 0 && prefixCount <= math.MaxInt/titleCount {
+		queryCap = prefixCount * titleCount
+	}
+
+	queries := make([]string, 0, queryCap)
 	seen := make(map[string]bool)
 	for _, prefix := range prefixes {
 		for _, title := range titles {

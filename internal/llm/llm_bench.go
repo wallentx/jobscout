@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"time"
 
@@ -59,7 +60,14 @@ func runLLMBenchmarkCLI(args []string) {
 		os.Exit(1)
 	}
 
-	records := make([]llmBenchmarkRunRecord, 0, len(selected)*len(models))
+	selectedCount := len(selected)
+	modelCount := len(models)
+	if modelCount > 0 && selectedCount > math.MaxInt/modelCount {
+		fmt.Println("Benchmark error: too many benchmark records to allocate safely")
+		os.Exit(1)
+	}
+	recordCapacity := selectedCount * modelCount
+	records := make([]llmBenchmarkRunRecord, 0, recordCapacity)
 	for _, modelName := range models {
 		if !opts.JSON {
 			fmt.Printf("%s %s\n", cliui.Style("==>", cliui.Cyan, cliui.Bold), cliui.Style(provider+"/"+modelName, cliui.Bold))
