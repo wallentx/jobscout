@@ -140,7 +140,8 @@ func runFetchDryRun(options appruntime.Options, stores appruntime.Stores, jsonOu
 			fmt.Println("Running LLM job filtering on fetched jobs...")
 		}
 		filterCtx, filterCancel := context.WithTimeout(context.Background(), 180*time.Second)
-		newJobs, notices := llmpkg.FilterJobsWithLLM(filterCtx, appCfg, criteriaCfg, newJobs)
+		var notices []string
+		newJobs, notices = llmpkg.FilterJobsWithLLM(filterCtx, appCfg, criteriaCfg, newJobs)
 		filterCancel()
 		for _, notice := range notices {
 			if !jsonOutput {
