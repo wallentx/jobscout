@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"math"
 	"strings"
 )
 
@@ -77,7 +78,11 @@ func normalizeTargetTitleName(value string, roleFamilies []RoleFamilyID) string 
 		return ""
 	}
 	tokens := strings.Fields(value)
-	normalized := make([]string, 0, len(tokens)+1)
+	normalizedCap := len(tokens)
+	if normalizedCap < math.MaxInt {
+		normalizedCap++
+	}
+	normalized := make([]string, 0, normalizedCap)
 	for _, token := range tokens {
 		token = strings.Trim(token, ".,;:()[]{}")
 		if token == "" {
