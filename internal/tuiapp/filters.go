@@ -85,12 +85,13 @@ func hasActiveFilters(values map[string]bool) bool {
 
 func (m *model) applyFilterAndSort() {
 	m.filteredJobs = []Job{}
-	searchLower := strings.ToLower(m.searchQuery)
+	searchLower := strings.TrimSpace(strings.ToLower(m.searchQuery))
+	searching := searchLower != ""
 
 	for _, job := range m.allJobs {
-		statusMatch := !hasActiveFilters(m.activeFilters) || m.activeFilters[job.Status]
+		statusMatch := searching || !hasActiveFilters(m.activeFilters) || m.activeFilters[job.Status]
 		searchMatch := true
-		if searchLower != "" {
+		if searching {
 			searchMatch = strings.Contains(strings.ToLower(job.Company), searchLower) ||
 				strings.Contains(strings.ToLower(job.Title), searchLower)
 		}

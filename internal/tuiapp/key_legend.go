@@ -25,7 +25,7 @@ func keyLegendMessage() string {
 		keyLegendItem("c", "Configure Jobscout"),
 		keyLegendItem("D", "Delete selected job"),
 		keyLegendItem("E", "Edit selected job"),
-		keyLegendItem("/", "Search"),
+		keyLegendItem("/", "Search company/title"),
 		keyLegendItem("1-5", "Sort"),
 		keyLegendItem("f", "Filter"),
 		keyLegendItem("t", "Show or hide background task"),
