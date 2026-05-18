@@ -15,7 +15,7 @@ VERSION ?= $(shell if [ -n "$$RELEASE_TAG" ]; then printf '%s' "$$RELEASE_TAG"; 
 DIST_DIR ?= dist
 RELEASE_GOOS ?= $(shell $(GO) env GOOS)
 RELEASE_GOARCH ?= $(shell $(GO) env GOARCH)
-LDFLAGS ?= -s -w -X $(MODULE_PATH)/internal/jobscout.version=$(VERSION)
+GO_LDFLAGS ?= -s -w -X $(MODULE_PATH)/internal/jobscout.version=$(VERSION)
 
 PKGS := $(shell $(GO) list ./...)
 GOFILES := $(shell find . -type f -name '*.go' -not -path './vendor/*' -not -path './.dump/*' -not -path './.tools/*')
@@ -226,14 +226,14 @@ race: ensure-hooks ## Run race detector where supported
 .PHONY: build
 build: ensure-hooks ## Build the jobscout binary
 	$(call PRINT_STEP,go build)
-	@$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o "$(BIN)" "$(CMD_PATH)"
+	@$(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o "$(BIN)" "$(CMD_PATH)"
 	@printf '$(COLOR_OK)OK:$(COLOR_RESET) Build successful: %s\n' "$(BIN)"
 	@printf '\n$(COLOR_DIM)Run:$(COLOR_RESET) %s\n' "$(BIN)"
 
 .PHONY: install
 install: ensure-hooks ## Install jobscout into GOBIN or GOPATH/bin
 	$(call PRINT_STEP,go install)
-	@$(GO) install -trimpath -ldflags "$(LDFLAGS)" "$(CMD_PATH)"
+	@$(GO) install -trimpath -ldflags "$(GO_LDFLAGS)" "$(CMD_PATH)"
 	$(call PRINT_OK,jobscout installed)
 
 .PHONY: release
@@ -246,7 +246,7 @@ release: ensure-hooks ## Build a versioned release archive for RELEASE_GOOS/RELE
 		if [ "$(RELEASE_GOOS)" = "windows" ]; then bin="$$bin.exe"; fi; \
 		rm -rf "$$outdir" "$(DIST_DIR)/$$base.tar.gz" "$(DIST_DIR)/$$base.zip"; \
 		mkdir -p "$$outdir"; \
-		GOOS="$(RELEASE_GOOS)" GOARCH="$(RELEASE_GOARCH)" CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o "$$bin" "$(CMD_PATH)"; \
+		GOOS="$(RELEASE_GOOS)" GOARCH="$(RELEASE_GOARCH)" CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o "$$bin" "$(CMD_PATH)"; \
 		cp README.md LICENSE "$$outdir/"; \
 		if [ "$(RELEASE_GOOS)" = "windows" ]; then \
 			if ! command -v zip >/dev/null 2>&1; then \
