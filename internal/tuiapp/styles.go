@@ -68,7 +68,11 @@ func logDebug(format string, args ...interface{}) {
 	if !runtimeDebugEnabled {
 		return
 	}
-	f, err := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	path := runtimeDebugPath
+	if path == "" {
+		path = "debug.log"
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		return
 	}

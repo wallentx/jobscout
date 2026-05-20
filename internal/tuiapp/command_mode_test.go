@@ -1,6 +1,8 @@
 package tuiapp
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -46,6 +48,44 @@ func TestExecuteOperatorDebugCommandUpdatesRuntimeDebug(t *testing.T) {
 	}
 	if result.Title != "Debug" || !strings.Contains(result.Message, "./debug alt.log") {
 		t.Fatalf("executeOperatorCommand(debug path) = %#v; want Debug notice mentioning path", result)
+	}
+}
+
+func TestLogDebugUsesRuntimeDebugPath(t *testing.T) {
+	previousEnabled := runtimeDebugEnabled
+	previousPath := runtimeDebugPath
+	t.Cleanup(func() {
+		setRuntimeDebug(previousEnabled, previousPath)
+	})
+
+	dir := t.TempDir()
+	customPath := filepath.Join(dir, "custom-debug.log")
+	defaultPath := filepath.Join(dir, "debug.log")
+	previousWorkingDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("os.Getwd(): %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("os.Chdir(%q): %v", dir, err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(previousWorkingDir); err != nil {
+			t.Fatalf("os.Chdir(%q): %v", previousWorkingDir, err)
+		}
+	})
+
+	setRuntimeDebug(true, customPath)
+	logDebug("custom path %s", "message")
+
+	got, err := os.ReadFile(customPath)
+	if err != nil {
+		t.Fatalf("os.ReadFile(%q): %v", customPath, err)
+	}
+	if !strings.Contains(string(got), "custom path message") {
+		t.Fatalf("custom debug log = %q; want message", string(got))
+	}
+	if _, err := os.Stat(defaultPath); !os.IsNotExist(err) {
+		t.Fatalf("os.Stat(%q) error = %v; want not exist", defaultPath, err)
 	}
 }
 
