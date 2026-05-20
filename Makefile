@@ -153,7 +153,7 @@ imports-fix: ensure-hooks $(GOIMPORTS) ## Apply goimports formatting
 .PHONY: tidy-check
 tidy-check: ensure-hooks ## Check go.mod/go.sum tidiness
 	$(call PRINT_STEP,go mod tidy check)
-	@tmpdir="$$(mktemp -d "$${TMPDIR:-.}/jobscout-build.XXXXXX")"; \
+	@tmpdir="$$(mktemp -d "$${TMPDIR:-/tmp}/jobscout-build.XXXXXX")"; \
 		trap 'rm -rf "$$tmpdir"' EXIT; \
 		cp go.mod "$$tmpdir/go.mod"; \
 		if [ -f go.sum ]; then cp go.sum "$$tmpdir/go.sum"; fi; \

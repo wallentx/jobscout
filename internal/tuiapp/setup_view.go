@@ -273,7 +273,7 @@ func (m model) buildSetupOverlaySpec() popupSpec {
 		content.WriteString(popupHintStyle.Render(statusLine))
 		if dropdownOverlay.content != "" {
 			contentString := content.String()
-			contentString = lipgloss.PlaceOverlay(
+			contentString = placeOverlay(
 				dropdownOverlayX,
 				dropdownOverlayY,
 				dropdownOverlay.content,
@@ -386,7 +386,7 @@ func (m model) buildSetupOverlaySpec() popupSpec {
 		content.WriteString(popupHintStyle.Render(statusLine))
 		if dropdownOverlay.content != "" {
 			contentString := content.String()
-			contentString = lipgloss.PlaceOverlay(
+			contentString = placeOverlay(
 				dropdownOverlayX,
 				dropdownOverlayY,
 				dropdownOverlay.content,
@@ -551,7 +551,7 @@ func (m model) buildSetupOverlaySpec() popupSpec {
 		content.WriteString(popupHintStyle.Render(statusLine))
 		if dropdownOverlay.content != "" {
 			contentString := content.String()
-			contentString = lipgloss.PlaceOverlay(
+			contentString = placeOverlay(
 				dropdownOverlayX,
 				dropdownOverlayY,
 				dropdownOverlay.content,

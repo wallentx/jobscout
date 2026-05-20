@@ -145,7 +145,7 @@ func renderPopupWithTitleAndBackgroundDimming(baseView string, termWidth int, te
 	if posY < 0 {
 		posY = 0
 	}
-	return lipgloss.PlaceOverlay(
+	return placeOverlay(
 		posX,
 		posY,
 		dialog,

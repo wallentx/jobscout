@@ -93,7 +93,7 @@ func (m model) View() string {
 		}
 	}
 
-	tableView := baseStyle.Copy().
+	tableView := baseStyle.
 		Width(cW + tW + sW + pW).
 		Height(m.tableHeight + 1).
 		Render(body.String())
@@ -136,13 +136,13 @@ func (m model) View() string {
 			lines = append(lines, strings.Join(parts, "  "))
 		}
 		helpText := strings.Join(lines, "\n")
-		helpView = helpStyle.Copy().
+		helpView = helpStyle.
 			Width(m.termWidth - 4).
 			Render(helpText)
 	} else if m.isFiltering {
 		searchStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true)
 		helpText := searchStyle.Render("Search: ") + m.textInput.View() + "  (Enter: Apply • Esc: Clear)"
-		helpView = helpStyle.Copy().
+		helpView = helpStyle.
 			Width(m.termWidth - 4).
 			Render(helpText)
 	} else {
@@ -185,12 +185,12 @@ func (m model) View() string {
 		items = append(items, formatHelpItem("q", "Quit"))
 
 		helpText := buildHelpText(m.termWidth-6, items)
-		helpView = helpStyle.Copy().Width(m.termWidth - 4).Render(helpText)
+		helpView = helpStyle.Width(m.termWidth - 4).Render(helpText)
 	}
 
 	baseView := tableView + "\n" + helpView + "\n"
 	if activity := m.backgroundTaskActivityView(); activity != "" {
-		baseView = lipgloss.PlaceOverlay(0, 0, activity, baseView)
+		baseView = placeOverlay(0, 0, activity, baseView)
 	}
 
 	// 2. Render Overlays (Health or Details)
