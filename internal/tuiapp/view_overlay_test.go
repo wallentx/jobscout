@@ -190,7 +190,7 @@ func TestBackgroundTaskRendersActivityAndLegendHotkey(t *testing.T) {
 	if !strings.Contains(rendered, "✨ POST-ACCEPTANCE ENRICHMENT") {
 		t.Fatalf("View() missing background task activity title:\n%s", rendered)
 	}
-	if !strings.Contains(rendered, "t: Task") {
+	if !strings.Contains(rendered, "t Task") {
 		t.Fatalf("View() missing task legend hotkey:\n%s", rendered)
 	}
 }
@@ -244,7 +244,7 @@ func TestViewHelpIncludesHealthLegendHotkey(t *testing.T) {
 	}
 
 	rendered := ansi.Strip(m.View())
-	if !strings.Contains(rendered, "l: Legend") {
+	if !strings.Contains(rendered, "l Legend") {
 		t.Fatalf("View() missing health legend hotkey:\n%s", rendered)
 	}
 }

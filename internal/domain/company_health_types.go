@@ -24,12 +24,15 @@ type HNSignal struct {
 
 // EmployerReviewSignal represents browser-discovered employer review evidence
 type EmployerReviewSignal struct {
-	Source  string   `json:"source"`
-	Title   string   `json:"title"`
-	URL     string   `json:"url,omitempty"`
-	Rating  string   `json:"rating,omitempty"`
-	Snippet string   `json:"snippet,omitempty"`
-	Flags   []string `json:"flags,omitempty"`
+	Source             string   `json:"source"`
+	Title              string   `json:"title"`
+	URL                string   `json:"url,omitempty"`
+	Rating             string   `json:"rating,omitempty"`
+	ReviewCount        *int     `json:"review_count,omitempty"`
+	RecommendPercent   *int     `json:"recommend_percent,omitempty"`
+	CEOApprovalPercent *int     `json:"ceo_approval_percent,omitempty"`
+	Snippet            string   `json:"snippet,omitempty"`
+	Flags              []string `json:"flags,omitempty"`
 }
 
 // EmploymentRisk represents calculated employment risk
@@ -115,6 +118,7 @@ type CompanyHealthFieldAssessment struct {
 
 type CompanyHealthContext struct {
 	Company                 string
+	Aliases                 []string
 	Website                 string
 	Summary                 string
 	Industry                string

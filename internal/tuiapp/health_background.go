@@ -24,6 +24,15 @@ func (m *model) cancelRunningTasks() {
 	if m.cancelTasks != nil {
 		m.cancelTasks()
 	}
+	m.closeBulkHealthBrowser()
+}
+
+func (m *model) closeBulkHealthBrowser() {
+	if m.bulkHealthBrowser == nil {
+		return
+	}
+	m.bulkHealthBrowser.Close()
+	m.bulkHealthBrowser = nil
 }
 
 func healthTaskKeyForJob(job Job) string {
@@ -144,6 +153,20 @@ func (m model) excludeRunningSingleHealthJobs(jobs []Job) []Job {
 		filtered = append(filtered, job)
 	}
 	return filtered
+}
+
+func jobsMissingFreshHealth(cache HealthCache, jobs []Job) []Job {
+	if len(jobs) == 0 {
+		return nil
+	}
+	missing := make([]Job, 0, len(jobs))
+	for _, job := range jobs {
+		if healthpkg.CachedHealthForJob(cache, job) != nil {
+			continue
+		}
+		missing = append(missing, job)
+	}
+	return missing
 }
 
 func (m *model) startSingleHealthTask(job Job, showPopup bool, forceRefresh bool) tea.Cmd {

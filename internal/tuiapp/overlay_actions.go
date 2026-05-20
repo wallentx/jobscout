@@ -94,6 +94,15 @@ func (m *model) openHealthOverlay(loading bool, loadingText string, report *Comp
 	m.overlay.health.report = report
 	m.overlay.health.err = errText
 	m.overlay.health.scrollOffset = 0
+	m.overlay.health.refreshCompany = ""
+	m.overlay.health.refreshIdentity = CompanyHealthContext{}
+}
+
+func (m *model) openCompanyHealthIdentityOverlay(identity CompanyHealthContext, loading bool, loadingText string, report *CompanyHealthResult, errText string) {
+	m.openHealthOverlay(loading, loadingText, report, errText)
+	identity.Company = strings.TrimSpace(identity.Company)
+	m.overlay.health.refreshCompany = identity.Company
+	m.overlay.health.refreshIdentity = identity
 }
 
 func (m *model) openSetupOverlay(mode setupMode, section setupSection) {
@@ -159,5 +168,5 @@ func buildHelpText(width int, items []string) string {
 }
 
 func formatHelpItem(key string, description string) string {
-	return helpKeyStyle.Render(key) + helpValueStyle.Render(": "+description)
+	return helpKeyStyle.Render(key) + helpValueStyle.Render(" "+description)
 }

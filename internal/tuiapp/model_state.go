@@ -3,6 +3,8 @@ package tuiapp
 import (
 	"context"
 
+	healthpkg "github.com/wallentx/jobscout/internal/health"
+
 	"github.com/charmbracelet/bubbles/textinput"
 )
 
@@ -34,12 +36,14 @@ type filterOverlayState struct {
 }
 
 type healthOverlayState struct {
-	report       *CompanyHealthResult
-	loading      bool
-	minimized    bool
-	loadingText  string
-	err          string
-	scrollOffset int
+	report          *CompanyHealthResult
+	loading         bool
+	minimized       bool
+	loadingText     string
+	err             string
+	scrollOffset    int
+	refreshCompany  string
+	refreshIdentity CompanyHealthContext
 }
 
 type detailOverlayState struct {
@@ -72,6 +76,11 @@ type backgroundTaskState struct {
 	title         string
 	progress      string
 	pendingFields map[string]map[string]bool
+}
+
+type bulkHealthBrowserSession interface {
+	healthpkg.BrowserSession
+	Close()
 }
 
 type overlayState struct {
@@ -115,6 +124,7 @@ type model struct {
 	bulkHealthFailed    int
 	bulkHealthSkipped   int
 	bulkHealthInFlight  int
+	bulkHealthBrowser   bulkHealthBrowserSession
 	fetchingJobs        bool
 	fetchProgress       <-chan string
 	activeFetch         activeFetchState
@@ -132,7 +142,16 @@ type model struct {
 	tableHeight int
 
 	// Search/Filter State
-	textInput   textinput.Model
-	isFiltering bool
-	searchQuery string
+	textInput               textinput.Model
+	isFiltering             bool
+	searchQuery             string
+	commandInput            textinput.Model
+	isCommanding            bool
+	commandTypedInput       string
+	commandCompletions      []operatorCommandCompletion
+	commandCompletionIdx    int
+	commandCompletionActive bool
+	commandResultTitle      string
+	commandResultMessage    string
+	commandResultError      bool
 }

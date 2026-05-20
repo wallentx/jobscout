@@ -20,17 +20,26 @@ func ConfigureDebug(enabled bool, path string) func() {
 	llmDebug.Lock()
 	previousEnabled := llmDebug.enabled
 	previousPath := llmDebug.path
-	llmDebug.enabled = enabled
-	if strings.TrimSpace(path) != "" {
-		llmDebug.path = path
-	}
+	setDebugLocked(enabled, path)
 	llmDebug.Unlock()
 
 	return func() {
 		llmDebug.Lock()
-		llmDebug.enabled = previousEnabled
-		llmDebug.path = previousPath
+		setDebugLocked(previousEnabled, previousPath)
 		llmDebug.Unlock()
+	}
+}
+
+func SetDebug(enabled bool, path string) {
+	llmDebug.Lock()
+	defer llmDebug.Unlock()
+	setDebugLocked(enabled, path)
+}
+
+func setDebugLocked(enabled bool, path string) {
+	llmDebug.enabled = enabled
+	if strings.TrimSpace(path) != "" {
+		llmDebug.path = path
 	}
 }
 

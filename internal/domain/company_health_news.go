@@ -24,8 +24,10 @@ type RSSItem struct {
 	PubDate string `xml:"pubDate"`
 }
 
-// fetchGoogleNewsRSS fetches and parses Google News RSS feed
-func fetchGoogleNewsRSS(query string) ([]RSSItem, error) {
+// fetchGoogleNewsRSS fetches and parses Google News RSS feed.
+var fetchGoogleNewsRSS = defaultFetchGoogleNewsRSS
+
+func defaultFetchGoogleNewsRSS(query string) ([]RSSItem, error) {
 	rssURL := fmt.Sprintf(googleNewsRSSURL, url.QueryEscape(fmt.Sprintf(`"%s"`, query)))
 
 	client := &http.Client{Timeout: requestTimeout}
@@ -152,9 +154,32 @@ func filterLayoffSignalsForContext(signals []LayoffSignal, identity CompanyHealt
 
 // googleNewsSentiment fetches news and counts positive/negative keywords
 func googleNewsSentimentForContext(identity CompanyHealthContext) (titles []string, negHits, posHits int, rejected []CompanyHealthEvidence, err error) {
-	items, err := fetchGoogleNewsRSS(identity.Company)
-	if err != nil {
-		return nil, 0, 0, nil, err
+	return googleNewsSentimentForContextWithFetcher(identity, fetchGoogleNewsRSS)
+}
+
+func googleNewsSentimentForContextWithFetcher(identity CompanyHealthContext, fetch func(string) ([]RSSItem, error)) (titles []string, negHits, posHits int, rejected []CompanyHealthEvidence, err error) {
+	var items []RSSItem
+	seenItems := make(map[string]bool)
+	var firstErr error
+	for _, name := range companyHealthContextNames(identity) {
+		fetched, fetchErr := fetch(name)
+		if fetchErr != nil {
+			if firstErr == nil {
+				firstErr = fetchErr
+			}
+			continue
+		}
+		for _, item := range fetched {
+			key := strings.TrimSpace(item.Title) + "\x00" + strings.TrimSpace(item.Link)
+			if key == "\x00" || seenItems[key] {
+				continue
+			}
+			seenItems[key] = true
+			items = append(items, item)
+		}
+	}
+	if len(items) == 0 && firstErr != nil {
+		return nil, 0, 0, nil, firstErr
 	}
 
 	titles = []string{}

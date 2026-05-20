@@ -191,6 +191,17 @@ func renderHealthReport(r *CompanyHealthResult, contentWidth int) string {
 		main.WriteString("\n")
 	}
 
+	if len(r.Notices) > 0 {
+		main.WriteString("\n")
+		main.WriteString(sectionStyle.Render("NOTICES"))
+		main.WriteString("\n")
+		noticeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+		for _, notice := range r.Notices {
+			main.WriteString(noticeStyle.Render(fmt.Sprintf("  • %s", notice)))
+			main.WriteString("\n")
+		}
+	}
+
 	if r.LLMAssessment != nil {
 		assessment := r.LLMAssessment
 		main.WriteString("\n")
@@ -295,6 +306,23 @@ func renderHealthReport(r *CompanyHealthResult, contentWidth int) string {
 		}
 	}
 
+	if len(r.EmployerReviews) > 0 {
+		main.WriteString("\n")
+		main.WriteString(sectionStyle.Render("EMPLOYER REVIEWS"))
+		main.WriteString("\n")
+
+		reviewStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("183"))
+		for i, review := range r.EmployerReviews {
+			if i >= 3 {
+				main.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(fmt.Sprintf("  ... and %d more", len(r.EmployerReviews)-3)))
+				main.WriteString("\n")
+				break
+			}
+			main.WriteString(reviewStyle.Render("  • " + formatEmployerReviewSummary(review)))
+			main.WriteString("\n")
+		}
+	}
+
 	if len(r.RejectedEvidence) > 0 {
 		main.WriteString("\n")
 		main.WriteString(sectionStyle.Render("REJECTED EVIDENCE"))
@@ -355,6 +383,33 @@ func renderHealthReport(r *CompanyHealthResult, contentWidth int) string {
 	}
 
 	return main.String()
+}
+
+func formatEmployerReviewSummary(review domain.EmployerReviewSignal) string {
+	parts := []string{}
+	source := strings.TrimSpace(review.Source)
+	if source != "" {
+		parts = append(parts, strings.ToUpper(source[:1])+source[1:])
+	}
+	if review.Rating != "" {
+		parts = append(parts, review.Rating)
+	}
+	if review.ReviewCount != nil {
+		parts = append(parts, fmt.Sprintf("%d reviews", *review.ReviewCount))
+	}
+	if review.RecommendPercent != nil {
+		parts = append(parts, fmt.Sprintf("%d%% recommend", *review.RecommendPercent))
+	}
+	if review.CEOApprovalPercent != nil {
+		parts = append(parts, fmt.Sprintf("%d%% CEO", *review.CEOApprovalPercent))
+	}
+	if len(review.Flags) > 0 {
+		parts = append(parts, strings.Join(review.Flags, ", "))
+	}
+	if len(parts) == 0 && review.Title != "" {
+		parts = append(parts, review.Title)
+	}
+	return strings.Join(parts, " | ")
 }
 
 func formatHealthLLMTokenUsage(usage LLMTokenUsage) string {
@@ -588,7 +643,7 @@ func loadCompanyHealthWithIdentityAndContext(ctx context.Context, identity Compa
 	}
 }
 
-func fetchBulkHealthStepWithContext(ctx context.Context, job Job) tea.Cmd {
+func fetchBulkHealthStepWithContext(ctx context.Context, job Job, browserSession healthpkg.BrowserSession) tea.Cmd {
 	return func() tea.Msg {
 		start := time.Now()
 		startMem := currentBulkHealthMemStats()
@@ -618,6 +673,9 @@ func fetchBulkHealthStepWithContext(ctx context.Context, job Job) tea.Cmd {
 		}
 		if ctx == nil {
 			ctx = context.Background()
+		}
+		if browserSession != nil {
+			ctx = healthpkg.ContextWithBrowserSession(ctx, browserSession)
 		}
 		ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
 		defer cancel()
@@ -696,7 +754,7 @@ func (m *model) scheduleBulkHealthCommands() tea.Cmd {
 		m.bulkHealthIdx++
 		m.bulkHealthInFlight++
 		logBulkHealthDebug("schedule job index=%d company=%q website=%q cache_key=%q", m.bulkHealthIdx, job.Company, job.CompanyWebsite, healthpkg.CacheKeyForJob(job))
-		cmds = append(cmds, fetchBulkHealthStepWithContext(modelTaskContext(*m), job))
+		cmds = append(cmds, fetchBulkHealthStepWithContext(modelTaskContext(*m), job, m.bulkHealthBrowser))
 	}
 	return tea.Batch(cmds...)
 }

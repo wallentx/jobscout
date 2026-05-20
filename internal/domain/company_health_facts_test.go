@@ -1,6 +1,9 @@
 package domain
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestObserveFoundedYearMarksConflict(t *testing.T) {
 	result := &CompanyHealthResult{}
@@ -132,6 +135,151 @@ func TestHealthEvidenceAcceptsCompanyMentionWithAdjacentWords(t *testing.T) {
 				t.Fatalf("healthEvidenceMatchesCompanyContext() rejected valid OpenAI evidence: %s", reason)
 			}
 		})
+	}
+}
+
+func TestHealthEvidenceAcceptsCompanyAlias(t *testing.T) {
+	identity := CompanyHealthContext{
+		Company: "Acme Cloud",
+		Aliases: []string{
+			"AcmeCloud",
+			"Acme Cloud Inc",
+		},
+		Website: "https://www.acmecloud.example",
+	}
+
+	ok, reason := healthEvidenceMatchesCompanyContext(
+		"AcmeCloud announces expansion and new hiring plans",
+		"https://example.com/business/acmecloud-hiring",
+		identity,
+	)
+
+	if !ok {
+		t.Fatalf("healthEvidenceMatchesCompanyContext() rejected alias evidence: %s", reason)
+	}
+}
+
+func TestHealthEvidenceAcceptsPunctuatedAcronymMention(t *testing.T) {
+	identity := CompanyHealthContext{
+		Company:  "ABC",
+		Industry: "Grocery Stores",
+	}
+
+	ok, reason := healthEvidenceMatchesCompanyContext(
+		"A-B-C announces new regional distribution center",
+		"https://example.com/business/a-b-c-distribution",
+		identity,
+	)
+
+	if !ok {
+		t.Fatalf("healthEvidenceMatchesCompanyContext() rejected punctuated acronym evidence: %s", reason)
+	}
+}
+
+func TestHealthEvidenceAcceptsDistinctiveContextWithoutCompanyMention(t *testing.T) {
+	identity := CompanyHealthContext{
+		Company:  "Regional Market",
+		Summary:  "Regional Market is a Texas grocery store chain.",
+		Industry: "Grocery Stores",
+	}
+
+	ok, reason := healthEvidenceMatchesCompanyContext(
+		"Texas grocery chain announces expansion and new hiring plans",
+		"https://example.com/business/texas-grocery-chain-expansion",
+		identity,
+	)
+
+	if !ok {
+		t.Fatalf("healthEvidenceMatchesCompanyContext() rejected contextual evidence: %s", reason)
+	}
+}
+
+func TestHealthEvidenceAcceptsRegionalGroceryContextWithoutCompanyMention(t *testing.T) {
+	identity := CompanyHealthContext{
+		Company:  "Regional Market",
+		Summary:  "Regional Market is a supermarket chain based in San Antonio, Texas.",
+		Industry: "Retail, Grocery",
+	}
+
+	ok, reason := healthEvidenceMatchesCompanyContext(
+		"Beloved grocer plans new S.A.-area store in statewide expansion",
+		"https://example.com/business/regional-expansion",
+		identity,
+	)
+
+	if !ok {
+		t.Fatalf("healthEvidenceMatchesCompanyContext() rejected regional grocery evidence: %s", reason)
+	}
+}
+
+func TestHealthEvidenceRejectsWeakContextWithoutCompanyMention(t *testing.T) {
+	identity := CompanyHealthContext{
+		Company:  "Regional Market",
+		Summary:  "Regional Market is a Texas grocery store chain.",
+		Industry: "Grocery Stores",
+	}
+
+	ok, reason := healthEvidenceMatchesCompanyContext(
+		"Retail industry leaders discuss grocery hiring trends",
+		"https://example.com/business/grocery-hiring-trends",
+		identity,
+	)
+
+	if ok {
+		t.Fatal("healthEvidenceMatchesCompanyContext() accepted weak contextual evidence")
+	}
+	if reason == "" {
+		t.Fatal("healthEvidenceMatchesCompanyContext() reason is empty")
+	}
+}
+
+func TestCompanyHealthContextDomainAcceptsBareDomain(t *testing.T) {
+	identity := CompanyHealthContext{
+		Company: "Acme Cloud",
+		Website: "acmecloud.example",
+	}
+
+	if got, want := CompanyHealthContextDomain(identity), "acmecloud.example"; got != want {
+		t.Fatalf("CompanyHealthContextDomain() = %q, want %q", got, want)
+	}
+}
+
+func TestGoogleNewsSentimentForContextSearchesAliases(t *testing.T) {
+	identity := CompanyHealthContext{
+		Company: "Acme",
+		Aliases: []string{
+			"Acme Cloud",
+		},
+	}
+	var queries []string
+	fetch := func(query string) ([]RSSItem, error) {
+		queries = append(queries, query)
+		switch query {
+		case "Acme":
+			return []RSSItem{
+				{Title: "Generic cloud market update", Link: "https://news.google.com/rss/articles/generic"},
+			}, nil
+		case "Acme Cloud":
+			return []RSSItem{
+				{Title: "Acme Cloud announces expansion and new hiring plans", Link: "https://news.example/acme-cloud-expansion"},
+			}, nil
+		default:
+			return nil, nil
+		}
+	}
+
+	titles, _, _, rejected, err := googleNewsSentimentForContextWithFetcher(identity, fetch)
+	if err != nil {
+		t.Fatalf("googleNewsSentimentForContextWithFetcher() error = %v", err)
+	}
+	if strings.Join(queries, "\x00") != "Acme\x00Acme Cloud" {
+		t.Fatalf("queries = %#v, want primary company and alias", queries)
+	}
+	if strings.Join(titles, "\x00") != "Acme Cloud announces expansion and new hiring plans" {
+		t.Fatalf("titles = %#v, want alias-matched title", titles)
+	}
+	if len(rejected) != 1 || rejected[0].Value != "Generic cloud market update" {
+		t.Fatalf("rejected = %#v, want generic primary-name result rejected", rejected)
 	}
 }
 

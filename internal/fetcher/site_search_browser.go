@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"os/exec"
 	"regexp"
 	"slices"
 	"sort"
@@ -42,6 +43,7 @@ var siteSearchNetworkErrorPattern = regexp.MustCompile(`net::[A-Z_]+`)
 var cityStateLinePattern = regexp.MustCompile(`^[A-Za-z .'-]+,\s*[A-Z]{2}(?:\b|$)`)
 var relativeTimeLinePattern = regexp.MustCompile(`(?i)^\d+\s+(minute|hour|day|week|month)s?\s+ago$`)
 var siteSearchBrowserLookPath = launcher.LookPath
+var siteSearchBrowserExecLookPath = exec.LookPath
 
 var errSiteSearchVerificationRequired = errors.New("verification required")
 
@@ -87,6 +89,9 @@ func newSiteSearchBrowser() (*rod.Browser, func(), error) {
 
 func cleanupLaunchedSiteSearchBrowser(browser siteSearchBrowserCloser, launch siteSearchBrowserLauncherCleanup) {
 	if browser != nil {
+		if concrete, ok := browser.(*rod.Browser); ok {
+			forgetReusableBrowserPage(concrete)
+		}
 		_ = browser.Close()
 	}
 	if launch != nil {
@@ -111,6 +116,25 @@ func findSiteSearchBrowserBinary() string {
 	}
 	if path, ok := siteSearchBrowserLookPath(); ok {
 		return path
+	}
+	for _, candidate := range []string{
+		"chromium-browser",
+		"chromium",
+		"google-chrome",
+		"google-chrome-stable",
+		"chrome",
+		"microsoft-edge",
+		"/data/data/com.termux/files/usr/bin/chromium-browser",
+		"/usr/bin/chromium-browser",
+		"/usr/bin/chromium",
+		"/usr/bin/google-chrome",
+		"/usr/bin/google-chrome-stable",
+		"/usr/bin/microsoft-edge",
+		"/snap/bin/chromium",
+	} {
+		if path, err := siteSearchBrowserExecLookPath(candidate); err == nil {
+			return path
+		}
 	}
 	return ""
 }

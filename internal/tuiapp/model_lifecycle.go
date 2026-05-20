@@ -46,6 +46,8 @@ func initialModel() model {
 	ti.CharLimit = 50
 	ti.Width = 30
 
+	commandInput := newOperatorCommandInput()
+
 	caps := config.EvaluateRuntimeCapabilities()
 
 	m := model{
@@ -61,6 +63,7 @@ func initialModel() model {
 		sortBy:        0,    // Default to Health sort
 		sortDesc:      true, // Default Health to descending (highest first)
 		textInput:     ti,
+		commandInput:  commandInput,
 	}
 	if appCfg, err := config.LoadAppConfig(runtimeConfigPath); err == nil {
 		m.activeFilters = filterValuesFromStatuses(appCfg.UI.DefaultFilterStatuses)
@@ -75,6 +78,15 @@ func initialModel() model {
 	}
 	m.applyFilterAndSort()
 	return m
+}
+
+func newOperatorCommandInput() textinput.Model {
+	input := textinput.New()
+	input.Prompt = ""
+	input.Placeholder = "debug status"
+	input.CharLimit = 256
+	input.Width = 50
+	return input
 }
 
 func (m model) getMaxHealthScroll() int {

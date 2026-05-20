@@ -81,6 +81,31 @@ func TestFindSiteSearchBrowserBinaryPrefersEnvironmentOverride(t *testing.T) {
 	}
 }
 
+func TestFindSiteSearchBrowserBinaryUsesTermuxChromiumFallback(t *testing.T) {
+	t.Setenv("ROD_BROWSER_BIN", "")
+	previousRodLookPath := siteSearchBrowserLookPath
+	previousExecLookPath := siteSearchBrowserExecLookPath
+	siteSearchBrowserLookPath = func() (string, bool) {
+		return "", false
+	}
+	siteSearchBrowserExecLookPath = func(file string) (string, error) {
+		if file == "chromium-browser" {
+			return "/data/data/com.termux/files/usr/bin/chromium-browser", nil
+		}
+		return "", errors.New("not found")
+	}
+	t.Cleanup(func() {
+		siteSearchBrowserLookPath = previousRodLookPath
+		siteSearchBrowserExecLookPath = previousExecLookPath
+	})
+
+	got := findSiteSearchBrowserBinary()
+	want := "/data/data/com.termux/files/usr/bin/chromium-browser"
+	if got != want {
+		t.Fatalf("findSiteSearchBrowserBinary() = %q; want %q", got, want)
+	}
+}
+
 func TestSiteSearchURLSkipsBareSharedATSHosts(t *testing.T) {
 	tests := []struct {
 		name   string

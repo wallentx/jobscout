@@ -93,16 +93,56 @@ func (m model) View() string {
 		}
 	}
 
-	tableView := baseStyle.Copy().
+	tableView := baseStyle.
 		Width(cW + tW + sW + pW).
 		Height(m.tableHeight + 1).
 		Render(body.String())
 
 	var helpView string
-	if m.isFiltering {
+	if m.isCommanding {
+		commandStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Bold(true)
+		commandHintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+		commandResultTitleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+		commandResultBodyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+		if m.commandResultError {
+			commandResultTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
+		}
+		lines := []string{}
+		if m.commandResultMessage != "" {
+			resultBody := strings.ReplaceAll(m.commandResultMessage, "\n", " • ")
+			lines = append(lines, commandResultTitleStyle.Render(m.commandResultTitle)+helpValueStyle.Render(" ")+commandResultBodyStyle.Render(resultBody))
+		}
+		commandLine := commandStyle.Render(":") + " " + m.commandInputInlineView()
+		if ghost := m.operatorCommandGhostHint(); ghost != "" {
+			commandLine += commandHintStyle.Render(ghost)
+		}
+		lines = append(lines, commandLine)
+		lines = append(lines, commandHintStyle.Render("Tab Select/Cycle • Space Confirm • Enter Run • Esc Cancel"))
+		if pool := m.operatorCommandPool(); len(pool) > 0 {
+			commandPoolSelectedStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("230")).
+				Background(lipgloss.Color("60")).
+				Bold(true)
+			parts := make([]string, 0, len(pool))
+			for i, completion := range pool {
+				label := completion.Label
+				if m.commandCompletionActive && i == m.commandCompletionIdx {
+					label = commandPoolSelectedStyle.Render(label)
+				} else {
+					label = commandHintStyle.Render(label)
+				}
+				parts = append(parts, label)
+			}
+			lines = append(lines, strings.Join(parts, "  "))
+		}
+		helpText := strings.Join(lines, "\n")
+		helpView = helpStyle.
+			Width(m.termWidth - 4).
+			Render(helpText)
+	} else if m.isFiltering {
 		searchStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true)
 		helpText := searchStyle.Render("Search: ") + m.textInput.View() + "  (Enter: Apply • Esc: Clear)"
-		helpView = helpStyle.Copy().
+		helpView = helpStyle.
 			Width(m.termWidth - 4).
 			Render(helpText)
 	} else {
@@ -132,9 +172,10 @@ func (m model) View() string {
 			formatHelpItem("U", "Update"),
 			formatHelpItem("V", "Active"),
 			formatHelpItem("c", "Config"),
-			formatHelpItem("D", "Del"),
+			formatHelpItem("D", "Deleted"),
 			formatHelpItem("E", "Edit"),
 			formatHelpItem("/", "Search"),
+			formatHelpItem(":", "Cmd"),
 			formatHelpItem("1-5", "Sort"),
 			formatHelpItem("f", filterLabel),
 		)
@@ -144,12 +185,12 @@ func (m model) View() string {
 		items = append(items, formatHelpItem("q", "Quit"))
 
 		helpText := buildHelpText(m.termWidth-6, items)
-		helpView = helpStyle.Copy().Width(m.termWidth - 4).Render(helpText)
+		helpView = helpStyle.Width(m.termWidth - 4).Render(helpText)
 	}
 
 	baseView := tableView + "\n" + helpView + "\n"
 	if activity := m.backgroundTaskActivityView(); activity != "" {
-		baseView = lipgloss.PlaceOverlay(0, 0, activity, baseView)
+		baseView = placeOverlay(0, 0, activity, baseView)
 	}
 
 	// 2. Render Overlays (Health or Details)
@@ -187,4 +228,12 @@ func (m model) View() string {
 	}
 
 	return viewWithOverlays
+}
+
+func (m model) commandInputInlineView() string {
+	input := m.commandInput
+	if valueWidth := lipgloss.Width(input.Value()); valueWidth > 0 {
+		input.Width = valueWidth
+	}
+	return input.View()
 }

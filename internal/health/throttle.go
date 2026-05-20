@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	companyHealthBrowserConcurrency = 1
+	companyHealthBrowserConcurrency = 3
 	companyHealthLLMConcurrency     = 2
 )
 

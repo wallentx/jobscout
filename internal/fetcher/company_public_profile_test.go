@@ -35,6 +35,65 @@ func TestExtractPublicProfileIndustryFromText(t *testing.T) {
 	}
 }
 
+func TestCompanyPublicProfileEvidenceFromTextExtractsLinkedInFacts(t *testing.T) {
+	evidence := companyPublicProfileEvidenceFromText(
+		"linkedin",
+		"https://www.linkedin.com/company/ramp/",
+		"Ramp | LinkedIn",
+		"Ramp | LinkedIn Financial Services Company size 1,001-5,000 employees Headquarters New York, NY Founded 2019 Website https://ramp.com",
+	)
+
+	if evidence.Source != "linkedin" {
+		t.Fatalf("Source = %q; want linkedin", evidence.Source)
+	}
+	if evidence.Industry != "Financial Services" {
+		t.Fatalf("Industry = %q; want Financial Services", evidence.Industry)
+	}
+	if evidence.EmployeeRange != "1,001-5,000 employees" {
+		t.Fatalf("EmployeeRange = %q; want 1,001-5,000 employees", evidence.EmployeeRange)
+	}
+	if evidence.EstimatedEmployees == nil || *evidence.EstimatedEmployees != 3000 {
+		t.Fatalf("EstimatedEmployees = %#v; want midpoint 3000", evidence.EstimatedEmployees)
+	}
+	if evidence.FoundedYear == nil || *evidence.FoundedYear != 2019 {
+		t.Fatalf("FoundedYear = %#v; want 2019", evidence.FoundedYear)
+	}
+	if evidence.Headquarters != "New York, NY" {
+		t.Fatalf("Headquarters = %q; want New York, NY", evidence.Headquarters)
+	}
+}
+
+func TestCompanyPublicProfileEvidenceFromTextExtractsGlassdoorReviewMetrics(t *testing.T) {
+	evidence := companyPublicProfileEvidenceFromText(
+		"glassdoor",
+		"https://www.glassdoor.com/Overview/Working-at-Ramp-EI_IE4211228.11,15.htm",
+		"Ramp Reviews | Glassdoor",
+		"Ramp Reviews | Glassdoor 4.2 out of 5 512 reviews 84% recommend to a friend 92% approve of CEO Size 1001 to 5000 Employees Founded 2019 Revenue $100 to $500 million (USD)",
+	)
+
+	if evidence.Rating != "4.2/5" {
+		t.Fatalf("Rating = %q; want 4.2/5", evidence.Rating)
+	}
+	if evidence.ReviewCount == nil || *evidence.ReviewCount != 512 {
+		t.Fatalf("ReviewCount = %#v; want 512", evidence.ReviewCount)
+	}
+	if evidence.RecommendPercent == nil || *evidence.RecommendPercent != 84 {
+		t.Fatalf("RecommendPercent = %#v; want 84", evidence.RecommendPercent)
+	}
+	if evidence.CEOApprovalPercent == nil || *evidence.CEOApprovalPercent != 92 {
+		t.Fatalf("CEOApprovalPercent = %#v; want 92", evidence.CEOApprovalPercent)
+	}
+	if evidence.EmployeeRange != "1001 to 5000 Employees" {
+		t.Fatalf("EmployeeRange = %q; want 1001 to 5000 Employees", evidence.EmployeeRange)
+	}
+	if evidence.EstimatedEmployees == nil || *evidence.EstimatedEmployees != 3000 {
+		t.Fatalf("EstimatedEmployees = %#v; want midpoint 3000", evidence.EstimatedEmployees)
+	}
+	if evidence.Revenue != "$100 to $500 million (USD)" {
+		t.Fatalf("Revenue = %q; want $100 to $500 million (USD)", evidence.Revenue)
+	}
+}
+
 func TestEnrichJobsFromPublicProfileIndustryUsesSearchSnippet(t *testing.T) {
 	searchServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`

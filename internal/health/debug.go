@@ -20,17 +20,26 @@ func ConfigureDebug(enabled bool, path string) func() {
 	healthDebug.Lock()
 	previousEnabled := healthDebug.enabled
 	previousPath := healthDebug.path
-	healthDebug.enabled = enabled
-	if strings.TrimSpace(path) != "" {
-		healthDebug.path = path
-	}
+	setDebugLocked(enabled, path)
 	healthDebug.Unlock()
 
 	return func() {
 		healthDebug.Lock()
-		healthDebug.enabled = previousEnabled
-		healthDebug.path = previousPath
+		setDebugLocked(previousEnabled, previousPath)
 		healthDebug.Unlock()
+	}
+}
+
+func SetDebug(enabled bool, path string) {
+	healthDebug.Lock()
+	defer healthDebug.Unlock()
+	setDebugLocked(enabled, path)
+}
+
+func setDebugLocked(enabled bool, path string) {
+	healthDebug.enabled = enabled
+	if strings.TrimSpace(path) != "" {
+		healthDebug.path = path
 	}
 }
 
