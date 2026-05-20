@@ -230,6 +230,67 @@ func TestHealthOverlayHealthKeyDumpsExistingReportAndRefreshes(t *testing.T) {
 	}
 }
 
+func TestHealthOverlayHealthKeyRefreshesCommandCompanyNotSelectedJob(t *testing.T) {
+	prevStore := runtimeHealthStore
+	fakeStore := &fakeHealthStore{}
+	runtimeHealthStore = fakeStore
+	t.Cleanup(func() {
+		runtimeHealthStore = prevStore
+	})
+
+	selectedJob := Job{
+		Company:        "Acme",
+		Title:          "Backend Engineer",
+		CompanyWebsite: "https://www.acme.example",
+	}
+	report := &CompanyHealthResult{
+		Company:    "GitHub",
+		Score:      82,
+		Confidence: "high",
+	}
+	m := model{
+		termWidth:     120,
+		termHeight:    40,
+		tableHeight:   calculateTableHeight(40),
+		allJobs:       []Job{selectedJob},
+		filteredJobs:  []Job{selectedJob},
+		activeFilters: filterValuesFromStatuses(nil),
+		overlay: overlayState{
+			kind: overlayHealth,
+			health: healthOverlayState{
+				report: report,
+			},
+		},
+		healthCache: HealthCache{
+			"GitHub": {
+				Result:    report,
+				Timestamp: time.Now(),
+			},
+		},
+	}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	got := updated.(model)
+	if cmd == nil {
+		t.Fatal("Update(h) cmd = nil; want command-company health refresh")
+	}
+	if got.singleHealthTasksActive() {
+		t.Fatal("single health task active = true; want command-company refresh instead of selected-job refresh")
+	}
+	if got.overlay.kind != overlayHealth || !got.overlay.health.loading {
+		t.Fatalf("overlay = %#v; want loading command health overlay", got.overlay)
+	}
+	if !strings.Contains(got.overlay.health.loadingText, "GitHub") {
+		t.Fatalf("loadingText = %q; want GitHub", got.overlay.health.loadingText)
+	}
+	if _, ok := got.healthCache["GitHub"]; ok {
+		t.Fatalf("healthCache[GitHub] still present; want dumped before refresh")
+	}
+	if len(fakeStore.deleted) == 0 || fakeStore.deleted[0] != "GitHub" {
+		t.Fatalf("deleted health keys = %#v; want GitHub first", fakeStore.deleted)
+	}
+}
+
 func TestHealthOverlayRendersIdentityUnresolvedState(t *testing.T) {
 	m := model{
 		termWidth:  100,
@@ -283,6 +344,25 @@ func TestRenderHealthReportHidesDebugEvidenceWithoutDebugFlag(t *testing.T) {
 	rendered := renderHealthReport(report, 100)
 	if strings.Contains(rendered, "DEBUG EVIDENCE") {
 		t.Fatalf("renderHealthReport() unexpectedly rendered debug evidence: %q", rendered)
+	}
+}
+
+func TestRenderHealthReportShowsNotices(t *testing.T) {
+	report := &CompanyHealthResult{
+		Company:    "Acme",
+		Score:      59,
+		Confidence: "medium",
+		Notices:    []string{"Install Chrome or Chromium to enable company-site health signals."},
+	}
+
+	rendered := ansi.Strip(renderHealthReport(report, 100))
+	for _, expected := range []string{
+		"NOTICES",
+		"Install Chrome or Chromium to enable company-site health signals.",
+	} {
+		if !strings.Contains(rendered, expected) {
+			t.Fatalf("renderHealthReport() missing %q in:\n%s", expected, rendered)
+		}
 	}
 }
 

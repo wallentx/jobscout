@@ -147,6 +147,68 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if m.isCommanding {
+		switch msg.String() {
+		case "esc":
+			m.isCommanding = false
+			m.resetOperatorCommandPrompt()
+			m.commandInput.Blur()
+			m.commandResultTitle = ""
+			m.commandResultMessage = ""
+			m.commandResultError = false
+			return m, nil
+		case "tab":
+			m.applyOperatorCommandCompletion()
+			return m, nil
+		case " ", "space":
+			if m.confirmOperatorCommandCompletion() {
+				return m, nil
+			}
+			m.prepareOperatorCommandTyping()
+			var cmd2 tea.Cmd
+			m.commandInput, cmd2 = m.commandInput.Update(msg)
+			m.updateOperatorCommandTypedInput()
+			m.commandResultTitle = ""
+			m.commandResultMessage = ""
+			m.commandResultError = false
+			return m, cmd2
+		case "enter":
+			input := m.commandInput.Value()
+			m.resetOperatorCommandPrompt()
+			result, err := executeOperatorCommand(input)
+			if err != nil {
+				m.commandResultTitle = "Command Failed"
+				m.commandResultMessage = err.Error()
+				m.commandResultError = true
+				return m, nil
+			}
+			if company := strings.TrimSpace(result.HealthIdentity.Company); company != "" {
+				identity := result.HealthIdentity
+				identity.Company = company
+				m.isCommanding = false
+				m.commandInput.Blur()
+				m.commandResultTitle = ""
+				m.commandResultMessage = ""
+				m.commandResultError = false
+				m.openCompanyHealthIdentityOverlay(identity, true, fmt.Sprintf("Loading health for %s...", company), nil, "")
+				return m, tea.Batch(loadCompanyHealthWithIdentity(identity, false), m.restartLoadingIndicator())
+			}
+			m.commandResultTitle = result.Title
+			m.commandResultMessage = result.Message
+			m.commandResultError = false
+			return m, nil
+		default:
+			var cmd2 tea.Cmd
+			m.prepareOperatorCommandTyping()
+			m.commandInput, cmd2 = m.commandInput.Update(msg)
+			m.updateOperatorCommandTypedInput()
+			m.commandResultTitle = ""
+			m.commandResultMessage = ""
+			m.commandResultError = false
+			return m, cmd2
+		}
+	}
+
 	if m.isFiltering {
 		switch msg.String() {
 		case "esc":
@@ -273,6 +335,12 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "end":
 			m.overlay.health.scrollOffset = m.getMaxHealthScroll()
 		case "h":
+			if identity, ok := m.healthOverlayRefreshIdentity(); ok {
+				company := strings.TrimSpace(identity.Company)
+				m.clearStoredHealthForIdentity(identity)
+				m.openCompanyHealthIdentityOverlay(identity, true, fmt.Sprintf("Refreshing %s...", company), nil, "")
+				return m, tea.Batch(loadCompanyHealthWithIdentity(identity, true), m.restartLoadingIndicator())
+			}
 			if len(m.filteredJobs) == 0 || m.cursor < 0 || m.cursor >= len(m.filteredJobs) {
 				return m, nil
 			}
@@ -516,6 +584,16 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.textInput.Focus()
 			return m, textinput.Blink
 		}
+	case ":":
+		if mainListKeysAvailable {
+			m.isCommanding = true
+			m.resetOperatorCommandPrompt()
+			m.commandInput.Focus()
+			m.commandResultTitle = ""
+			m.commandResultMessage = ""
+			m.commandResultError = false
+			return m, textinput.Blink
+		}
 	case "h":
 		if mainListKeysAvailable && len(m.filteredJobs) > 0 {
 			job := m.filteredJobs[m.cursor]
@@ -672,4 +750,61 @@ func (m *model) clearStoredHealthForJob(job Job) {
 			logDebug("delete health cache failed key=%q error=%v", key, err)
 		}
 	}
+}
+
+func (m *model) clearStoredHealthForIdentity(identity CompanyHealthContext) {
+	company := strings.TrimSpace(identity.Company)
+	keys := []string{
+		healthpkg.CacheKeyForIdentity(identity),
+		company,
+		strings.ToLower(company),
+	}
+	for _, alias := range identity.Aliases {
+		alias = strings.TrimSpace(alias)
+		keys = append(keys, alias, strings.ToLower(alias))
+	}
+	seen := make(map[string]bool, len(keys))
+	for _, key := range keys {
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		delete(m.healthCache, key)
+		if err := runtimeHealthStore.DeleteHealth(key); err != nil {
+			logDebug("delete health cache failed key=%q error=%v", key, err)
+		}
+	}
+}
+
+func (m model) healthOverlayRefreshIdentity() (CompanyHealthContext, bool) {
+	identity := m.overlay.health.refreshIdentity
+	if strings.TrimSpace(identity.Company) != "" {
+		identity.Company = strings.TrimSpace(identity.Company)
+		return identity, true
+	}
+	company := strings.TrimSpace(m.overlay.health.refreshCompany)
+	if company != "" {
+		return CompanyHealthContext{Company: company}, true
+	}
+	if m.overlay.health.report == nil {
+		return CompanyHealthContext{}, false
+	}
+	reportCompany := strings.TrimSpace(m.overlay.health.report.Company)
+	if reportCompany == "" {
+		return CompanyHealthContext{}, false
+	}
+	reportIdentity := CompanyHealthContext{
+		Company:  reportCompany,
+		Website:  healthpkg.SourceStringFromMap(m.overlay.health.report.Sources, "company_identity", "website"),
+		Summary:  healthpkg.SourceStringFromMap(m.overlay.health.report.Sources, "company_identity", "summary"),
+		Industry: healthpkg.SourceStringFromMap(m.overlay.health.report.Sources, "company_identity", "industry"),
+	}
+	if len(m.filteredJobs) == 0 || m.cursor < 0 || m.cursor >= len(m.filteredJobs) {
+		return reportIdentity, true
+	}
+	selectedCompany := strings.TrimSpace(m.filteredJobs[m.cursor].Company)
+	if !strings.EqualFold(reportCompany, selectedCompany) {
+		return reportIdentity, true
+	}
+	return CompanyHealthContext{}, false
 }

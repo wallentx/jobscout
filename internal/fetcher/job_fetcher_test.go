@@ -1965,6 +1965,30 @@ func TestApplyBrowserCompanySiteProfileEnrichesMissingIdentity(t *testing.T) {
 	}
 }
 
+func TestCanonicalProvidedCompanySiteURLAcceptsBareDomain(t *testing.T) {
+	got := canonicalProvidedCompanySiteURL("acmecloud.example/about")
+	want := "https://acmecloud.example/"
+	if got != want {
+		t.Fatalf("canonicalProvidedCompanySiteURL() = %q, want %q", got, want)
+	}
+}
+
+func TestPopulateCompanySiteProfileIdentity(t *testing.T) {
+	profile := &domain.CompanySiteProfile{
+		WebsiteURL:  "https://www.acmecloud.example/",
+		WebsiteText: "Acme Cloud is a developer tools platform that helps software teams deploy services safely. Industry: Developer Tools",
+	}
+
+	populateCompanySiteProfileIdentity(profile, "Acme Cloud")
+
+	if profile.Summary == "" {
+		t.Fatal("populateCompanySiteProfileIdentity() left Summary empty")
+	}
+	if profile.Industry != "Developer Tools" {
+		t.Fatalf("populateCompanySiteProfileIdentity() Industry = %q, want Developer Tools", profile.Industry)
+	}
+}
+
 func TestEnrichJobsFromApplyPagesDoesNotUseBrowserCompanySearchFallback(t *testing.T) {
 	job := Job{
 		Company:  "Acme",

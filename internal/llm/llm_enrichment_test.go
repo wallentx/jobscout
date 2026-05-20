@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/tmc/langchaingo/llms"
+	"github.com/wallentx/jobscout/internal/domain"
 )
 
 type fakeContentLLM struct {
@@ -157,6 +158,118 @@ func TestEnrichJobIdentityWithLLM(t *testing.T) {
 	}
 }
 
+func TestBuildCompanyIdentitySearchPromptIncludesIdentityAndSourceRules(t *testing.T) {
+	prompt := buildCompanyIdentitySearchPrompt(domain.CompanyHealthContext{
+		Company:  "Acme Cloud",
+		Aliases:  []string{"AcmeCloud"},
+		Website:  "https://www.acmecloud.example",
+		Summary:  "Acme Cloud builds deployment automation for software teams.",
+		Industry: "Developer Tools",
+	})
+
+	for _, expected := range []string{
+		"Acme Cloud",
+		"AcmeCloud",
+		"https://www.acmecloud.example",
+		"Developer Tools",
+		"Do not score company health",
+		"Website/domain is the strongest identity anchor",
+		"source URL",
+		"Return ONLY valid JSON",
+		`"canonical_name"`,
+		`"sources"`,
+	} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("buildCompanyIdentitySearchPrompt() missing %q in:\n%s", expected, prompt)
+		}
+	}
+}
+
+func TestEnrichCompanyHealthIdentityWithLLMParsesSourcedFacts(t *testing.T) {
+	llm := fakeContentLLM{content: `{
+		"canonical_name": "Acme Cloud",
+		"aliases": ["AcmeCloud"],
+		"website": "https://www.acmecloud.example",
+		"industry": "Developer Tools",
+		"summary": "Acme Cloud builds deployment automation for software teams.",
+		"sources": [
+			{
+				"url": "https://www.acmecloud.example/about",
+				"supports": ["website", "summary", "industry"]
+			}
+		]
+	}`}
+
+	result, _, err := enrichCompanyHealthIdentityWithLLM(context.Background(), llm, domain.CompanyHealthContext{
+		Company: "Acme Cloud",
+	})
+	if err != nil {
+		t.Fatalf("enrichCompanyHealthIdentityWithLLM() error = %v", err)
+	}
+	if result.CanonicalName != "Acme Cloud" {
+		t.Fatalf("result.CanonicalName = %q, want Acme Cloud", result.CanonicalName)
+	}
+	if result.Website != "https://www.acmecloud.example" {
+		t.Fatalf("result.Website = %q, want https://www.acmecloud.example", result.Website)
+	}
+	if result.Industry != "Developer Tools" {
+		t.Fatalf("result.Industry = %q, want Developer Tools", result.Industry)
+	}
+	if len(result.Sources) != 1 || result.Sources[0].URL != "https://www.acmecloud.example/about" {
+		t.Fatalf("result.Sources = %#v, want sourced about URL", result.Sources)
+	}
+}
+
+func TestApplyCompanyIdentitySearchResultPreservesExistingFields(t *testing.T) {
+	identity := applyCompanyIdentitySearchResult(domain.CompanyHealthContext{
+		Company: "Acme Cloud",
+		Aliases: []string{"Acme"},
+		Website: "https://known.example",
+	}, &CompanyIdentitySearchResult{
+		CanonicalName: "Acme Cloud Inc.",
+		Aliases:       []string{"AcmeCloud", "Acme"},
+		Website:       "https://wrong.example",
+		Industry:      "Developer Tools",
+		Summary:       "Acme Cloud builds deployment automation for software teams.",
+	})
+
+	if identity.Website != "https://known.example" {
+		t.Fatalf("identity.Website = %q, want existing website", identity.Website)
+	}
+	if identity.Industry != "Developer Tools" {
+		t.Fatalf("identity.Industry = %q, want Developer Tools", identity.Industry)
+	}
+	if identity.Summary == "" {
+		t.Fatal("identity.Summary is empty, want LLM summary")
+	}
+	for _, expected := range []string{"Acme", "AcmeCloud", "Acme Cloud Inc."} {
+		if !stringSliceContains(identity.Aliases, expected) {
+			t.Fatalf("identity.Aliases = %#v, want %q", identity.Aliases, expected)
+		}
+	}
+}
+
+func TestApplyCompanyIdentitySearchResultRejectsSharedProfileWebsite(t *testing.T) {
+	identity := applyCompanyIdentitySearchResult(domain.CompanyHealthContext{
+		Company: "Acme Cloud",
+	}, &CompanyIdentitySearchResult{
+		CanonicalName: "Acme Cloud Inc.",
+		Website:       "https://www.linkedin.com/company/acme-cloud/",
+		Industry:      "Developer Tools",
+		Summary:       "Acme Cloud builds deployment automation for software teams.",
+	})
+
+	if identity.Website != "" {
+		t.Fatalf("identity.Website = %q, want rejected shared profile host", identity.Website)
+	}
+	if identity.Industry != "Developer Tools" {
+		t.Fatalf("identity.Industry = %q, want non-website fields preserved", identity.Industry)
+	}
+	if identity.Summary == "" {
+		t.Fatal("identity.Summary is empty, want non-website fields preserved")
+	}
+}
+
 func TestBuildJobIdentityPromptCapsNoisyPageText(t *testing.T) {
 	pageText := "Concept Plus builds software for federal clients. " + strings.Repeat(`"`, 20000)
 
@@ -231,11 +344,13 @@ func TestBuildCompanyHealthLLMPromptIncludesSignals(t *testing.T) {
 		},
 		EmployerReviews: []EmployerReviewSignal{
 			{
-				Source:  "glassdoor",
-				Title:   "Acme Reviews",
-				Rating:  "3.7/5",
-				Snippet: "Employees mention good culture and long hours.",
-				Flags:   []string{"long hours", "positive culture"},
+				Source:           "glassdoor",
+				Title:            "Acme Reviews",
+				Rating:           "3.7/5",
+				ReviewCount:      intPtr(512),
+				RecommendPercent: intPtr(84),
+				Snippet:          "Employees mention good culture and long hours.",
+				Flags:            []string{"long hours", "positive culture"},
 			},
 		},
 	}
@@ -247,6 +362,8 @@ func TestBuildCompanyHealthLLMPromptIncludesSignals(t *testing.T) {
 		"Acme announces restructuring",
 		"Acme launches new developer platform",
 		"glassdoor | rating 3.7/5",
+		"512 reviews",
+		"84% recommend",
 		"long hours",
 		"Return ONLY valid JSON",
 	} {

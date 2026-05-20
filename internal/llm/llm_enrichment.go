@@ -13,6 +13,7 @@ import (
 	"github.com/tmc/langchaingo/llms/googleai"
 	"github.com/tmc/langchaingo/llms/ollama"
 	"github.com/tmc/langchaingo/llms/openai"
+	"github.com/wallentx/jobscout/internal/domain"
 )
 
 const maxCompanyHealthRejectedEvidenceInPrompt = 12
@@ -37,6 +38,29 @@ type jobIdentityLLMInput struct {
 	ExistingIndustry string `json:"existing_company_industry,omitempty"`
 	PageURL          string `json:"page_url"`
 	PageText         string `json:"page_text"`
+}
+
+type companyIdentitySearchInput struct {
+	Company  string   `json:"company"`
+	Aliases  []string `json:"aliases,omitempty"`
+	Website  string   `json:"website,omitempty"`
+	Summary  string   `json:"summary,omitempty"`
+	Industry string   `json:"industry,omitempty"`
+}
+
+type CompanyIdentitySearchSource struct {
+	URL      string   `json:"url"`
+	Supports []string `json:"supports"`
+}
+
+type CompanyIdentitySearchResult struct {
+	CanonicalName string                        `json:"canonical_name"`
+	Aliases       []string                      `json:"aliases"`
+	Website       string                        `json:"website"`
+	Industry      string                        `json:"industry"`
+	Summary       string                        `json:"summary"`
+	Sources       []CompanyIdentitySearchSource `json:"sources"`
+	TokenUsage    *LLMTokenUsage                `json:"token_usage,omitempty"`
 }
 
 type companyHealthLLMInput struct {
@@ -314,6 +338,179 @@ func EnrichJobIdentityWithLLMUsage(ctx context.Context, llm llms.Model, job Job,
 	return enrichJobIdentityWithLLMUsage(ctx, llm, job, page)
 }
 
+func buildCompanyIdentitySearchPrompt(identity CompanyHealthContext) string {
+	input := companyIdentitySearchInput{
+		Company:  strings.TrimSpace(identity.Company),
+		Aliases:  trimNonEmptyStrings(identity.Aliases),
+		Website:  strings.TrimSpace(identity.Website),
+		Summary:  strings.TrimSpace(identity.Summary),
+		Industry: strings.TrimSpace(identity.Industry),
+	}
+	data, err := json.MarshalIndent(input, "", "  ")
+	if err != nil {
+		data = []byte("{}")
+	}
+
+	var prompt strings.Builder
+	prompt.WriteString("Find factual company identity context for a company health lookup. ")
+	prompt.WriteString("Use web/search tools if the provider makes them available. ")
+	prompt.WriteString("Do not score company health. ")
+	prompt.WriteString("Website/domain is the strongest identity anchor. ")
+	prompt.WriteString("Only return facts that are supported by a source URL; if a field is not supported by a source URL, leave it empty. ")
+	prompt.WriteString("Prefer the official company website over social profiles, review sites, job boards, ATS pages, or news articles.\n\n")
+	prompt.WriteString("Input JSON:\n")
+	prompt.Write(data)
+	prompt.WriteString("\n\nReturn ONLY valid JSON matching this schema:\n")
+	prompt.WriteString("{\n")
+	prompt.WriteString(`  "canonical_name": string,` + "\n")
+	prompt.WriteString(`  "aliases": [string],` + "\n")
+	prompt.WriteString(`  "website": string,` + "\n")
+	prompt.WriteString(`  "industry": string,` + "\n")
+	prompt.WriteString(`  "summary": string,` + "\n")
+	prompt.WriteString(`  "sources": [` + "\n")
+	prompt.WriteString(`    {"url": string, "supports": [string]}` + "\n")
+	prompt.WriteString("  ]\n")
+	prompt.WriteString("}\n")
+	return prompt.String()
+}
+
+func enrichCompanyHealthIdentityWithLLM(ctx context.Context, llm llms.Model, identity CompanyHealthContext) (*CompanyIdentitySearchResult, LLMTokenUsage, error) {
+	prompt := buildCompanyIdentitySearchPrompt(identity)
+	messages := []llms.MessageContent{
+		llms.TextParts(llms.ChatMessageTypeSystem, "You are a JSON-only company identity research API. Return only valid JSON."),
+		llms.TextParts(llms.ChatMessageTypeHuman, prompt),
+	}
+
+	logDebug(
+		"llm company identity: generation start company=%q website=%q industry=%q aliases=%d prompt_chars=%d",
+		identity.Company,
+		identity.Website,
+		identity.Industry,
+		len(identity.Aliases),
+		len(prompt),
+	)
+	resp, err := llm.GenerateContent(ctx, messages, llmJSONCallOptions(0.1, 2048)...)
+	if err != nil {
+		logDebug("llm company identity: generation failed company=%q error=%v", identity.Company, err)
+		return nil, LLMTokenUsage{}, fmt.Errorf("LLM generation failed: %v", err)
+	}
+	usage := ExtractTokenUsageFromContentResponse(resp)
+	logDebug("llm company identity: company=%q token_usage %s", identity.Company, formatTokenUsageForLog(usage))
+	if len(resp.Choices) == 0 {
+		logDebug("llm company identity: generation returned no choices company=%q", identity.Company)
+		return nil, usage, fmt.Errorf("LLM returned no choices")
+	}
+
+	jsonStr := stripLLMJSON(resp.Choices[0].Content)
+	var result CompanyIdentitySearchResult
+	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
+		logDebug("llm company identity: parse failed company=%q response_chars=%d error=%v", identity.Company, len(resp.Choices[0].Content), err)
+		return nil, usage, fmt.Errorf("failed to parse LLM company identity JSON output: %v", err)
+	}
+	normalizeCompanyIdentitySearchResult(&result)
+	result.TokenUsage = tokenUsagePtr(usage)
+	logDebug(
+		"llm company identity: parsed company=%q canonical=%q website=%q summary_len=%d industry=%q aliases=%d sources=%d",
+		identity.Company,
+		result.CanonicalName,
+		result.Website,
+		len(result.Summary),
+		result.Industry,
+		len(result.Aliases),
+		len(result.Sources),
+	)
+	return &result, usage, nil
+}
+
+func EnrichCompanyHealthIdentityWithLLM(ctx context.Context, llm llms.Model, identity CompanyHealthContext) (*CompanyIdentitySearchResult, LLMTokenUsage, error) {
+	return enrichCompanyHealthIdentityWithLLM(ctx, llm, identity)
+}
+
+func applyCompanyIdentitySearchResult(identity CompanyHealthContext, result *CompanyIdentitySearchResult) CompanyHealthContext {
+	if result == nil {
+		return identity
+	}
+	if strings.TrimSpace(identity.Website) == "" {
+		identity.Website = validatedCompanyIdentityWebsite(result.Website)
+	}
+	if strings.TrimSpace(identity.Summary) == "" {
+		identity.Summary = strings.TrimSpace(result.Summary)
+	}
+	if strings.TrimSpace(identity.Industry) == "" {
+		identity.Industry = strings.TrimSpace(result.Industry)
+	}
+	if canonical := strings.TrimSpace(result.CanonicalName); canonical != "" && !strings.EqualFold(canonical, strings.TrimSpace(identity.Company)) {
+		identity.Aliases = appendUniqueFoldedString(identity.Aliases, canonical)
+	}
+	for _, alias := range result.Aliases {
+		identity.Aliases = appendUniqueFoldedString(identity.Aliases, alias)
+	}
+	return identity
+}
+
+func ApplyCompanyIdentitySearchResult(identity CompanyHealthContext, result *CompanyIdentitySearchResult) CompanyHealthContext {
+	return applyCompanyIdentitySearchResult(identity, result)
+}
+
+func validatedCompanyIdentityWebsite(raw string) string {
+	website := strings.TrimSpace(raw)
+	if website == "" {
+		return ""
+	}
+	if !strings.Contains(website, "://") {
+		website = "https://" + strings.TrimLeft(website, "/")
+	}
+	if !domain.LooksLikeCompanyWebsite(website, "") {
+		return ""
+	}
+	return website
+}
+
+func normalizeCompanyIdentitySearchResult(result *CompanyIdentitySearchResult) {
+	if result == nil {
+		return
+	}
+	result.CanonicalName = strings.TrimSpace(result.CanonicalName)
+	result.Website = strings.TrimSpace(result.Website)
+	result.Industry = strings.TrimSpace(result.Industry)
+	result.Summary = strings.TrimSpace(result.Summary)
+	result.Aliases = trimNonEmptyStrings(result.Aliases)
+	sources := make([]CompanyIdentitySearchSource, 0, len(result.Sources))
+	for _, source := range result.Sources {
+		source.URL = strings.TrimSpace(source.URL)
+		source.Supports = trimNonEmptyStrings(source.Supports)
+		if source.URL == "" {
+			continue
+		}
+		sources = append(sources, source)
+	}
+	result.Sources = sources
+}
+
+func trimNonEmptyStrings(values []string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			result = appendUniqueFoldedString(result, value)
+		}
+	}
+	return result
+}
+
+func appendUniqueFoldedString(values []string, value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return values
+	}
+	for _, existing := range values {
+		if strings.EqualFold(strings.TrimSpace(existing), value) {
+			return values
+		}
+	}
+	return append(values, value)
+}
+
 func buildCompanyHealthLLMPrompt(result *CompanyHealthResult) string {
 	prompt, _ := buildCompanyHealthLLMPromptWithStats(result)
 	return prompt
@@ -465,6 +662,15 @@ func formatEmployerReviewSignal(signal EmployerReviewSignal) string {
 	parts := []string{signal.Source}
 	if signal.Rating != "" {
 		parts = append(parts, "rating "+signal.Rating)
+	}
+	if signal.ReviewCount != nil {
+		parts = append(parts, fmt.Sprintf("%d reviews", *signal.ReviewCount))
+	}
+	if signal.RecommendPercent != nil {
+		parts = append(parts, fmt.Sprintf("%d%% recommend", *signal.RecommendPercent))
+	}
+	if signal.CEOApprovalPercent != nil {
+		parts = append(parts, fmt.Sprintf("%d%% CEO approval", *signal.CEOApprovalPercent))
 	}
 	if signal.Title != "" {
 		parts = append(parts, signal.Title)

@@ -6,9 +6,12 @@ import (
 	"net/url"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/wallentx/jobscout/internal/domain"
 )
 
 const maxConcurrentPublicProfileIndustry = 4
@@ -368,6 +371,7 @@ func extractPublicProfileIndustryFromText(text string) string {
 		regexp.MustCompile(`(?i)\bIndustry\s*[:\-]\s*([A-Za-z][A-Za-z0-9 &,/+\-]{2,80})`),
 		regexp.MustCompile(`(?i)\bIndustries\s+([A-Za-z][A-Za-z0-9 &,/+\-]{2,80}?)(?:\s+(?:Company size|Headquarters|Founded|Type|Specialties|Website|Revenue|Employees|Overview|Reviews|Jobs|Salaries|Benefits|Photos|Questions|Interviews|Locations)\b|$)`),
 		regexp.MustCompile(`(?i)\bIndustry\s+([A-Za-z][A-Za-z0-9 &,/+\-]{2,80}?)(?:\s+(?:Company size|Headquarters|Founded|Type|Specialties|Website|Revenue|Employees|Overview|Reviews|Jobs|Salaries|Benefits|Photos|Questions|Interviews|Locations)\b|$)`),
+		regexp.MustCompile(`(?i)\bLinkedIn\s+([A-Za-z][A-Za-z0-9 &,/+\-|]{2,80}?)(?:\s+Company size\b|$)`),
 	}
 	for _, pattern := range patterns {
 		match := pattern.FindStringSubmatch(text)
@@ -384,6 +388,11 @@ func extractPublicProfileIndustryFromText(text string) string {
 
 func cleanPublicProfileIndustry(industry string) string {
 	industry = strings.TrimSpace(industry)
+	if strings.Contains(industry, "|") {
+		parts := strings.Split(industry, "|")
+		industry = strings.TrimSpace(parts[len(parts)-1])
+	}
+	industry = strings.TrimPrefix(industry, "LinkedIn ")
 	for _, stop := range []string{
 		" Company size",
 		" Headquarters",
@@ -422,4 +431,164 @@ func applyPublicProfileIndustry(job *Job, result *publicProfileIndustryResult) {
 	}
 	job.CompanyIndustry = industry
 	setJobIdentityEvidence(job, "industry", industry, "public_profile_"+result.Source, result.URL, "medium", false, "Industry extracted from a public company profile.")
+}
+
+func companyPublicProfileEvidenceFromText(source string, profileURL string, title string, text string) domain.CompanyPublicProfile {
+	text = NormalizeWhitespace(strings.Join([]string{title, text}, " "))
+	evidence := domain.CompanyPublicProfile{
+		Source:  strings.TrimSpace(strings.ToLower(source)),
+		URL:     strings.TrimSpace(profileURL),
+		Title:   NormalizeWhitespace(title),
+		Snippet: truncatePublicProfileSnippet(text),
+	}
+	evidence.Industry = extractPublicProfileIndustryFromText(text)
+	if employeeRange, estimate := extractPublicProfileEmployeeRange(text); employeeRange != "" {
+		evidence.EmployeeRange = employeeRange
+		evidence.EstimatedEmployees = estimate
+	}
+	evidence.FoundedYear = extractPublicProfileFoundedYear(text)
+	evidence.Headquarters = extractPublicProfileLabeledField(text, "Headquarters")
+	evidence.Revenue = extractPublicProfileLabeledField(text, "Revenue")
+	evidence.Rating = extractEmployerReviewRating(text)
+	evidence.ReviewCount = extractPublicProfileReviewCount(text)
+	evidence.RecommendPercent = extractPublicProfilePercent(text, []*regexp.Regexp{
+		regexp.MustCompile(`(?i)\b(\d{1,3})%\s+(?:recommend|would recommend|recommend to a friend)\b`),
+	})
+	evidence.CEOApprovalPercent = extractPublicProfilePercent(text, []*regexp.Regexp{
+		regexp.MustCompile(`(?i)\b(\d{1,3})%\s+(?:approve of ceo|ceo approval|approve)\b`),
+	})
+	return evidence
+}
+
+func companyPublicProfileEvidenceUseful(evidence domain.CompanyPublicProfile) bool {
+	return strings.TrimSpace(evidence.Industry) != "" ||
+		strings.TrimSpace(evidence.EmployeeRange) != "" ||
+		evidence.EstimatedEmployees != nil ||
+		evidence.FoundedYear != nil ||
+		strings.TrimSpace(evidence.Headquarters) != "" ||
+		strings.TrimSpace(evidence.Revenue) != "" ||
+		strings.TrimSpace(evidence.Rating) != "" ||
+		evidence.ReviewCount != nil ||
+		evidence.RecommendPercent != nil ||
+		evidence.CEOApprovalPercent != nil
+}
+
+func extractPublicProfileEmployeeRange(text string) (string, *int) {
+	text = NormalizeWhitespace(text)
+	patterns := []*regexp.Regexp{
+		regexp.MustCompile(`(?i)\b(?:company size|size)\s*[:\-]?\s*([0-9][0-9,.k+\s]*(?:(?:-|–|—|to)\s*[0-9][0-9,.k+\s]*)?\s*employees?)\b`),
+		regexp.MustCompile(`(?i)\b([0-9][0-9,.k+\s]*(?:(?:-|–|—|to)\s*[0-9][0-9,.k+\s]*)?\s*employees?)\b`),
+	}
+	for _, pattern := range patterns {
+		match := pattern.FindStringSubmatch(text)
+		if len(match) < 2 {
+			continue
+		}
+		employeeRange := strings.TrimSpace(match[1])
+		if employeeRange == "" {
+			continue
+		}
+		return employeeRange, estimateEmployeeCountFromRange(employeeRange)
+	}
+	return "", nil
+}
+
+func estimateEmployeeCountFromRange(employeeRange string) *int {
+	matches := regexp.MustCompile(`(?i)[0-9][0-9,.]*(?:\s*k)?\+?`).FindAllString(employeeRange, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	values := make([]int, 0, len(matches))
+	for _, match := range matches {
+		if value, ok := parsePublicProfileNumber(match); ok {
+			values = append(values, value)
+		}
+	}
+	if len(values) == 0 {
+		return nil
+	}
+	count := values[0]
+	if len(values) >= 2 {
+		count = (values[0] + values[1]) / 2
+	}
+	return &count
+}
+
+func parsePublicProfileNumber(value string) (int, bool) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	value = strings.TrimSuffix(value, "+")
+	multiplier := 1.0
+	if strings.HasSuffix(value, "k") {
+		multiplier = 1000
+		value = strings.TrimSpace(strings.TrimSuffix(value, "k"))
+	}
+	value = strings.ReplaceAll(value, ",", "")
+	value = strings.ReplaceAll(value, " ", "")
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil || parsed <= 0 {
+		return 0, false
+	}
+	return int(parsed * multiplier), true
+}
+
+func extractPublicProfileFoundedYear(text string) *int {
+	if year := domain.ParseYearFromText(text); year != nil {
+		return year
+	}
+	match := regexp.MustCompile(`(?i)\bFounded\s*[:\-]?\s*(19\d{2}|20\d{2})\b`).FindStringSubmatch(text)
+	if len(match) < 2 {
+		return nil
+	}
+	year, err := strconv.Atoi(match[1])
+	if err != nil {
+		return nil
+	}
+	return &year
+}
+
+func extractPublicProfileLabeledField(text string, label string) string {
+	pattern := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(label) + `\s*[:\-]?\s*([^|•]{2,120}?)(?:\s+(?:Company size|Size|Headquarters|Founded|Industry|Industries|Revenue|Type|Website|Specialties|Overview|Reviews|Jobs|Salaries|Benefits|Photos|Questions|Interviews|Locations)\b|$)`)
+	match := pattern.FindStringSubmatch(text)
+	if len(match) < 2 {
+		return ""
+	}
+	return cleanPublicProfileValue(match[1])
+}
+
+func extractPublicProfileReviewCount(text string) *int {
+	match := regexp.MustCompile(`(?i)\b([0-9][0-9,]*)\s+(?:reviews|review)\b`).FindStringSubmatch(text)
+	if len(match) < 2 {
+		return nil
+	}
+	value, err := strconv.Atoi(strings.ReplaceAll(match[1], ",", ""))
+	if err != nil || value <= 0 {
+		return nil
+	}
+	return &value
+}
+
+func extractPublicProfilePercent(text string, patterns []*regexp.Regexp) *int {
+	for _, pattern := range patterns {
+		match := pattern.FindStringSubmatch(text)
+		if len(match) < 2 {
+			continue
+		}
+		value, err := strconv.Atoi(match[1])
+		if err == nil && value >= 0 && value <= 100 {
+			return &value
+		}
+	}
+	return nil
+}
+
+func cleanPublicProfileValue(value string) string {
+	return strings.Trim(strings.TrimSpace(value), " .•|:-")
+}
+
+func truncatePublicProfileSnippet(text string) string {
+	text = NormalizeWhitespace(text)
+	if len(text) <= 520 {
+		return text
+	}
+	return strings.TrimSpace(text[:520])
 }

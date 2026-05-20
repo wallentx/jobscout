@@ -13,8 +13,74 @@ import (
 	llmpkg "github.com/wallentx/jobscout/internal/llm"
 )
 
+var (
+	initConfiguredLLMForTask           = llmpkg.InitConfiguredLLMForTask
+	enrichCompanyHealthIdentityWithLLM = llmpkg.EnrichCompanyHealthIdentityWithLLM
+	evaluateCompanyHealthWithLLM       = llmpkg.EvaluateCompanyHealthWithLLM
+)
+
 func LLMCompanyHealthEnabled(appCfg *config.AppConfig) bool {
 	return appCfg != nil && appCfg.LLM.Enabled && appCfg.LLM.CompanyHealth
+}
+
+func ApplyOptionalLLMCompanyIdentity(ctx context.Context, appCfg *config.AppConfig, identity domain.CompanyHealthContext) domain.CompanyHealthContext {
+	if !LLMCompanyHealthEnabled(appCfg) {
+		logDebug("llm company identity skipped company=%q: disabled in config", identity.Company)
+		return identity
+	}
+	if !companyHealthIdentityNeedsLLM(identity) {
+		logDebug("llm company identity skipped company=%q: identity already has website, summary, and industry", identity.Company)
+		return identity
+	}
+
+	initStart := time.Now()
+	logDebug("llm company identity init company=%q provider=%q", identity.Company, appCfg.LLM.Provider)
+	llm, restoreAuth, err := initConfiguredLLMForTask(ctx, appCfg, "company_health")
+	if err != nil {
+		logDebug("llm company identity init failed company=%q duration=%s error=%v", identity.Company, time.Since(initStart).Round(time.Millisecond), err)
+		return identity
+	}
+	defer restoreAuth()
+	logDebug("timing company=%q step=llm_identity_init duration=%s provider=%q", identity.Company, time.Since(initStart).Round(time.Millisecond), appCfg.LLM.Provider)
+
+	searchStart := time.Now()
+	var result *llmpkg.CompanyIdentitySearchResult
+	var usage llmpkg.LLMTokenUsage
+	err = runThrottledHealthStep(ctx, companyHealthLLMSem, "llm company identity", identity.Company, func() error {
+		var searchErr error
+		result, usage, searchErr = enrichCompanyHealthIdentityWithLLM(ctx, llm, identity)
+		return searchErr
+	})
+	if err != nil {
+		logDebug("llm company identity failed company=%q duration=%s error=%v", identity.Company, time.Since(searchStart).Round(time.Millisecond), err)
+		return identity
+	}
+
+	enriched := llmpkg.ApplyCompanyIdentitySearchResult(identity, result)
+	canonicalName := ""
+	sourceCount := 0
+	if result != nil {
+		canonicalName = result.CanonicalName
+		sourceCount = len(result.Sources)
+	}
+	logDebug(
+		"timing company=%q step=llm_identity duration=%s token_usage=%s canonical=%q website=%q industry=%q aliases=%d sources=%d",
+		identity.Company,
+		time.Since(searchStart).Round(time.Millisecond),
+		debugLLMHealthTokenUsage(&usage),
+		canonicalName,
+		enriched.Website,
+		enriched.Industry,
+		len(enriched.Aliases),
+		sourceCount,
+	)
+	return enriched
+}
+
+func companyHealthIdentityNeedsLLM(identity domain.CompanyHealthContext) bool {
+	return strings.TrimSpace(identity.Company) != "" && (strings.TrimSpace(identity.Website) == "" ||
+		strings.TrimSpace(identity.Summary) == "" ||
+		strings.TrimSpace(identity.Industry) == "")
 }
 
 func ApplyOptionalLLMCompanyHealth(ctx context.Context, appCfg *config.AppConfig, result *domain.CompanyHealthResult) {
@@ -32,7 +98,7 @@ func ApplyOptionalLLMCompanyHealth(ctx context.Context, appCfg *config.AppConfig
 
 	initStart := time.Now()
 	logDebug("llm company health init company=%q provider=%q", result.Company, appCfg.LLM.Provider)
-	llm, restoreAuth, err := llmpkg.InitConfiguredLLMForTask(ctx, appCfg, "company_health")
+	llm, restoreAuth, err := initConfiguredLLMForTask(ctx, appCfg, "company_health")
 	if err != nil {
 		logDebug("llm company health init failed company=%q duration=%s error=%v", result.Company, time.Since(initStart).Round(time.Millisecond), err)
 		return
@@ -77,7 +143,7 @@ func ApplyOptionalLLMCompanyHealth(ctx context.Context, appCfg *config.AppConfig
 	var assessment *domain.LLMCompanyHealthAssessment
 	err = runThrottledHealthStep(ctx, companyHealthLLMSem, "llm company health assessment", result.Company, func() error {
 		var evalErr error
-		assessment, evalErr = llmpkg.EvaluateCompanyHealthWithLLM(ctx, llm, result)
+		assessment, evalErr = evaluateCompanyHealthWithLLM(ctx, llm, result)
 		return evalErr
 	})
 	if err != nil {

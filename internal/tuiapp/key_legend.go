@@ -26,6 +26,7 @@ func keyLegendMessage() string {
 		keyLegendItem("D", "Delete selected job"),
 		keyLegendItem("E", "Edit selected job"),
 		keyLegendItem("/", "Search company/title"),
+		keyLegendItem(":", "Open operator command prompt"),
 		keyLegendItem("1-5", "Sort"),
 		keyLegendItem("f", "Filter"),
 		keyLegendItem("t", "Show or hide background task"),

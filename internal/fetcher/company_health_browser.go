@@ -38,8 +38,13 @@ type pageLink struct {
 var employerReviewRatingPattern = regexp.MustCompile(`(?i)\b([1-5](?:\.\d)?)\s*(?:out of|/)\s*5\b`)
 
 func FetchBrowserCompanySiteProfile(company string) (*domain.CompanySiteProfile, error) {
-	company = strings.TrimSpace(company)
-	if company == "" {
+	return FetchBrowserCompanySiteProfileForIdentity(domain.CompanyHealthContext{Company: company})
+}
+
+func FetchBrowserCompanySiteProfileForIdentity(identity domain.CompanyHealthContext) (*domain.CompanySiteProfile, error) {
+	identity.Company = strings.TrimSpace(identity.Company)
+	identity.Website = strings.TrimSpace(identity.Website)
+	if identity.Company == "" && identity.Website == "" {
 		return nil, nil
 	}
 	if FindSiteSearchBrowserBinary() == "" {
@@ -55,7 +60,7 @@ func FetchBrowserCompanySiteProfile(company string) (*domain.CompanySiteProfile,
 	ctx, cancel := context.WithTimeout(context.Background(), companyProfileBrowserTimeout)
 	defer cancel()
 
-	return discoverCompanySiteProfile(ctx, browser, company), nil
+	return discoverCompanySiteProfileForIdentity(ctx, browser, identity), nil
 }
 
 func FetchBrowserEmployerReviewSignals(company string) ([]domain.EmployerReviewSignal, error) {
@@ -131,8 +136,203 @@ func discoverCompanySiteProfile(ctx context.Context, browser *rod.Browser, compa
 			profile.AboutText = aboutText
 		}
 	}
+	populateCompanySiteProfileIdentity(profile, company)
+	enrichCompanySiteProfileFromPublicProfiles(ctx, browser, domain.CompanyHealthContext{
+		Company: company,
+		Website: profile.WebsiteURL,
+	}, profile)
 
 	return profile
+}
+
+func discoverCompanySiteProfileForIdentity(ctx context.Context, browser *rod.Browser, identity domain.CompanyHealthContext) *domain.CompanySiteProfile {
+	if profile := discoverCompanySiteProfileFromWebsite(ctx, browser, identity); profile != nil {
+		return profile
+	}
+	return discoverCompanySiteProfile(ctx, browser, identity.Company)
+}
+
+func discoverCompanySiteProfileFromWebsite(ctx context.Context, browser *rod.Browser, identity domain.CompanyHealthContext) *domain.CompanySiteProfile {
+	if err := ctx.Err(); err != nil {
+		return nil
+	}
+	websiteURL := canonicalProvidedCompanySiteURL(identity.Website)
+	if websiteURL == "" {
+		return nil
+	}
+
+	profile := &domain.CompanySiteProfile{
+		WebsiteURL: websiteURL,
+	}
+	websiteText, links, err := extractBrowserPageContent(ctx, browser, websiteURL)
+	if err != nil {
+		return profile
+	}
+	profile.WebsiteText = websiteText
+
+	if aboutURL := chooseCompanyAboutURL(profile.WebsiteURL, links); aboutURL != "" {
+		profile.AboutURL = aboutURL
+		aboutText, _, err := extractBrowserPageContent(ctx, browser, aboutURL)
+		if err == nil {
+			profile.AboutText = aboutText
+		}
+	}
+	populateCompanySiteProfileIdentity(profile, identity.Company)
+	enrichCompanySiteProfileFromPublicProfiles(ctx, browser, identity, profile)
+
+	return profile
+}
+
+func canonicalProvidedCompanySiteURL(rawURL string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return ""
+	}
+	if !strings.Contains(rawURL, "://") {
+		rawURL = "https://" + strings.TrimLeft(rawURL, "/")
+	}
+	canonical := canonicalCompanySiteURL(rawURL)
+	if canonical == "" || !domain.LooksLikeCompanyWebsite(canonical, "") {
+		return ""
+	}
+	return canonical
+}
+
+func populateCompanySiteProfileIdentity(profile *domain.CompanySiteProfile, company string) {
+	if profile == nil {
+		return
+	}
+	for _, text := range []string{profile.AboutText, profile.WebsiteText} {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			continue
+		}
+		if profile.Summary == "" {
+			if summary := extractCompanyProfileSummary(text, company); summary != "" {
+				profile.Summary = summary
+			} else if looksLikeCompanySummary(text, company) {
+				profile.Summary = truncateAtSentence(text, 420)
+			}
+		}
+		if profile.Industry == "" {
+			if industry := extractCompanyProfileIndustry(text); industry != "" {
+				profile.Industry = industry
+			}
+		}
+	}
+	if profile.Industry == "" {
+		for _, text := range []string{profile.Summary, profile.AboutText, profile.WebsiteText} {
+			if industry := inferCompanyIndustry(text); industry != "" {
+				profile.Industry = industry
+				break
+			}
+		}
+	}
+}
+
+func enrichCompanySiteProfileFromPublicProfiles(ctx context.Context, browser *rod.Browser, identity domain.CompanyHealthContext, profile *domain.CompanySiteProfile) {
+	if profile == nil {
+		return
+	}
+	company := strings.TrimSpace(identity.Company)
+	websiteURL := canonicalProvidedCompanySiteURL(firstNonEmptyString(profile.WebsiteURL, identity.Website))
+	if company == "" || websiteURL == "" {
+		return
+	}
+	publicProfiles := discoverBrowserPublicProfileFacts(ctx, browser, Job{
+		Company:        company,
+		CompanyWebsite: websiteURL,
+	})
+	if len(publicProfiles) == 0 {
+		return
+	}
+	profile.PublicProfiles = appendUniqueCompanyPublicProfiles(profile.PublicProfiles, publicProfiles...)
+	if strings.TrimSpace(profile.Industry) == "" {
+		for _, publicProfile := range publicProfiles {
+			if strings.TrimSpace(publicProfile.Industry) != "" {
+				profile.Industry = strings.TrimSpace(publicProfile.Industry)
+				break
+			}
+		}
+	}
+}
+
+func discoverBrowserPublicProfileFacts(ctx context.Context, browser *rod.Browser, job Job) []domain.CompanyPublicProfile {
+	var profiles []domain.CompanyPublicProfile
+	seen := map[string]bool{}
+	for _, query := range publicProfileIndustryQueries(job) {
+		if err := ctx.Err(); err != nil {
+			return profiles
+		}
+		searchURL := companySearchURL(query)
+		pageText, links, err := extractBrowserPageContent(ctx, browser, searchURL)
+		if err != nil || strings.TrimSpace(pageText) == "" {
+			continue
+		}
+		candidates := publicProfileIndustryCandidates(job, links, pageText)
+		profileFetches := 0
+		for _, candidate := range candidates {
+			if addCompanyPublicProfileEvidence(&profiles, seen, companyPublicProfileEvidenceFromText(candidate.Source, candidate.URL, candidate.Title, candidate.Snippet)) && len(profiles) >= 3 {
+				return profiles
+			}
+			if profileFetches >= 2 {
+				continue
+			}
+			profileFetches++
+			profileText, _, err := extractBrowserPageContent(ctx, browser, candidate.URL)
+			if err != nil || strings.TrimSpace(profileText) == "" {
+				continue
+			}
+			if !publicProfileMatchesCompany(job, profileText, candidate.URL) {
+				continue
+			}
+			if addCompanyPublicProfileEvidence(&profiles, seen, companyPublicProfileEvidenceFromText(candidate.Source, candidate.URL, candidate.Title, profileText)) && len(profiles) >= 3 {
+				return profiles
+			}
+		}
+	}
+	return profiles
+}
+
+func addCompanyPublicProfileEvidence(profiles *[]domain.CompanyPublicProfile, seen map[string]bool, evidence domain.CompanyPublicProfile) bool {
+	if !companyPublicProfileEvidenceUseful(evidence) {
+		return false
+	}
+	key := strings.TrimSpace(evidence.Source) + "|" + strings.TrimSpace(evidence.URL)
+	if key == "|" {
+		key = strings.TrimSpace(evidence.Title) + "|" + strings.TrimSpace(evidence.Snippet)
+	}
+	if key != "|" && seen[key] {
+		return false
+	}
+	if key != "|" {
+		seen[key] = true
+	}
+	*profiles = append(*profiles, evidence)
+	return true
+}
+
+func appendUniqueCompanyPublicProfiles(existing []domain.CompanyPublicProfile, incoming ...domain.CompanyPublicProfile) []domain.CompanyPublicProfile {
+	seen := map[string]bool{}
+	out := make([]domain.CompanyPublicProfile, 0, len(existing)+len(incoming))
+	for _, profile := range existing {
+		key := strings.TrimSpace(profile.Source) + "|" + strings.TrimSpace(profile.URL)
+		if key != "|" {
+			seen[key] = true
+		}
+		out = append(out, profile)
+	}
+	for _, profile := range incoming {
+		key := strings.TrimSpace(profile.Source) + "|" + strings.TrimSpace(profile.URL)
+		if key != "|" && seen[key] {
+			continue
+		}
+		if key != "|" {
+			seen[key] = true
+		}
+		out = append(out, profile)
+	}
+	return out
 }
 
 func discoverEmployerReviewSignals(ctx context.Context, browser *rod.Browser, company string) []domain.EmployerReviewSignal {

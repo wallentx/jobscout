@@ -34,12 +34,14 @@ type filterOverlayState struct {
 }
 
 type healthOverlayState struct {
-	report       *CompanyHealthResult
-	loading      bool
-	minimized    bool
-	loadingText  string
-	err          string
-	scrollOffset int
+	report          *CompanyHealthResult
+	loading         bool
+	minimized       bool
+	loadingText     string
+	err             string
+	scrollOffset    int
+	refreshCompany  string
+	refreshIdentity CompanyHealthContext
 }
 
 type detailOverlayState struct {
@@ -132,7 +134,16 @@ type model struct {
 	tableHeight int
 
 	// Search/Filter State
-	textInput   textinput.Model
-	isFiltering bool
-	searchQuery string
+	textInput               textinput.Model
+	isFiltering             bool
+	searchQuery             string
+	commandInput            textinput.Model
+	isCommanding            bool
+	commandTypedInput       string
+	commandCompletions      []operatorCommandCompletion
+	commandCompletionIdx    int
+	commandCompletionActive bool
+	commandResultTitle      string
+	commandResultMessage    string
+	commandResultError      bool
 }

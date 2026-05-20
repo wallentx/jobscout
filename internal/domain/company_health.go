@@ -18,6 +18,19 @@ func CompanyHealthWithContext(identity CompanyHealthContext, ticker string, incl
 }
 
 func CompanyHealthWithDataSources(identity CompanyHealthContext, ticker string, includeNews bool, sources CompanyHealthDataSources) (*CompanyHealthResult, error) {
+	var siteProfile *CompanySiteProfile
+	var siteProfileErr error
+	siteProfileFetchAttempted := false
+	if strings.TrimSpace(identity.Website) != "" && sources.FetchCompanySiteProfile != nil {
+		siteProfileFetchAttempted = true
+		if profile, err := sources.FetchCompanySiteProfile(identity); err == nil && profile != nil {
+			siteProfile = profile
+			identity = EnrichCompanyHealthContextFromSiteProfile(identity, profile)
+		} else if err != nil {
+			siteProfileErr = err
+		}
+	}
+
 	company := strings.TrimSpace(identity.Company)
 
 	result := &CompanyHealthResult{
@@ -36,15 +49,9 @@ func CompanyHealthWithDataSources(identity CompanyHealthContext, ticker string, 
 
 		Sources: make(map[string]any),
 	}
-	if strings.TrimSpace(identity.Website) != "" || strings.TrimSpace(identity.Summary) != "" || strings.TrimSpace(identity.Industry) != "" {
-		result.Sources["company_identity"] = map[string]string{
-			"website":  strings.TrimSpace(identity.Website),
-			"summary":  strings.TrimSpace(identity.Summary),
-			"industry": strings.TrimSpace(identity.Industry),
-		}
-		result.SignalsUsed = append(result.SignalsUsed, "job_company_identity")
-	}
+	recordCompanyIdentitySource(result, identity)
 	initCompanyHealthAssessments(result)
+	recordCompanySiteProfileFetchError(result, siteProfileErr)
 
 	// Wikipedia lookup
 
@@ -221,12 +228,21 @@ func CompanyHealthWithDataSources(identity CompanyHealthContext, ticker string, 
 	}
 
 	if ShouldUseBrowserCompanyProfile(result) && sources.FetchCompanySiteProfile != nil {
-		searchName := company
-		if result.DiscoveredName != "" {
-			searchName = result.DiscoveredName
+		if siteProfile == nil && !siteProfileFetchAttempted {
+			profileIdentity := identity
+			if result.DiscoveredName != "" {
+				profileIdentity.Company = result.DiscoveredName
+			}
+			if profile, err := sources.FetchCompanySiteProfile(profileIdentity); err == nil {
+				siteProfile = profile
+			} else if err != nil {
+				recordCompanySiteProfileFetchError(result, err)
+			}
 		}
-		if profile, err := sources.FetchCompanySiteProfile(searchName); err == nil {
-			ApplyCompanySiteProfile(result, profile)
+		if siteProfile != nil {
+			identity = EnrichCompanyHealthContextFromSiteProfile(identity, siteProfile)
+			recordCompanyIdentitySource(result, identity)
+			ApplyCompanySiteProfile(result, siteProfile)
 		}
 	}
 
@@ -332,6 +348,7 @@ func CompanyHealthWithDataSources(identity CompanyHealthContext, ticker string, 
 
 	// Calculate employment risk
 	result.EmploymentRisk = calculateEmploymentRisk(layoffSignals, stockHistory, secRiskTerms, negHits, posHits, result.EstimatedEmployees)
+	applyEmployerReviewHealthSignals(result)
 
 	// INTELLIGENT CAP: If employment risk is high, the overall health score cannot be "Good"
 	if result.EmploymentRisk.Score >= 75 { // Critical Risk
@@ -384,4 +401,40 @@ func optionalStringString(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+func recordCompanyIdentitySource(result *CompanyHealthResult, identity CompanyHealthContext) {
+	if result == nil {
+		return
+	}
+	if strings.TrimSpace(identity.Website) == "" &&
+		strings.TrimSpace(identity.Summary) == "" &&
+		strings.TrimSpace(identity.Industry) == "" &&
+		len(identity.Aliases) == 0 {
+		return
+	}
+	if result.Sources == nil {
+		result.Sources = make(map[string]any)
+	}
+	companyIdentity := map[string]string{
+		"website":  strings.TrimSpace(identity.Website),
+		"summary":  strings.TrimSpace(identity.Summary),
+		"industry": strings.TrimSpace(identity.Industry),
+	}
+	if len(identity.Aliases) > 0 {
+		companyIdentity["aliases"] = strings.Join(identity.Aliases, ", ")
+	}
+	result.Sources["company_identity"] = companyIdentity
+	if !companyHealthSignalUsed(result.SignalsUsed, "job_company_identity") {
+		result.SignalsUsed = append(result.SignalsUsed, "job_company_identity")
+	}
+}
+
+func companyHealthSignalUsed(signals []string, signal string) bool {
+	for _, existing := range signals {
+		if strings.EqualFold(strings.TrimSpace(existing), signal) {
+			return true
+		}
+	}
+	return false
 }

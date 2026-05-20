@@ -10,6 +10,7 @@ type LLMAuthConfig = config.LLMAuthConfig
 type LLMProviderConfig = config.LLMProviderConfig
 type CriteriaConfig = domain.CriteriaConfig
 type CompanyHealthEvidence = domain.CompanyHealthEvidence
+type CompanyHealthContext = domain.CompanyHealthContext
 type CompanyHealthResult = domain.CompanyHealthResult
 type EmployerReviewSignal = domain.EmployerReviewSignal
 type EmploymentRisk = domain.EmploymentRisk

@@ -20,17 +20,26 @@ func ConfigureDebug(enabled bool, path string) func() {
 	fetcherDebug.Lock()
 	previousEnabled := fetcherDebug.enabled
 	previousPath := fetcherDebug.path
-	fetcherDebug.enabled = enabled
-	if strings.TrimSpace(path) != "" {
-		fetcherDebug.path = path
-	}
+	setDebugLocked(enabled, path)
 	fetcherDebug.Unlock()
 
 	return func() {
 		fetcherDebug.Lock()
-		fetcherDebug.enabled = previousEnabled
-		fetcherDebug.path = previousPath
+		setDebugLocked(previousEnabled, previousPath)
 		fetcherDebug.Unlock()
+	}
+}
+
+func SetDebug(enabled bool, path string) {
+	fetcherDebug.Lock()
+	defer fetcherDebug.Unlock()
+	setDebugLocked(enabled, path)
+}
+
+func setDebugLocked(enabled bool, path string) {
+	fetcherDebug.enabled = enabled
+	if strings.TrimSpace(path) != "" {
+		fetcherDebug.path = path
 	}
 }
 

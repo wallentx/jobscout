@@ -10,7 +10,7 @@ func ConfigureRuntime(options appruntime.Options, stores appruntime.Stores, buil
 	runtimeConfigPath = options.Paths.Config
 	runtimeSearchPromptPath = options.Paths.SearchPrompt
 	runtimeSQLitePath = options.Paths.SQLite
-	runtimeDebugEnabled = options.Debug
+	setRuntimeDebug(options.Debug, runtimeDebugPath)
 	runtimeSourceSelection = append([]string(nil), options.SourceSelection...)
 	runtimeBuildVersion = buildVersion
 	if stores.Jobs != nil {
