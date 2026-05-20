@@ -3,6 +3,8 @@ package tuiapp
 import (
 	"context"
 
+	healthpkg "github.com/wallentx/jobscout/internal/health"
+
 	"github.com/charmbracelet/bubbles/textinput"
 )
 
@@ -76,6 +78,11 @@ type backgroundTaskState struct {
 	pendingFields map[string]map[string]bool
 }
 
+type bulkHealthBrowserSession interface {
+	healthpkg.BrowserSession
+	Close()
+}
+
 type overlayState struct {
 	kind      overlayKind
 	notice    noticeState
@@ -117,6 +124,7 @@ type model struct {
 	bulkHealthFailed    int
 	bulkHealthSkipped   int
 	bulkHealthInFlight  int
+	bulkHealthBrowser   bulkHealthBrowserSession
 	fetchingJobs        bool
 	fetchProgress       <-chan string
 	activeFetch         activeFetchState

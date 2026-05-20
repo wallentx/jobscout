@@ -108,32 +108,31 @@ func ApplyOptionalLLMCompanyHealth(ctx context.Context, appCfg *config.AppConfig
 
 	if len(result.EmployerReviews) == 0 {
 		reviewStart := time.Now()
-		searchCompany := result.Company
-		if result.DiscoveredName != "" {
-			searchCompany = result.DiscoveredName
-		}
-		logDebug("employer review lookup start company=%q search_company=%q", result.Company, searchCompany)
-		var signals []domain.EmployerReviewSignal
-		err := runThrottledHealthStep(ctx, companyHealthBrowserSem, "browser employer reviews", result.Company, func() error {
-			var fetchErr error
-			signals, fetchErr = fetcher.FetchBrowserEmployerReviewSignals(searchCompany)
-			return fetchErr
-		})
-		if err == nil && len(signals) > 0 {
-			result.EmployerReviews = signals
-			result.SignalsUsed = append(result.SignalsUsed, "browser_employer_reviews")
-			if result.Sources == nil {
-				result.Sources = make(map[string]any)
-			}
-			result.Sources["employer_reviews"] = signals
-			logDebug("employer review lookup succeeded company=%q signals=%d duration=%s", result.Company, len(signals), time.Since(reviewStart).Round(time.Millisecond))
-		} else if errors.Is(err, fetcher.ErrBrowserNotInstalled) {
-			result.Notices = append(result.Notices, "Install Chrome or Chromium to enable Glassdoor/Indeed review signals.")
-			logDebug("employer review lookup skipped company=%q reason=browser_not_installed duration=%s", result.Company, time.Since(reviewStart).Round(time.Millisecond))
-		} else if err != nil {
-			logDebug("employer review lookup failed company=%q duration=%s error=%v", result.Company, time.Since(reviewStart).Round(time.Millisecond), err)
+		if shouldSkipEmployerReviewLookup(result) {
+			logDebug("employer review lookup skipped company=%q reason=strong_existing_health duration=%s", result.Company, time.Since(reviewStart).Round(time.Millisecond))
 		} else {
-			logDebug("employer review lookup returned no signals company=%q duration=%s", result.Company, time.Since(reviewStart).Round(time.Millisecond))
+			searchCompany := result.Company
+			if result.DiscoveredName != "" {
+				searchCompany = result.DiscoveredName
+			}
+			logDebug("employer review lookup start company=%q search_company=%q", result.Company, searchCompany)
+			signals, err := fetchBrowserEmployerReviewSignalsThrottled(ctx, searchCompany)
+			if err == nil && len(signals) > 0 {
+				result.EmployerReviews = signals
+				result.SignalsUsed = append(result.SignalsUsed, "browser_employer_reviews")
+				if result.Sources == nil {
+					result.Sources = make(map[string]any)
+				}
+				result.Sources["employer_reviews"] = signals
+				logDebug("employer review lookup succeeded company=%q signals=%d duration=%s", result.Company, len(signals), time.Since(reviewStart).Round(time.Millisecond))
+			} else if errors.Is(err, fetcher.ErrBrowserNotInstalled) {
+				result.Notices = append(result.Notices, "Install Chrome or Chromium to enable Glassdoor/Indeed review signals.")
+				logDebug("employer review lookup skipped company=%q reason=browser_not_installed duration=%s", result.Company, time.Since(reviewStart).Round(time.Millisecond))
+			} else if err != nil {
+				logDebug("employer review lookup failed company=%q duration=%s error=%v", result.Company, time.Since(reviewStart).Round(time.Millisecond), err)
+			} else {
+				logDebug("employer review lookup returned no signals company=%q duration=%s", result.Company, time.Since(reviewStart).Round(time.Millisecond))
+			}
 		}
 		logDebug("timing company=%q step=browser_employer_reviews duration=%s signals=%d", result.Company, time.Since(reviewStart).Round(time.Millisecond), len(result.EmployerReviews))
 	}
@@ -162,6 +161,53 @@ func ApplyOptionalLLMCompanyHealth(ctx context.Context, appCfg *config.AppConfig
 		len(assessment.Recommendation),
 		time.Since(assessmentStart).Round(time.Millisecond),
 	)
+}
+
+func shouldSkipEmployerReviewLookup(result *domain.CompanyHealthResult) bool {
+	if result == nil {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(result.Confidence), "high") {
+		return false
+	}
+	if result.Score < 70 {
+		return false
+	}
+	if result.EmploymentRisk != nil && result.EmploymentRisk.Score >= 25 {
+		return false
+	}
+	if len(result.LayoffSignals) > 0 || len(result.Flags) > 0 {
+		return false
+	}
+
+	sourceCount := 0
+	hasAuthoritativeSource := false
+	for source := range result.Sources {
+		if source == "employer_reviews" || source == "company_site" {
+			continue
+		}
+		sourceCount++
+		switch source {
+		case "sec", "stock_history", "wikidata":
+			hasAuthoritativeSource = true
+		}
+	}
+	return sourceCount >= 4 && hasAuthoritativeSource
+}
+
+func fetchBrowserEmployerReviewSignalsThrottled(ctx context.Context, company string) ([]domain.EmployerReviewSignal, error) {
+	var signals []domain.EmployerReviewSignal
+	err := runThrottledHealthStep(ctx, companyHealthBrowserSem, "browser employer reviews", company, func() error {
+		var fetchErr error
+		if session := browserSessionFromContext(ctx); session != nil {
+			logDebug("employer review lookup using shared browser company=%q", company)
+			signals, fetchErr = session.FetchEmployerReviewSignals(ctx, company)
+		} else {
+			signals, fetchErr = fetcher.FetchBrowserEmployerReviewSignals(company)
+		}
+		return fetchErr
+	})
+	return signals, err
 }
 
 func debugLLMHealthTokenUsage(usage *domain.LLMTokenUsage) string {

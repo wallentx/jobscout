@@ -22,7 +22,7 @@ type LoadResult struct {
 	FromCache bool
 }
 
-func CompanyHealthWithContext(identity domain.CompanyHealthContext, ticker string, includeNews bool) (*domain.CompanyHealthResult, error) {
+func CompanyHealthWithContext(ctx context.Context, identity domain.CompanyHealthContext, ticker string, includeNews bool) (*domain.CompanyHealthResult, error) {
 	start := time.Now()
 	logDebug(
 		"data fetch start company=%q website=%q industry=%q include_news=%t",
@@ -32,8 +32,10 @@ func CompanyHealthWithContext(identity domain.CompanyHealthContext, ticker strin
 		includeNews,
 	)
 	result, err := domain.CompanyHealthWithDataSources(identity, ticker, includeNews, domain.CompanyHealthDataSources{
-		FetchCompanySiteProfile: fetchBrowserCompanySiteProfileThrottled,
-		FetchLayoffsFYI:         fetcher.FetchLayoffsFYISignals,
+		FetchCompanySiteProfile: func(identity domain.CompanyHealthContext) (*domain.CompanySiteProfile, error) {
+			return fetchBrowserCompanySiteProfileThrottled(ctx, identity)
+		},
+		FetchLayoffsFYI: fetcher.FetchLayoffsFYISignals,
 	})
 	if err != nil {
 		logDebug("data fetch failed company=%q duration=%s error=%v", identity.Company, time.Since(start).Round(time.Millisecond), err)
@@ -55,14 +57,19 @@ func CompanyHealthWithContext(identity domain.CompanyHealthContext, ticker strin
 
 var companyHealthWithContext = CompanyHealthWithContext
 
-func fetchBrowserCompanySiteProfileThrottled(identity domain.CompanyHealthContext) (*domain.CompanySiteProfile, error) {
+func fetchBrowserCompanySiteProfileThrottled(ctx context.Context, identity domain.CompanyHealthContext) (*domain.CompanySiteProfile, error) {
 	var profile *domain.CompanySiteProfile
 	company := strings.TrimSpace(identity.Company)
 	start := time.Now()
 	logDebug("browser company profile lookup start company=%q website=%q", company, identity.Website)
-	err := runThrottledHealthStep(context.Background(), companyHealthBrowserSem, "browser company profile", company, func() error {
+	err := runThrottledHealthStep(ctx, companyHealthBrowserSem, "browser company profile", company, func() error {
 		var fetchErr error
-		profile, fetchErr = fetcher.FetchBrowserCompanySiteProfileForIdentity(identity)
+		if session := browserSessionFromContext(ctx); session != nil {
+			logDebug("browser company profile lookup using shared browser company=%q", company)
+			profile, fetchErr = session.FetchCompanySiteProfile(ctx, identity)
+		} else {
+			profile, fetchErr = fetcher.FetchBrowserCompanySiteProfileForIdentity(identity)
+		}
 		return fetchErr
 	})
 	switch {
@@ -133,7 +140,7 @@ func LoadCompanyHealth(ctx context.Context, identity domain.CompanyHealthContext
 			return cached
 		}
 	}
-	result, err := companyHealthWithContext(fetchIdentity, "", true)
+	result, err := companyHealthWithContext(ctx, fetchIdentity, "", true)
 	fetchedAt := time.Now()
 	if err == nil && result != nil {
 		ApplyOptionalLLMCompanyHealth(ctx, appCfg, result)
@@ -172,7 +179,7 @@ func RefreshCompanyHealth(ctx context.Context, identity domain.CompanyHealthCont
 			Err:     NewIdentityUnresolvedError(company),
 		}
 	}
-	result, err := companyHealthWithContext(fetchIdentity, "", true)
+	result, err := companyHealthWithContext(ctx, fetchIdentity, "", true)
 	fetchedAt := time.Now()
 	if err == nil && result != nil {
 		ApplyOptionalLLMCompanyHealth(ctx, appCfg, result)

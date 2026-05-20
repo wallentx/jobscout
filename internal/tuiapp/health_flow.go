@@ -643,7 +643,7 @@ func loadCompanyHealthWithIdentityAndContext(ctx context.Context, identity Compa
 	}
 }
 
-func fetchBulkHealthStepWithContext(ctx context.Context, job Job) tea.Cmd {
+func fetchBulkHealthStepWithContext(ctx context.Context, job Job, browserSession healthpkg.BrowserSession) tea.Cmd {
 	return func() tea.Msg {
 		start := time.Now()
 		startMem := currentBulkHealthMemStats()
@@ -673,6 +673,9 @@ func fetchBulkHealthStepWithContext(ctx context.Context, job Job) tea.Cmd {
 		}
 		if ctx == nil {
 			ctx = context.Background()
+		}
+		if browserSession != nil {
+			ctx = healthpkg.ContextWithBrowserSession(ctx, browserSession)
 		}
 		ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
 		defer cancel()
@@ -751,7 +754,7 @@ func (m *model) scheduleBulkHealthCommands() tea.Cmd {
 		m.bulkHealthIdx++
 		m.bulkHealthInFlight++
 		logBulkHealthDebug("schedule job index=%d company=%q website=%q cache_key=%q", m.bulkHealthIdx, job.Company, job.CompanyWebsite, healthpkg.CacheKeyForJob(job))
-		cmds = append(cmds, fetchBulkHealthStepWithContext(modelTaskContext(*m), job))
+		cmds = append(cmds, fetchBulkHealthStepWithContext(modelTaskContext(*m), job, m.bulkHealthBrowser))
 	}
 	return tea.Batch(cmds...)
 }

@@ -10,12 +10,13 @@ import (
 )
 
 type fakeHealthStore struct {
-	cache     HealthCache
-	getResult *CompanyHealthResult
-	getTime   time.Time
-	err       error
-	setCalls  int
-	deleted   []string
+	cache      HealthCache
+	getResult  *CompanyHealthResult
+	getTime    time.Time
+	err        error
+	setCalls   int
+	clearCalls int
+	deleted    []string
 }
 
 func (s *fakeHealthStore) LoadHealthCache() (HealthCache, error) {
@@ -58,6 +59,7 @@ func (s *fakeHealthStore) DeleteHealth(company string) error {
 }
 
 func (s *fakeHealthStore) ClearHealthCache() error {
+	s.clearCalls++
 	s.cache = make(HealthCache)
 	return s.err
 }

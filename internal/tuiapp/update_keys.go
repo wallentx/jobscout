@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/wallentx/jobscout/internal/domain"
+	"github.com/wallentx/jobscout/internal/fetcher"
 	healthpkg "github.com/wallentx/jobscout/internal/health"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -616,9 +617,13 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			// Clear the cache to force a full refresh.
-			m.healthCache = make(HealthCache)
-			_ = runtimeHealthStore.ClearHealthCache()
+			if missingJobs := jobsMissingFreshHealth(m.healthCache, jobs); len(missingJobs) > 0 {
+				jobs = missingJobs
+			} else {
+				// All jobs already have health data, so refresh everything from scratch.
+				m.healthCache = make(HealthCache)
+				_ = runtimeHealthStore.ClearHealthCache()
+			}
 			m.bulkHealthFetching = true
 			m.bulkHealthCompanies = healthpkg.UniqueCompaniesFromJobs(jobs)
 			m.bulkHealthJobs = jobs
@@ -628,6 +633,7 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.bulkHealthFailed = 0
 			m.bulkHealthSkipped = 0
 			m.bulkHealthInFlight = 0
+			m.bulkHealthBrowser = fetcher.NewReusableHealthBrowser()
 			m.clearOverlay()
 			logBulkHealthDebug(
 				"start jobs=%d unique_jobs=%d unique_companies=%d concurrency=%d termux=%t mem=%s",

@@ -89,6 +89,9 @@ func newSiteSearchBrowser() (*rod.Browser, func(), error) {
 
 func cleanupLaunchedSiteSearchBrowser(browser siteSearchBrowserCloser, launch siteSearchBrowserLauncherCleanup) {
 	if browser != nil {
+		if concrete, ok := browser.(*rod.Browser); ok {
+			forgetReusableBrowserPage(concrete)
+		}
 		_ = browser.Close()
 	}
 	if launch != nil {

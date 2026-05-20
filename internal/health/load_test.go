@@ -70,7 +70,7 @@ func TestLoadCompanyHealthRechecksCacheAfterLLMIdentityEnrichment(t *testing.T) 
 			Summary:  "Acme Cloud builds deployment automation for software teams.",
 		}, llmpkg.LLMTokenUsage{}, nil
 	}
-	companyHealthWithContext = func(identity domain.CompanyHealthContext, ticker string, includeNews bool) (*domain.CompanyHealthResult, error) {
+	companyHealthWithContext = func(ctx context.Context, identity domain.CompanyHealthContext, ticker string, includeNews bool) (*domain.CompanyHealthResult, error) {
 		t.Fatal("fresh company health fetch should not run when enriched cache key is fresh")
 		return nil, nil
 	}

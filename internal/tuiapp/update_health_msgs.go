@@ -103,6 +103,7 @@ func (m model) handleBulkHealthStepMsg(msg bulkHealthStepMsg) (tea.Model, tea.Cm
 		m.bulkHealthFailed = 0
 		m.bulkHealthSkipped = 0
 		m.bulkHealthInFlight = 0
+		m.closeBulkHealthBrowser()
 		m.applyFilterAndSort()
 		m.backgroundTask.active = false
 		m.backgroundTask.expanded = false

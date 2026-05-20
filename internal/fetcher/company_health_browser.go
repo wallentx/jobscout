@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wallentx/jobscout/internal/domain"
@@ -19,8 +20,10 @@ import (
 var ErrBrowserNotInstalled = errors.New("browser binary (Chrome/Chromium/Edge) not found")
 
 const (
-	companyProfileBrowserTimeout = 25 * time.Second
-	companyProfileTextLimit      = 24000
+	companyProfileBrowserTimeout             = 25 * time.Second
+	companyHealthBrowserSettleDelay          = 750 * time.Millisecond
+	companyProfileTextLimit                  = 24000
+	defaultReusableHealthBrowserPagePoolSize = 3
 )
 
 type companySiteCandidate struct {
@@ -36,6 +39,68 @@ type pageLink struct {
 }
 
 var employerReviewRatingPattern = regexp.MustCompile(`(?i)\b([1-5](?:\.\d)?)\s*(?:out of|/)\s*5\b`)
+
+var reusableBrowserPools = struct {
+	sync.Mutex
+	pools map[*rod.Browser]*reusableBrowserPagePool
+}{
+	pools: make(map[*rod.Browser]*reusableBrowserPagePool),
+}
+
+type reusableBrowserPageSlot struct {
+	page *rod.Page
+}
+
+type reusableBrowserPagePool struct {
+	browser *rod.Browser
+	slots   chan *reusableBrowserPageSlot
+}
+
+func newReusableBrowserPagePool(browser *rod.Browser, size int) *reusableBrowserPagePool {
+	if size < 1 {
+		size = 1
+	}
+	pool := &reusableBrowserPagePool{
+		browser: browser,
+		slots:   make(chan *reusableBrowserPageSlot, size),
+	}
+	for range size {
+		pool.slots <- &reusableBrowserPageSlot{}
+	}
+	return pool
+}
+
+func (p *reusableBrowserPagePool) acquire(ctx context.Context) (*reusableBrowserPageSlot, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case slot := <-p.slots:
+		return slot, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (p *reusableBrowserPagePool) release(slot *reusableBrowserPageSlot) {
+	if slot == nil {
+		return
+	}
+	p.slots <- slot
+}
+
+func (p *reusableBrowserPagePool) close() {
+	for {
+		select {
+		case slot := <-p.slots:
+			if slot.page != nil {
+				_ = slot.page.Close()
+			}
+		default:
+			return
+		}
+	}
+}
 
 func FetchBrowserCompanySiteProfile(company string) (*domain.CompanySiteProfile, error) {
 	return FetchBrowserCompanySiteProfileForIdentity(domain.CompanyHealthContext{Company: company})
@@ -343,11 +408,14 @@ func discoverEmployerReviewSignals(ctx context.Context, browser *rod.Browser, co
 
 	var signals []domain.EmployerReviewSignal
 	for _, query := range queries {
+		queryStart := time.Now()
 		searchURL := companySearchURL(query)
 		pageText, links, err := extractBrowserPageContent(ctx, browser, searchURL)
 		if err != nil {
+			logDebug("browser employer review query failed company=%q query=%q duration=%s error=%v", company, query, time.Since(queryStart).Round(time.Millisecond), err)
 			continue
 		}
+		querySignals := 0
 		for _, link := range links {
 			source := employerReviewSource(link.URL)
 			if source == "" {
@@ -358,8 +426,18 @@ func discoverEmployerReviewSignals(ctx context.Context, browser *rod.Browser, co
 				continue
 			}
 			signals = append(signals, signal)
+			querySignals++
 			break
 		}
+		logDebug(
+			"browser employer review query complete company=%q query=%q duration=%s text_chars=%d links=%d signals=%d",
+			company,
+			query,
+			time.Since(queryStart).Round(time.Millisecond),
+			len(pageText),
+			len(links),
+			querySignals,
+		)
 	}
 
 	return dedupeEmployerReviewSignals(signals)
@@ -369,12 +447,15 @@ func searchCompanySiteCandidates(ctx context.Context, browser *rod.Browser, comp
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	queryStart := time.Now()
 	searchURL := companySearchURL(query)
 	pageText, links, err := extractBrowserPageContent(ctx, browser, searchURL)
 	if err != nil {
+		logDebug("browser company profile query failed company=%q query=%q duration=%s error=%v", company, query, time.Since(queryStart).Round(time.Millisecond), err)
 		return nil, err
 	}
 	if pageText == "" && len(links) == 0 {
+		logDebug("browser company profile query complete company=%q query=%q duration=%s text_chars=0 links=0 candidates=0", company, query, time.Since(queryStart).Round(time.Millisecond))
 		return nil, nil
 	}
 
@@ -402,6 +483,15 @@ func searchCompanySiteCandidates(ctx context.Context, browser *rod.Browser, comp
 	if len(candidates) > 20 {
 		candidates = candidates[:20]
 	}
+	logDebug(
+		"browser company profile query complete company=%q query=%q duration=%s text_chars=%d links=%d candidates=%d",
+		company,
+		query,
+		time.Since(queryStart).Round(time.Millisecond),
+		len(pageText),
+		len(links),
+		len(candidates),
+	)
 	return candidates, nil
 }
 
@@ -419,6 +509,7 @@ func extractBrowserPageContent(ctx context.Context, browser *rod.Browser, pageUR
 		links    []pageLink
 	)
 
+	extractStart := time.Now()
 	err := rod.Try(func() {
 		timeout := SiteSearchBrowserTimeout
 		if deadline, ok := ctx.Deadline(); ok {
@@ -429,56 +520,99 @@ func extractBrowserPageContent(ctx context.Context, browser *rod.Browser, pageUR
 			}
 		}
 
-		page := browser.Timeout(timeout).MustPage(pageURL)
-		defer page.MustClose()
+		withReusableBrowserPage(ctx, browser, timeout, pageURL, func(page *rod.Page) {
+			page.MustWaitLoad()
+			time.Sleep(companyHealthBrowserSettleDelay)
 
-		page.MustWaitLoad()
-		time.Sleep(SiteSearchSettleDelay)
-
-		info := page.MustInfo()
-		baseURL, err := url.Parse(info.URL)
-		if err != nil {
-			baseURL, err = url.Parse(pageURL)
+			info := page.MustInfo()
+			baseURL, err := url.Parse(info.URL)
 			if err != nil {
-				panic(err)
-			}
-		}
-
-		body := page.MustElement("body")
-		pageText = truncateBrowserText(NormalizeWhitespace(body.MustText()))
-
-		elements := page.MustElements("a[href]")
-		rawLinks := make([]pageLink, 0, len(elements))
-		for _, element := range elements {
-			text := NormalizeWhitespace(element.MustText())
-			href := strings.TrimSpace(DerefString(element.MustAttribute("href")))
-			if href == "" {
-				continue
+				baseURL, err = url.Parse(pageURL)
+				if err != nil {
+					panic(err)
+				}
 			}
 
-			resolved, err := baseURL.Parse(href)
-			if err != nil {
-				continue
+			body := page.MustElement("body")
+			pageText = truncateBrowserText(NormalizeWhitespace(body.MustText()))
+
+			elements := page.MustElements("a[href]")
+			rawLinks := make([]pageLink, 0, len(elements))
+			for _, element := range elements {
+				text := NormalizeWhitespace(element.MustText())
+				href := strings.TrimSpace(DerefString(element.MustAttribute("href")))
+				if href == "" {
+					continue
+				}
+
+				resolved, err := baseURL.Parse(href)
+				if err != nil {
+					continue
+				}
+
+				linkURL := decodeSearchResultURL(resolved.String())
+				if linkURL == "" {
+					continue
+				}
+
+				rawLinks = append(rawLinks, pageLink{
+					Text: text,
+					URL:  linkURL,
+				})
 			}
 
-			linkURL := decodeSearchResultURL(resolved.String())
-			if linkURL == "" {
-				continue
-			}
-
-			rawLinks = append(rawLinks, pageLink{
-				Text: text,
-				URL:  linkURL,
-			})
-		}
-
-		links = dedupePageLinks(rawLinks)
+			links = dedupePageLinks(rawLinks)
+		})
 	})
 	if err != nil {
+		logDebug("browser page extract failed url=%q duration=%s error=%v", pageURL, time.Since(extractStart).Round(time.Millisecond), SimplifySiteSearchError(err))
 		return "", nil, SimplifySiteSearchError(err)
 	}
 
+	logDebug("browser page extract complete url=%q duration=%s text_chars=%d links=%d", pageURL, time.Since(extractStart).Round(time.Millisecond), len(pageText), len(links))
 	return pageText, links, nil
+}
+
+func withReusableBrowserPage(ctx context.Context, browser *rod.Browser, timeout time.Duration, pageURL string, fn func(*rod.Page)) {
+	pool := reusableBrowserPagePoolFor(browser)
+	slot, err := pool.acquire(ctx)
+	if err != nil {
+		panic(err)
+	}
+	defer pool.release(slot)
+
+	if slot.page == nil {
+		slot.page = browser.MustPage()
+	}
+	page := slot.page.Timeout(timeout)
+	defer page.CancelTimeout()
+
+	wait := page.MustWaitNavigation()
+	page.MustNavigate(pageURL)
+	wait()
+	fn(page)
+}
+
+func reusableBrowserPagePoolFor(browser *rod.Browser) *reusableBrowserPagePool {
+	reusableBrowserPools.Lock()
+	defer reusableBrowserPools.Unlock()
+
+	pool := reusableBrowserPools.pools[browser]
+	if pool == nil {
+		pool = newReusableBrowserPagePool(browser, defaultReusableHealthBrowserPagePoolSize)
+		reusableBrowserPools.pools[browser] = pool
+	}
+	return pool
+}
+
+func forgetReusableBrowserPage(browser *rod.Browser) {
+	reusableBrowserPools.Lock()
+	pool := reusableBrowserPools.pools[browser]
+	delete(reusableBrowserPools.pools, browser)
+	reusableBrowserPools.Unlock()
+	if pool != nil {
+		pool.close()
+	}
 }
 
 func dedupePageLinks(links []pageLink) []pageLink {

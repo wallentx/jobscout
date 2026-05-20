@@ -1,8 +1,11 @@
 package fetcher
 
 import (
+	"context"
 	"net/url"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestDecodeSearchResultURLDuckDuckGoRedirect(t *testing.T) {
@@ -106,4 +109,49 @@ func TestEmployerReviewSourceRecognizesReviewHosts(t *testing.T) {
 			t.Errorf("employerReviewSource(%q) = %q; want %q", tt.rawURL, got, tt.want)
 		}
 	}
+}
+
+func TestReusableBrowserPagePoolLimitsConfiguredConcurrency(t *testing.T) {
+	pool := newReusableBrowserPagePool(nil, 2)
+	ctx := context.Background()
+
+	first, err := pool.acquire(ctx)
+	if err != nil {
+		t.Fatalf("first acquire error = %v", err)
+	}
+	second, err := pool.acquire(ctx)
+	if err != nil {
+		t.Fatalf("second acquire error = %v", err)
+	}
+
+	blocked := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		slot, err := pool.acquire(ctx)
+		if err != nil {
+			t.Errorf("third acquire error = %v", err)
+			close(blocked)
+			return
+		}
+		close(blocked)
+		pool.release(slot)
+	}()
+
+	select {
+	case <-blocked:
+		t.Fatal("third acquire completed before a slot was released")
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	pool.release(first)
+	select {
+	case <-blocked:
+	case <-time.After(time.Second):
+		t.Fatal("third acquire did not complete after a slot was released")
+	}
+
+	pool.release(second)
+	wg.Wait()
 }

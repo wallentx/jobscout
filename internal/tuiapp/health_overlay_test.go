@@ -626,6 +626,149 @@ func TestBulkHealthRefreshStartsMinimizableTaskPopup(t *testing.T) {
 	}
 }
 
+func TestBulkHealthRefreshCreatesReusableBrowserSession(t *testing.T) {
+	prevStore := runtimeHealthStore
+	runtimeHealthStore = &fakeHealthStore{}
+	t.Cleanup(func() {
+		runtimeHealthStore = prevStore
+	})
+
+	job := Job{
+		Company:        "Acme",
+		CompanyWebsite: "https://acme.example",
+		Title:          "Backend Engineer",
+		Status:         "Unopened",
+	}
+	m := model{
+		termWidth:     100,
+		termHeight:    40,
+		allJobs:       []Job{job},
+		filteredJobs:  []Job{job},
+		activeFilters: filterValuesFromStatuses(nil),
+		overlay:       overlayState{kind: overlayNone},
+		healthCache:   make(HealthCache),
+	}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")})
+	if cmd == nil {
+		t.Fatal("Update(H) cmd = nil, want bulk health command")
+	}
+	got := updated.(model)
+	if got.bulkHealthBrowser == nil {
+		t.Fatal("bulkHealthBrowser = nil, want reusable browser session for bulk refresh")
+	}
+}
+
+func TestBulkHealthRefreshWithPartialCacheQueuesOnlyMissingHealth(t *testing.T) {
+	prevStore := runtimeHealthStore
+	fakeStore := &fakeHealthStore{}
+	runtimeHealthStore = fakeStore
+	t.Cleanup(func() {
+		runtimeHealthStore = prevStore
+	})
+
+	cachedJob := Job{
+		Company:        "Acme",
+		CompanyWebsite: "https://acme.example",
+		Title:          "Backend Engineer",
+		Status:         "Unopened",
+	}
+	missingJob := Job{
+		Company:        "Bravo",
+		CompanyWebsite: "https://bravo.example",
+		Title:          "Frontend Engineer",
+		Status:         "Unopened",
+	}
+	cached := &CompanyHealthResult{Company: "Acme", Score: 80, Confidence: "high"}
+	m := model{
+		termWidth:     100,
+		termHeight:    40,
+		allJobs:       []Job{cachedJob, missingJob},
+		filteredJobs:  []Job{cachedJob, missingJob},
+		activeFilters: filterValuesFromStatuses(nil),
+		overlay:       overlayState{kind: overlayNone},
+		healthCache: HealthCache{
+			"domain:acme.example": {
+				Result:    cached,
+				Timestamp: time.Now(),
+			},
+		},
+	}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")})
+	if cmd == nil {
+		t.Fatal("Update(H) cmd = nil; want bulk health command for missing health")
+	}
+	got := updated.(model)
+	if fakeStore.clearCalls != 0 {
+		t.Fatalf("ClearHealthCache() calls = %d, want 0 for partial cache", fakeStore.clearCalls)
+	}
+	if cached := healthpkg.CachedHealthForJob(got.healthCache, cachedJob); cached == nil || cached.Score != 80 {
+		t.Fatalf("CachedHealthForJob(cached job) = %#v, want preserved cached result", cached)
+	}
+	if len(got.bulkHealthJobs) != 1 || got.bulkHealthJobs[0].Company != "Bravo" {
+		t.Fatalf("bulkHealthJobs = %#v; want only missing Bravo job", got.bulkHealthJobs)
+	}
+	if got.bulkHealthCompanies[0] != "Bravo" {
+		t.Fatalf("bulkHealthCompanies = %#v; want only Bravo", got.bulkHealthCompanies)
+	}
+}
+
+func TestBulkHealthRefreshWithCompleteCacheClearsAndQueuesAllHealth(t *testing.T) {
+	prevStore := runtimeHealthStore
+	fakeStore := &fakeHealthStore{}
+	runtimeHealthStore = fakeStore
+	t.Cleanup(func() {
+		runtimeHealthStore = prevStore
+	})
+
+	acme := Job{
+		Company:        "Acme",
+		CompanyWebsite: "https://acme.example",
+		Title:          "Backend Engineer",
+		Status:         "Unopened",
+	}
+	bravo := Job{
+		Company:        "Bravo",
+		CompanyWebsite: "https://bravo.example",
+		Title:          "Frontend Engineer",
+		Status:         "Unopened",
+	}
+	m := model{
+		termWidth:     100,
+		termHeight:    40,
+		allJobs:       []Job{acme, bravo},
+		filteredJobs:  []Job{acme, bravo},
+		activeFilters: filterValuesFromStatuses(nil),
+		overlay:       overlayState{kind: overlayNone},
+		healthCache: HealthCache{
+			"domain:acme.example": {
+				Result:    &CompanyHealthResult{Company: "Acme", Score: 80, Confidence: "high"},
+				Timestamp: time.Now(),
+			},
+			"domain:bravo.example": {
+				Result:    &CompanyHealthResult{Company: "Bravo", Score: 60, Confidence: "medium"},
+				Timestamp: time.Now(),
+			},
+		},
+	}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")})
+	if cmd == nil {
+		t.Fatal("Update(H) cmd = nil; want full bulk health refresh command")
+	}
+	got := updated.(model)
+	if fakeStore.clearCalls != 1 {
+		t.Fatalf("ClearHealthCache() calls = %d, want 1 for complete cache refresh", fakeStore.clearCalls)
+	}
+	if len(got.healthCache) != 0 {
+		t.Fatalf("healthCache entries = %d, want 0 after full refresh clear", len(got.healthCache))
+	}
+	if len(got.bulkHealthJobs) != 2 {
+		t.Fatalf("bulkHealthJobs len = %d; want 2", len(got.bulkHealthJobs))
+	}
+}
+
 func TestSingleHealthRefreshSuppressesDuplicateJob(t *testing.T) {
 	job := Job{
 		Company:        "Acme",
