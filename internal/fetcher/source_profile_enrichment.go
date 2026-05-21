@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/wallentx/jobscout/internal/domain"
 )
 
 var (
@@ -132,6 +134,7 @@ func (entry *sourceProfileEntry) applyCached(ctx context.Context, job *Job, prof
 		Summary:  job.CompanySummary,
 		Industry: job.CompanyIndustry,
 		Identity: CloneJobIdentityMetadata(job.CompanyIdentity),
+		Metadata: domain.CloneJobMetadata(job.Metadata),
 	}) {
 		return
 	}
@@ -141,6 +144,7 @@ func (entry *sourceProfileEntry) applyCached(ctx context.Context, job *Job, prof
 		Summary:  job.CompanySummary,
 		Industry: job.CompanyIndustry,
 		Identity: CloneJobIdentityMetadata(job.CompanyIdentity),
+		Metadata: domain.CloneJobMetadata(job.Metadata),
 	}
 	entry.mu.Unlock()
 }
@@ -184,6 +188,7 @@ func (e *sourceProfileEnricher) fetchAndApply(ctx context.Context, job *Job, pro
 		Summary:  job.CompanySummary,
 		Industry: job.CompanyIndustry,
 		Identity: CloneJobIdentityMetadata(job.CompanyIdentity),
+		Metadata: domain.CloneJobMetadata(job.Metadata),
 	}
 	return recordHasIdentity(record), record, profileHTML
 }

@@ -15,6 +15,20 @@ func enrichJobFromStructuredJobPosting(job *Job, rawHTML string, pageURL string)
 		return
 	}
 	for _, posting := range extractStructuredJobPostings(rawHTML) {
+		sourceMetadata := job.EnsureSourceMetadata()
+		if strings.TrimSpace(sourceMetadata.PostingURL) == "" {
+			sourceMetadata.PostingURL = strings.TrimSpace(pageURL)
+		}
+		sourceMetadata.DatePosted = firstNonEmptyString(sourceMetadata.DatePosted, structuredStringField(posting, "datePosted"))
+		sourceMetadata.ValidThrough = firstNonEmptyString(sourceMetadata.ValidThrough, structuredStringField(posting, "validThrough"))
+		sourceMetadata.EmploymentTypes = appendUniqueStrings(sourceMetadata.EmploymentTypes, structuredStringValues(posting["employmentType"])...)
+		sourceMetadata.Locations = appendUniqueStrings(sourceMetadata.Locations, structuredJobPostingLocations(posting["jobLocation"])...)
+		industries := structuredJobPostingIndustries(posting)
+		sourceMetadata.Industries = appendUniqueStrings(sourceMetadata.Industries, industries...)
+		if len(industries) > 0 {
+			job.EnsureCompanyMetadata().Industries = appendUniqueStrings(job.EnsureCompanyMetadata().Industries, industries...)
+		}
+
 		company := structuredHiringOrganizationName(posting)
 		if company != "" && jobCompanyMissingOrUnknown(job.Company) {
 			job.Company = company
@@ -50,7 +64,7 @@ func enrichJobFromStructuredJobPosting(job *Job, rawHTML string, pageURL string)
 		}
 
 		if jobCompanyIndustryNeedsEnrichment(*job) {
-			if industry := structuredJobPostingIndustry(posting); industry != "" {
+			if industry := firstString(industries); industry != "" {
 				job.CompanyIndustry = industry
 				setJobIdentityEvidence(job, "industry", industry, "structured_job_posting", pageURL, "high", false, "Industry extracted from JobPosting structured data.")
 			}
@@ -155,19 +169,20 @@ func structuredJobPostingCompensation(posting map[string]any) string {
 	}
 }
 
-func structuredJobPostingIndustry(posting map[string]any) string {
+func structuredJobPostingIndustries(posting map[string]any) []string {
 	raw, ok := posting["industry"]
 	if !ok {
-		return ""
+		return nil
 	}
 	values := structuredStringValues(raw)
+	industries := make([]string, 0, len(values))
 	for _, value := range values {
 		value = normalizeHTMLText(value)
 		if looksLikeCompanyIndustry(value) {
-			return truncateAtSentence(value, 80)
+			industries = appendUniqueStrings(industries, truncateAtSentence(value, 80))
 		}
 	}
-	return ""
+	return industries
 }
 
 func structuredStringValues(value any) []string {
@@ -186,6 +201,52 @@ func structuredStringValues(value any) []string {
 	default:
 		return nil
 	}
+}
+
+func structuredJobPostingLocations(value any) []string {
+	switch typed := value.(type) {
+	case []any:
+		locations := make([]string, 0, len(typed))
+		for _, item := range typed {
+			locations = appendUniqueStrings(locations, structuredJobPostingLocations(item)...)
+		}
+		return locations
+	case map[string]any:
+		if address, ok := typed["address"]; ok {
+			if location := structuredAddressLocation(address); location != "" {
+				return []string{location}
+			}
+		}
+		if name := structuredStringField(typed, "name"); name != "" {
+			return []string{name}
+		}
+	case string:
+		if text := strings.TrimSpace(typed); text != "" {
+			return []string{text}
+		}
+	}
+	return nil
+}
+
+func structuredAddressLocation(value any) string {
+	address, ok := value.(map[string]any)
+	if !ok {
+		return structuredStringField(map[string]any{"value": value}, "value")
+	}
+	parts := make([]string, 0, 3)
+	for _, key := range []string{"addressLocality", "addressRegion", "addressCountry"} {
+		if part := structuredStringField(address, key); part != "" {
+			parts = append(parts, part)
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
+func appendUniqueStrings(values []string, more ...string) []string {
+	for _, value := range more {
+		values = appendUniqueString(values, value)
+	}
+	return values
 }
 
 func structuredNumberField(value map[string]any, key string) (float64, bool) {

@@ -13,6 +13,7 @@ type Job struct {
 	CompanySummary  string               `json:"company_summary,omitempty"`
 	CompanyIndustry string               `json:"company_industry,omitempty"`
 	CompanyIdentity *JobIdentityMetadata `json:"company_identity,omitempty"`
+	Metadata        *JobMetadata         `json:"metadata,omitempty"`
 	Title           string               `json:"title"`
 	Remote          string               `json:"remote"`
 	Compensation    string               `json:"compensation"`
@@ -92,6 +93,8 @@ func (j *Job) UnmarshalJSON(data []byte) error {
 		CompanyIndustry string          `json:"company_industry"`
 		Industry        string          `json:"industry"`
 		CompanyIdentity json.RawMessage `json:"company_identity"`
+		Metadata        *JobMetadata    `json:"metadata"`
+		JobMetadata     *JobMetadata    `json:"job_metadata"`
 		Title           string          `json:"title"`
 		JobTitle        string          `json:"job_title"`
 		Remote          json.RawMessage `json:"remote"`
@@ -121,6 +124,7 @@ func (j *Job) UnmarshalJSON(data []byte) error {
 	j.CompanySummary = firstNonEmpty(raw.CompanySummary, raw.AboutCompany)
 	j.CompanyIndustry = firstNonEmpty(raw.CompanyIndustry, raw.Industry)
 	j.CompanyIdentity = parseJobIdentityMetadata(raw.CompanyIdentity)
+	j.Metadata = NormalizeJobMetadata(firstNonNilJobMetadata(raw.Metadata, raw.JobMetadata))
 	if j.CompanyIdentity != nil {
 		if j.CompanyWebsite == "" && j.CompanyIdentity.Website != nil {
 			j.CompanyWebsite = strings.TrimSpace(j.CompanyIdentity.Website.Value)
@@ -243,6 +247,7 @@ func (j Job) MarshalJSON() ([]byte, error) {
 		CompanySummary  string               `json:"company_summary,omitempty"`
 		CompanyIndustry string               `json:"company_industry,omitempty"`
 		CompanyIdentity *JobIdentityMetadata `json:"company_identity,omitempty"`
+		Metadata        *JobMetadata         `json:"metadata,omitempty"`
 		Title           string               `json:"title"`
 		Remote          string               `json:"remote"`
 		Compensation    string               `json:"compensation"`
@@ -260,6 +265,7 @@ func (j Job) MarshalJSON() ([]byte, error) {
 		CompanySummary:  j.CompanySummary,
 		CompanyIndustry: j.CompanyIndustry,
 		CompanyIdentity: j.CompanyIdentity,
+		Metadata:        NormalizeJobMetadata(CloneJobMetadata(j.Metadata)),
 		Title:           j.Title,
 		Remote:          j.Remote,
 		Compensation:    j.Compensation,
@@ -270,6 +276,15 @@ func (j Job) MarshalJSON() ([]byte, error) {
 		DateAdded:       j.DateAdded,
 		Description:     j.Description,
 	})
+}
+
+func firstNonNilJobMetadata(values ...*JobMetadata) *JobMetadata {
+	for _, value := range values {
+		if value != nil {
+			return value
+		}
+	}
+	return nil
 }
 
 func firstNonEmpty(values ...string) string {

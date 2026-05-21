@@ -75,6 +75,7 @@ func builtInJobFromListingCard(card *goquery.Selection, pageURL string, sourceNa
 		return Job{}, "", false
 	}
 
+	industries := builtInListingCardIndustries(card)
 	job := Job{
 		Company:         strings.TrimSpace(company),
 		Title:           strings.TrimSpace(title),
@@ -84,7 +85,17 @@ func builtInJobFromListingCard(card *goquery.Selection, pageURL string, sourceNa
 		ApplyURL:        applyURL,
 		Status:          "Unopened",
 		Description:     builtInListingCardDescription(card),
-		CompanyIndustry: builtInListingCardIndustry(card),
+		CompanyIndustry: firstString(industries),
+	}
+	sourceMetadata := job.EnsureSourceMetadata()
+	sourceMetadata.PostingURL = applyURL
+	sourceMetadata.CompanyProfileURL = companyProfileURL
+	sourceMetadata.PostedLabel = builtInListingCardPostedLabel(card)
+	sourceMetadata.Industries = append(sourceMetadata.Industries, industries...)
+	sourceMetadata.Skills = builtInListingCardSkills(card)
+	sourceMetadata.Locations = builtInListingCardLocations(card)
+	if len(industries) > 0 {
+		job.EnsureCompanyMetadata().Industries = append(job.EnsureCompanyMetadata().Industries, industries...)
 	}
 	job.SetDateAdded(time.Now().Unix())
 	if website := builtInListingCardCompanyWebsite(company); website != "" {
@@ -180,20 +191,80 @@ func builtInListingCardCompensation(card *goquery.Selection) string {
 	return compensation
 }
 
-func builtInListingCardIndustry(card *goquery.Selection) string {
+func builtInListingCardIndustries(card *goquery.Selection) []string {
 	text := normalizeWhitespace(selectionTextWithSpaces(card.Find(".mb-md.fs-xs.fw-bold").First()))
 	if text == "" {
-		return ""
+		return nil
 	}
+	var industries []string
 	for _, part := range splitBuiltInBulletList(text) {
 		if looksLikeCompanyIndustry(part) {
-			return part
+			industries = appendUniqueString(industries, part)
 		}
 	}
-	if looksLikeCompanyIndustry(text) {
-		return text
+	if len(industries) > 0 {
+		return industries
 	}
-	return ""
+	if looksLikeCompanyIndustry(text) {
+		return []string{text}
+	}
+	return nil
+}
+
+func builtInListingCardPostedLabel(card *goquery.Selection) string {
+	if card == nil || card.Length() == 0 {
+		return ""
+	}
+	var posted string
+	card.Find("span").EachWithBreak(func(_ int, selection *goquery.Selection) bool {
+		text := normalizeWhitespace(selectionTextWithSpaces(selection))
+		lower := strings.ToLower(text)
+		if strings.Contains(lower, "posted") || strings.Contains(lower, "reposted") || strings.Contains(lower, "days ago") || strings.Contains(lower, "hours ago") {
+			posted = text
+			return false
+		}
+		return true
+	})
+	return posted
+}
+
+func builtInListingCardLocations(card *goquery.Selection) []string {
+	if card == nil || card.Length() == 0 {
+		return nil
+	}
+	var locations []string
+	card.Find("span").Each(func(_ int, selection *goquery.Selection) {
+		text := normalizeWhitespace(selectionTextWithSpaces(selection))
+		if !looksLikeBuiltInListingLocation(text) {
+			return
+		}
+		locations = appendUniqueString(locations, text)
+	})
+	return locations
+}
+
+func looksLikeBuiltInListingLocation(text string) bool {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	if lower == "" {
+		return false
+	}
+	if builtInWorkSettingLabel(text) != "" {
+		return false
+	}
+	if strings.Contains(lower, "annually") || strings.Contains(lower, "hourly") || strings.Contains(lower, "salary") {
+		return false
+	}
+	if strings.Contains(lower, "posted") || strings.Contains(lower, "reposted") || strings.Contains(lower, "days ago") || strings.Contains(lower, "hours ago") {
+		return false
+	}
+	switch lower {
+	case "senior level", "mid level", "entry level", "top skills:":
+		return false
+	}
+	if strings.Contains(lower, "united states") || strings.Contains(lower, "remote,") || strings.Contains(lower, ", ") {
+		return true
+	}
+	return strings.HasPrefix(lower, "hiring in ")
 }
 
 func builtInListingCardDescription(card *goquery.Selection) string {
@@ -253,4 +324,11 @@ func builtInListingCardCompanyWebsite(company string) string {
 		return ""
 	}
 	return website
+}
+
+func firstString(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(values[0])
 }

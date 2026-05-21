@@ -403,7 +403,7 @@ func extractExplicitCompanyIndustryFromHTML(rawHTML string) string {
 			continue
 		}
 		industry := strings.TrimSpace(match[1])
-		for _, stop := range []string{" Company website", " Website", " Headquarters", " About", " Salary", " Job type", " Location", " Skills"} {
+		for _, stop := range []string{" Company website", " Company size", " Website", " Headquarters", " Founded", " Size", " About", " Salary", " Job type", " Location", " Skills"} {
 			if idx := strings.Index(strings.ToLower(industry), strings.ToLower(stop)); idx >= 0 {
 				industry = industry[:idx]
 			}

@@ -2,7 +2,9 @@ package health
 
 import (
 	"context"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/tmc/langchaingo/llms"
 	"github.com/wallentx/jobscout/internal/config"
@@ -12,8 +14,10 @@ import (
 type fakeBrowserSession struct {
 	profileCalls int
 	reviewCalls  int
+	articleCalls int
 	profile      *domain.CompanySiteProfile
 	reviews      []domain.EmployerReviewSignal
+	articleText  string
 }
 
 func (s *fakeBrowserSession) FetchCompanySiteProfile(ctx context.Context, identity domain.CompanyHealthContext) (*domain.CompanySiteProfile, error) {
@@ -24,6 +28,11 @@ func (s *fakeBrowserSession) FetchCompanySiteProfile(ctx context.Context, identi
 func (s *fakeBrowserSession) FetchEmployerReviewSignals(ctx context.Context, company string) ([]domain.EmployerReviewSignal, error) {
 	s.reviewCalls++
 	return s.reviews, nil
+}
+
+func (s *fakeBrowserSession) FetchArticleText(ctx context.Context, rawURL string) (string, error) {
+	s.articleCalls++
+	return s.articleText, nil
 }
 
 func TestBrowserFetchesUseContextBrowserSession(t *testing.T) {
@@ -167,5 +176,88 @@ func TestApplyOptionalLLMCompanyHealthFetchesEmployerReviewsForWeakResult(t *tes
 	}
 	if len(result.EmployerReviews) != 1 {
 		t.Fatalf("EmployerReviews = %#v, want one review", result.EmployerReviews)
+	}
+}
+
+func TestApplyOptionalLLMCompanyHealthFetchesConcernArticlesAndAppliesNovelModifier(t *testing.T) {
+	originalInit := initConfiguredLLMForTask
+	originalEvaluate := evaluateCompanyHealthWithLLM
+	defer func() {
+		initConfiguredLLMForTask = originalInit
+		evaluateCompanyHealthWithLLM = originalEvaluate
+	}()
+
+	initConfiguredLLMForTask = func(ctx context.Context, appCfg *config.AppConfig, task string) (llms.Model, func(), error) {
+		return fakeHealthLLM{}, func() {}, nil
+	}
+	storyURL := "https://news.example/acme-investigation"
+	evaluateCompanyHealthWithLLM = func(ctx context.Context, model llms.Model, result *domain.CompanyHealthResult) (*domain.LLMCompanyHealthAssessment, error) {
+		if len(result.ConcernStoryArticles) != 1 {
+			t.Fatalf("len(ConcernStoryArticles) = %d, want 1", len(result.ConcernStoryArticles))
+		}
+		if !strings.Contains(result.ConcernStoryArticles[0].Text, "credit line was suspended") {
+			t.Fatalf("ConcernStoryArticles[0].Text = %q; want fetched page text", result.ConcernStoryArticles[0].Text)
+		}
+		delta := -6
+		return &domain.LLMCompanyHealthAssessment{
+			StoryInsight: "Recent coverage describes a credit-line suspension not visible in headline scoring.",
+			ArticleReviews: []domain.LLMCompanyHealthArticleReview{
+				{
+					URL:       storyURL,
+					Source:    "google_news_rss",
+					Related:   true,
+					NovelFact: "The article says Acme's credit line was suspended after regulatory review.",
+				},
+			},
+			ScoreModifier:          &delta,
+			ScoreModifierReason:    "The page adds a concrete financing concern.",
+			ScoreModifierNovelFact: "The article says Acme's credit line was suspended after regulatory review.",
+			ScoreModifierSources:   []string{storyURL},
+			FollowUpQuestions:      []string{"Ask whether financing has been restored."},
+			PositiveSignals:        []string{},
+			Concerns:               []string{"Financing risk needs follow-up."},
+			RiskLevel:              "medium",
+			Recommendation:         "Ask about the financing issue before applying.",
+		}, nil
+	}
+
+	published := time.Now().AddDate(0, -1, 0)
+	session := &fakeBrowserSession{
+		articleText: "Acme's credit line was suspended after a regulatory review of its lending controls.",
+	}
+	ctx := ContextWithBrowserSession(context.Background(), session)
+	result := &domain.CompanyHealthResult{
+		Company:        "Acme",
+		Score:          70,
+		Confidence:     "medium",
+		Sources:        map[string]any{},
+		EmploymentRisk: &domain.EmploymentRisk{Level: "Low", Score: 5},
+		ConcernStories: []domain.CompanyHealthConcernStory{
+			{
+				Source:  "google_news_rss",
+				Title:   "Acme faces regulatory investigation",
+				URL:     storyURL,
+				Date:    &published,
+				Concern: "negative news keyword: investigation",
+			},
+		},
+	}
+
+	ApplyOptionalLLMCompanyHealth(ctx, &config.AppConfig{
+		LLM: config.LLMConfig{
+			Enabled:       true,
+			CompanyHealth: true,
+			Provider:      "openai",
+		},
+	}, result)
+
+	if session.articleCalls != 1 {
+		t.Fatalf("article calls = %d, want 1", session.articleCalls)
+	}
+	if result.Score != 64 {
+		t.Fatalf("Score = %d, want 64 after LLM modifier", result.Score)
+	}
+	if result.LLMAssessment == nil || result.LLMAssessment.StoryInsight == "" {
+		t.Fatalf("LLMAssessment = %#v; want story insight", result.LLMAssessment)
 	}
 }

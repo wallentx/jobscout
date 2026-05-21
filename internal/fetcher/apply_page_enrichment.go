@@ -5,6 +5,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/wallentx/jobscout/internal/domain"
 )
 
 func enrichJobFromApplyPageWithLLM(ctx context.Context, job *Job, llmEnrich jobIdentityPageEnrichFunc) {
@@ -148,6 +150,7 @@ func enrichJobsFromApplyPagesWithLLMStoreAndProgress(ctx context.Context, jobs [
 					Summary:  jobs[idx].CompanySummary,
 					Industry: jobs[idx].CompanyIndustry,
 					Identity: CloneJobIdentityMetadata(jobs[idx].CompanyIdentity),
+					Metadata: domain.CloneJobMetadata(jobs[idx].Metadata),
 				})
 			}
 			persistCompanyIdentityToStore(ctx, jobs[idx], identityStore, stats)

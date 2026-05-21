@@ -24,11 +24,19 @@ type RSSItem struct {
 	PubDate string `xml:"pubDate"`
 }
 
+type googleNewsSentimentResult struct {
+	Titles         []string
+	ConcernStories []CompanyHealthConcernStory
+	NegHits        int
+	PosHits        int
+	Rejected       []CompanyHealthEvidence
+}
+
 // fetchGoogleNewsRSS fetches and parses Google News RSS feed.
 var fetchGoogleNewsRSS = defaultFetchGoogleNewsRSS
 
 func defaultFetchGoogleNewsRSS(query string) ([]RSSItem, error) {
-	rssURL := fmt.Sprintf(googleNewsRSSURL, url.QueryEscape(fmt.Sprintf(`"%s"`, query)))
+	rssURL := fmt.Sprintf(googleNewsRSSURL, url.QueryEscape(googleNewsRSSQuery(query)))
 
 	client := &http.Client{Timeout: requestTimeout}
 	req, err := http.NewRequest("GET", rssURL, nil)
@@ -54,25 +62,60 @@ func defaultFetchGoogleNewsRSS(query string) ([]RSSItem, error) {
 	return feed.Channel.Items, nil
 }
 
-// fetchLayoffSignals searches news specifically for layoff mentions
-func fetchLayoffSignals(company string) []LayoffSignal {
-	query := fmt.Sprintf(`"%s" layoffs`, company)
-	items, err := fetchGoogleNewsRSS(query)
-	if err != nil {
+func googleNewsRSSQuery(query string) string {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return query
+	}
+	if strings.ContainsAny(query, `" `) {
+		return query
+	}
+	return fmt.Sprintf(`"%s"`, query)
+}
+
+func fetchLayoffSignalsForContextWithRejected(identity CompanyHealthContext) ([]LayoffSignal, []CompanyHealthEvidence) {
+	signals := fetchLayoffSignalsForQueries(companyHealthLayoffQueries(identity))
+	return filterLayoffSignalsForContext(signals, identity)
+}
+
+func fetchLayoffSignalsForQueries(queries []string) []LayoffSignal {
+	if len(queries) == 0 {
 		return nil
 	}
+	seen := make(map[string]bool)
+	var signals []LayoffSignal
+	for _, query := range queries {
+		items, err := fetchGoogleNewsRSS(query)
+		if err != nil {
+			continue
+		}
+		for _, signal := range layoffSignalsFromRSSItems(items, query) {
+			key := strings.TrimSpace(signal.Title) + "\x00" + strings.TrimSpace(signal.URL)
+			if key == "\x00" || seen[key] {
+				continue
+			}
+			seen[key] = true
+			signals = append(signals, signal)
+			if len(signals) >= 5 {
+				return signals
+			}
+		}
+	}
+	return signals
+}
 
+func layoffSignalsFromRSSItems(items []RSSItem, company string) []LayoffSignal {
+	company = layoffCompanyNameFromQuery(company)
+	if company == "" {
+		return nil
+	}
 	signals := []LayoffSignal{}
 	layoffPattern := regexp.MustCompile(`(?i)(\b\d{1,3}(?:,\d{3})*|\d+%)\s+(?:jobs|employees|staff|workers|people|roles|positions|cuts|layoffs|reduction in force|rif)`)
-
-	// Exclusion patterns for "industry trend" headlines where the company is mentioned but not the one laying off
 	exclusionPattern := regexp.MustCompile(`(?i)(?:as layoffs sweep|amid layoffs|despite layoffs|industry layoffs|tech layoffs|layoffs sweep|market layoffs|sector layoffs)`)
 
 	for _, item := range items {
 		title := item.Title
 		titleLower := strings.ToLower(title)
-
-		// Skip if it matches an exclusion pattern (e.g. "Nvidia grows AS layoffs sweep")
 		if exclusionPattern.MatchString(title) {
 			continue
 		}
@@ -85,10 +128,6 @@ func fetchLayoffSignals(company string) []LayoffSignal {
 			strings.Contains(titleLower, "rif") ||
 			strings.Contains(titleLower, "reduction in force") ||
 			strings.Contains(titleLower, "restructuring") {
-
-			// Strict check: Ensure company name is actually in the title (Google sometimes returns loose matches)
-			// and treat it as a word boundary match.
-			// Use strictly case-sensitive matching to avoid dictionary word collisions.
 			pattern := fmt.Sprintf(`\b%s\b`, regexp.QuoteMeta(company))
 			companyRe := regexp.MustCompile(pattern)
 			if !companyRe.MatchString(title) {
@@ -99,15 +138,11 @@ func fetchLayoffSignals(company string) []LayoffSignal {
 				Title: title,
 				URL:   item.Link,
 			}
-
-			// Try to parse date
 			if item.PubDate != "" {
 				if t, err := time.Parse(time.RFC1123Z, item.PubDate); err == nil {
 					signal.Date = &t
 				}
 			}
-
-			// Extract employee count or percentage
 			matches := layoffPattern.FindStringSubmatch(title)
 			if len(matches) > 1 {
 				numStr := strings.ReplaceAll(matches[1], ",", "")
@@ -127,13 +162,86 @@ func fetchLayoffSignals(company string) []LayoffSignal {
 			}
 		}
 	}
-
 	return signals
 }
 
-func fetchLayoffSignalsForContextWithRejected(identity CompanyHealthContext) ([]LayoffSignal, []CompanyHealthEvidence) {
-	signals := fetchLayoffSignals(identity.Company)
-	return filterLayoffSignalsForContext(signals, identity)
+func layoffCompanyNameFromQuery(query string) string {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return ""
+	}
+	if strings.HasPrefix(query, `"`) {
+		rest := query[1:]
+		if idx := strings.Index(rest, `"`); idx >= 0 {
+			return strings.TrimSpace(rest[:idx])
+		}
+	}
+	return strings.Trim(query, `" `)
+}
+
+func companyHealthLayoffQueries(identity CompanyHealthContext) []string {
+	return companyHealthNewsQueriesWithSuffix(identity, "layoffs")
+}
+
+func companyHealthNewsQueries(identity CompanyHealthContext) []string {
+	return companyHealthNewsQueriesWithSuffix(identity, "")
+}
+
+func companyHealthNewsQueriesWithSuffix(identity CompanyHealthContext, suffix string) []string {
+	names := companyHealthContextNames(identity)
+	if len(names) == 0 {
+		return nil
+	}
+	contextTerms := companyHealthSearchContextTerms(identity)
+	queries := make([]string, 0, len(names))
+	for _, name := range names {
+		var queryParts []string
+		if len(contextTerms) > 0 || strings.TrimSpace(suffix) != "" {
+			queryParts = append(queryParts, fmt.Sprintf(`"%s"`, name))
+		} else {
+			queryParts = append(queryParts, name)
+		}
+		queryParts = append(queryParts, contextTerms...)
+		if suffix = strings.TrimSpace(suffix); suffix != "" {
+			queryParts = append(queryParts, suffix)
+		}
+		queries = append(queries, strings.Join(queryParts, " "))
+	}
+	return queries
+}
+
+func companyHealthSearchContextTerms(identity CompanyHealthContext) []string {
+	var terms []string
+	if domain := companyHealthContextDomain(identity); domain != "" {
+		terms = append(terms, domain)
+	}
+	for _, text := range append([]string{identity.Industry}, identity.Industries...) {
+		for _, term := range tokenizeCompanyContext(text) {
+			if companyContextStopword(term) {
+				continue
+			}
+			terms = appendUniqueSearchTerm(terms, term)
+			if len(terms) >= 4 {
+				return terms
+			}
+		}
+	}
+	return terms
+}
+
+func appendUniqueSearchTerm(values []string, value string) []string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return values
+	}
+	valueRoot := strings.TrimSuffix(value, "s")
+	for _, existing := range values {
+		existingRoot := strings.TrimSuffix(existing, "s")
+		if existing == value || existingRoot == valueRoot {
+			return values
+		}
+	}
+	return append(values, value)
 }
 
 func filterLayoffSignalsForContext(signals []LayoffSignal, identity CompanyHealthContext) ([]LayoffSignal, []CompanyHealthEvidence) {
@@ -152,17 +260,24 @@ func filterLayoffSignalsForContext(signals []LayoffSignal, identity CompanyHealt
 	return out, rejected
 }
 
-// googleNewsSentiment fetches news and counts positive/negative keywords
-func googleNewsSentimentForContext(identity CompanyHealthContext) (titles []string, negHits, posHits int, rejected []CompanyHealthEvidence, err error) {
-	return googleNewsSentimentForContextWithFetcher(identity, fetchGoogleNewsRSS)
+func googleNewsSentimentForContextWithFetcher(identity CompanyHealthContext, fetch func(string) ([]RSSItem, error)) (titles []string, negHits, posHits int, rejected []CompanyHealthEvidence, err error) {
+	result, err := googleNewsSentimentDetailsForContextWithFetcher(identity, fetch)
+	if err != nil {
+		return nil, 0, 0, nil, err
+	}
+	return result.Titles, result.NegHits, result.PosHits, result.Rejected, nil
 }
 
-func googleNewsSentimentForContextWithFetcher(identity CompanyHealthContext, fetch func(string) ([]RSSItem, error)) (titles []string, negHits, posHits int, rejected []CompanyHealthEvidence, err error) {
+func googleNewsSentimentDetailsForContext(identity CompanyHealthContext) (googleNewsSentimentResult, error) {
+	return googleNewsSentimentDetailsForContextWithFetcher(identity, fetchGoogleNewsRSS)
+}
+
+func googleNewsSentimentDetailsForContextWithFetcher(identity CompanyHealthContext, fetch func(string) ([]RSSItem, error)) (googleNewsSentimentResult, error) {
 	var items []RSSItem
 	seenItems := make(map[string]bool)
 	var firstErr error
-	for _, name := range companyHealthContextNames(identity) {
-		fetched, fetchErr := fetch(name)
+	for _, query := range companyHealthNewsQueries(identity) {
+		fetched, fetchErr := fetch(query)
 		if fetchErr != nil {
 			if firstErr == nil {
 				firstErr = fetchErr
@@ -179,25 +294,28 @@ func googleNewsSentimentForContextWithFetcher(identity CompanyHealthContext, fet
 		}
 	}
 	if len(items) == 0 && firstErr != nil {
-		return nil, 0, 0, nil, firstErr
+		return googleNewsSentimentResult{}, firstErr
 	}
 
-	titles = []string{}
+	result := googleNewsSentimentResult{Titles: []string{}}
 	for _, item := range items {
 		ok, reason := healthEvidenceMatchesCompanyContext(item.Title, item.Link, identity)
 		if !ok {
-			rejected = append(rejected, rejectedHealthEvidence(item.Title, "google_news_rss", item.Link, reason))
+			result.Rejected = append(result.Rejected, rejectedHealthEvidence(item.Title, "google_news_rss", item.Link, reason))
 			continue
 		}
-		titles = append(titles, item.Title)
-		if len(titles) >= 25 {
+		result.Titles = append(result.Titles, item.Title)
+		if story, ok := companyHealthConcernStoryFromRSSItem("google_news_rss", item, negNewsKeywords); ok {
+			result.ConcernStories = appendUniqueCompanyHealthConcernStories(result.ConcernStories, story)
+		}
+		if len(result.Titles) >= 25 {
 			break
 		}
 	}
 
-	blob := strings.Join(titles, " ")
-	negHits = wordHitCount(blob, negNewsKeywords)
-	posHits = wordHitCount(blob, posNewsKeywords)
+	blob := strings.Join(result.Titles, " ")
+	result.NegHits = wordHitCount(blob, negNewsKeywords)
+	result.PosHits = wordHitCount(blob, posNewsKeywords)
 
-	return titles, negHits, posHits, rejected, nil
+	return result, nil
 }

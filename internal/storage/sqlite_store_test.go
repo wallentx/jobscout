@@ -6,6 +6,10 @@ import (
 	"time"
 )
 
+func intPtr(value int) *int {
+	return &value
+}
+
 func TestSQLiteStoreRoundTrip(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "jobscout.db")
 
@@ -42,10 +46,27 @@ func TestSQLiteStoreRoundTrip(t *testing.T) {
 			Compensation: "$200,000",
 			Source:       "test",
 			ApplyURL:     "https://example.com/jobs/1",
-			WhyMatches:   []string{"keyword"},
-			Status:       "Unopened",
-			DateAdded:    time.Now().Unix(),
-			Description:  "desc",
+			Metadata: &JobMetadata{
+				Source: &JobSourceMetadata{
+					PostingURL:        "https://example.com/jobs/1",
+					ExternalApplyURL:  "https://acme.example/careers/1",
+					CompanyProfileURL: "https://example.com/companies/acme",
+					Industries:        []string{"Developer Tools", "Cloud"},
+					Skills:            []string{"Go", "Kubernetes"},
+				},
+				Company: &CompanyMetadata{
+					Industries:         []string{"Developer Tools", "Cloud"},
+					EmployeeRange:      "501-1,000 employees",
+					EstimatedEmployees: intPtr(750),
+					FoundedYear:        intPtr(2018),
+					Headquarters:       "Austin, TX",
+					Ticker:             "ACME",
+				},
+			},
+			WhyMatches:  []string{"keyword"},
+			Status:      "Unopened",
+			DateAdded:   time.Now().Unix(),
+			Description: "desc",
 		},
 	}
 
@@ -73,6 +94,15 @@ func TestSQLiteStoreRoundTrip(t *testing.T) {
 	}
 	if loadedJobs[0].CompanyIdentity == nil || loadedJobs[0].CompanyIdentity.Industry == nil || !loadedJobs[0].CompanyIdentity.Industry.Provisional {
 		t.Fatalf("LoadJobs()[0].CompanyIdentity = %#v; want provisional industry evidence", loadedJobs[0].CompanyIdentity)
+	}
+	if loadedJobs[0].Metadata == nil || loadedJobs[0].Metadata.Source == nil || loadedJobs[0].Metadata.Company == nil {
+		t.Fatalf("LoadJobs()[0].Metadata = %#v; want source and company metadata", loadedJobs[0].Metadata)
+	}
+	if got := loadedJobs[0].Metadata.Source.ExternalApplyURL; got != "https://acme.example/careers/1" {
+		t.Fatalf("LoadJobs()[0].Metadata.Source.ExternalApplyURL = %q; want external apply URL", got)
+	}
+	if loadedJobs[0].Metadata.Company.EstimatedEmployees == nil || *loadedJobs[0].Metadata.Company.EstimatedEmployees != 750 {
+		t.Fatalf("LoadJobs()[0].Metadata.Company.EstimatedEmployees = %#v; want 750", loadedJobs[0].Metadata.Company.EstimatedEmployees)
 	}
 
 	cache := HealthCache{

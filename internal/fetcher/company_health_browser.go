@@ -8,6 +8,7 @@ import (
 	"path"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -39,6 +40,7 @@ type pageLink struct {
 }
 
 var employerReviewRatingPattern = regexp.MustCompile(`(?i)\b([1-5](?:\.\d)?)\s*(?:out of|/)\s*5\b`)
+var indeedCategoryRatingPattern = regexp.MustCompile(`(?i)\b([1-5](?:\.\d)?)\s+(?:work[- ]?life balance|pay\s*&\s*benefits|job security(?:\s*&\s*advancement)?|management|culture)\b`)
 
 var reusableBrowserPools = struct {
 	sync.Mutex
@@ -147,6 +149,31 @@ func FetchBrowserEmployerReviewSignals(company string) ([]domain.EmployerReviewS
 	defer cancel()
 
 	return discoverEmployerReviewSignals(ctx, browser, company), nil
+}
+
+func FetchBrowserArticleText(ctx context.Context, rawURL string) (string, error) {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return "", nil
+	}
+	if FindSiteSearchBrowserBinary() == "" {
+		return "", ErrBrowserNotInstalled
+	}
+
+	browser, cleanup, err := NewSiteSearchBrowser()
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
+
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, companyProfileBrowserTimeout)
+	defer cancel()
+
+	text, _, err := extractBrowserPageContent(ctx, browser, rawURL)
+	return text, err
 }
 
 func discoverCompanySiteProfile(ctx context.Context, browser *rod.Browser, company string) *domain.CompanySiteProfile {
@@ -702,10 +729,30 @@ func employerReviewSnippet(pageText string, title string, source string) string 
 
 func extractEmployerReviewRating(text string) string {
 	match := employerReviewRatingPattern.FindStringSubmatch(text)
-	if len(match) != 2 {
+	if len(match) == 2 {
+		return match[1] + "/5"
+	}
+	matches := indeedCategoryRatingPattern.FindAllStringSubmatch(text, -1)
+	if len(matches) == 0 {
 		return ""
 	}
-	return match[1] + "/5"
+	total := 0.0
+	count := 0
+	for _, match := range matches {
+		if len(match) != 2 {
+			continue
+		}
+		value, err := strconv.ParseFloat(match[1], 64)
+		if err != nil || value <= 0 || value > 5 {
+			continue
+		}
+		total += value
+		count++
+	}
+	if count == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%.1f/5", total/float64(count))
 }
 
 func employerReviewFlags(text string) []string {

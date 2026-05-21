@@ -226,6 +226,19 @@ func renderHealthReport(r *CompanyHealthResult, contentWidth int) string {
 			main.WriteString(llmStyle.Render(fmt.Sprintf("  ! %s", concern)))
 			main.WriteString("\n")
 		}
+		if strings.TrimSpace(assessment.StoryInsight) != "" {
+			main.WriteString(llmStyle.Render(fmt.Sprintf("  ! Story insight: %s", assessment.StoryInsight)))
+			main.WriteString("\n")
+		}
+		if assessment.ScoreModifier != nil && *assessment.ScoreModifier != 0 {
+			modifier := fmt.Sprintf("%+d", *assessment.ScoreModifier)
+			reason := strings.TrimSpace(assessment.ScoreModifierReason)
+			if reason == "" {
+				reason = strings.TrimSpace(assessment.ScoreModifierNovelFact)
+			}
+			main.WriteString(llmStyle.Render(fmt.Sprintf("  ! LLM modifier: %s - %s", modifier, reason)))
+			main.WriteString("\n")
+		}
 		for _, question := range assessment.FollowUpQuestions {
 			main.WriteString(llmStyle.Render(fmt.Sprintf("  ? %s", question)))
 			main.WriteString("\n")
@@ -308,7 +321,7 @@ func renderHealthReport(r *CompanyHealthResult, contentWidth int) string {
 
 	if len(r.EmployerReviews) > 0 {
 		main.WriteString("\n")
-		main.WriteString(sectionStyle.Render("EMPLOYER REVIEWS"))
+		main.WriteString(sectionStyle.Render("EMPLOYEE REVIEWS"))
 		main.WriteString("\n")
 
 		reviewStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("183"))
@@ -393,6 +406,8 @@ func formatEmployerReviewSummary(review domain.EmployerReviewSignal) string {
 	}
 	if review.Rating != "" {
 		parts = append(parts, review.Rating)
+	} else if indicator := employerReviewIndicator(review); indicator != "" {
+		parts = append(parts, indicator)
 	}
 	if review.ReviewCount != nil {
 		parts = append(parts, fmt.Sprintf("%d reviews", *review.ReviewCount))
@@ -410,6 +425,29 @@ func formatEmployerReviewSummary(review domain.EmployerReviewSignal) string {
 		parts = append(parts, review.Title)
 	}
 	return strings.Join(parts, " | ")
+}
+
+func employerReviewIndicator(review domain.EmployerReviewSignal) string {
+	positive := false
+	negative := false
+	for _, flag := range review.Flags {
+		switch strings.ToLower(strings.TrimSpace(flag)) {
+		case "positive culture":
+			positive = true
+		case "burnout", "toxic culture", "poor culture", "long hours", "low pay", "layoff mentions":
+			negative = true
+		}
+	}
+	switch {
+	case positive && negative:
+		return "~"
+	case positive:
+		return "+"
+	case negative:
+		return "-"
+	default:
+		return ""
+	}
 }
 
 func formatHealthLLMTokenUsage(usage LLMTokenUsage) string {
@@ -606,13 +644,9 @@ func loadCompanyHealthForJob(job Job, forceRefresh bool) tea.Cmd {
 }
 
 func loadCompanyHealthForJobWithContext(ctx context.Context, job Job, forceRefresh bool, taskKey string, background bool) tea.Cmd {
-	return loadCompanyHealthWithIdentityAndContext(ctx, CompanyHealthContext{
-		Company:                 job.Company,
-		Website:                 job.CompanyWebsite,
-		Summary:                 job.CompanySummary,
-		Industry:                job.CompanyIndustry,
-		RequireResolvedIdentity: true,
-	}, forceRefresh, taskKey, background)
+	identity := domain.CompanyHealthContextForJob(job)
+	identity.RequireResolvedIdentity = true
+	return loadCompanyHealthWithIdentityAndContext(ctx, identity, forceRefresh, taskKey, background)
 }
 
 func loadCompanyHealthWithIdentity(identity CompanyHealthContext, forceRefresh bool) tea.Cmd {
@@ -651,13 +685,8 @@ func fetchBulkHealthStepWithContext(ctx context.Context, job Job, browserSession
 		if cfgErr != nil {
 			appCfg = nil
 		}
-		identity := CompanyHealthContext{
-			Company:                 job.Company,
-			Website:                 job.CompanyWebsite,
-			Summary:                 job.CompanySummary,
-			Industry:                job.CompanyIndustry,
-			RequireResolvedIdentity: true,
-		}
+		identity := domain.CompanyHealthContextForJob(job)
+		identity.RequireResolvedIdentity = true
 		company := strings.TrimSpace(job.Company)
 		logBulkHealthDebug("step start company=%q website=%q cache_key=%q mem=%s", company, job.CompanyWebsite, healthpkg.CacheKeyForJob(job), startMem)
 		if domain.CompanyHealthContextDomain(identity) == "" {

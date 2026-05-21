@@ -22,6 +22,25 @@ type HNSignal struct {
 	Date        time.Time `json:"date"`
 }
 
+// CompanyHealthConcernStory is a recent accepted news/HN story worth deeper review.
+type CompanyHealthConcernStory struct {
+	Source  string     `json:"source"`
+	Title   string     `json:"title"`
+	URL     string     `json:"url,omitempty"`
+	Date    *time.Time `json:"date,omitempty"`
+	Concern string     `json:"concern,omitempty"`
+}
+
+// CompanyHealthConcernArticle is transient page text fetched for LLM review.
+type CompanyHealthConcernArticle struct {
+	Source  string     `json:"source"`
+	Title   string     `json:"title"`
+	URL     string     `json:"url,omitempty"`
+	Date    *time.Time `json:"date,omitempty"`
+	Concern string     `json:"concern,omitempty"`
+	Text    string     `json:"text,omitempty"`
+}
+
 // EmployerReviewSignal represents browser-discovered employer review evidence
 type EmployerReviewSignal struct {
 	Source             string   `json:"source"`
@@ -45,27 +64,29 @@ type EmploymentRisk struct {
 
 // CompanyHealthResult contains the full health assessment
 type CompanyHealthResult struct {
-	Company            string                                   `json:"company"`
-	Score              int                                      `json:"score"`
-	Confidence         string                                   `json:"confidence"` // high, medium, low
-	Public             *bool                                    `json:"public,omitempty"`
-	FoundedYear        *int                                     `json:"founded_year,omitempty"`
-	AgeYears           *int                                     `json:"age_years,omitempty"`
-	EstimatedEmployees *int                                     `json:"estimated_employees,omitempty"`
-	SignalsUsed        []string                                 `json:"signals_used"`
-	Flags              []string                                 `json:"flags"`
-	Notes              []string                                 `json:"notes"`
-	DiscoveredTicker   string                                   `json:"discovered_ticker,omitempty"`
-	DiscoveredName     string                                   `json:"discovered_name,omitempty"`
-	LayoffSignals      []LayoffSignal                           `json:"layoff_signals,omitempty"`
-	HNSignals          []HNSignal                               `json:"hn_signals,omitempty"`
-	EmployerReviews    []EmployerReviewSignal                   `json:"employer_reviews,omitempty"`
-	EmploymentRisk     *EmploymentRisk                          `json:"employment_risk,omitempty"`
-	LLMAssessment      *LLMCompanyHealthAssessment              `json:"llm_assessment,omitempty"`
-	RejectedEvidence   []CompanyHealthEvidence                  `json:"rejected_evidence,omitempty"`
-	Sources            map[string]any                           `json:"sources"`
-	FieldAssessments   map[string]*CompanyHealthFieldAssessment `json:"field_assessments,omitempty"`
-	Notices            []string                                 `json:"notices,omitempty"`
+	Company              string                                   `json:"company"`
+	Score                int                                      `json:"score"`
+	Confidence           string                                   `json:"confidence"` // high, medium, low
+	Public               *bool                                    `json:"public,omitempty"`
+	FoundedYear          *int                                     `json:"founded_year,omitempty"`
+	AgeYears             *int                                     `json:"age_years,omitempty"`
+	EstimatedEmployees   *int                                     `json:"estimated_employees,omitempty"`
+	SignalsUsed          []string                                 `json:"signals_used"`
+	Flags                []string                                 `json:"flags"`
+	Notes                []string                                 `json:"notes"`
+	DiscoveredTicker     string                                   `json:"discovered_ticker,omitempty"`
+	DiscoveredName       string                                   `json:"discovered_name,omitempty"`
+	LayoffSignals        []LayoffSignal                           `json:"layoff_signals,omitempty"`
+	HNSignals            []HNSignal                               `json:"hn_signals,omitempty"`
+	ConcernStories       []CompanyHealthConcernStory              `json:"concern_stories,omitempty"`
+	ConcernStoryArticles []CompanyHealthConcernArticle            `json:"-"`
+	EmployerReviews      []EmployerReviewSignal                   `json:"employer_reviews,omitempty"`
+	EmploymentRisk       *EmploymentRisk                          `json:"employment_risk,omitempty"`
+	LLMAssessment        *LLMCompanyHealthAssessment              `json:"llm_assessment,omitempty"`
+	RejectedEvidence     []CompanyHealthEvidence                  `json:"rejected_evidence,omitempty"`
+	Sources              map[string]any                           `json:"sources"`
+	FieldAssessments     map[string]*CompanyHealthFieldAssessment `json:"field_assessments,omitempty"`
+	Notices              []string                                 `json:"notices,omitempty"`
 }
 
 // LLMTokenUsage is the normalized token accounting surfaced by LLM providers.
@@ -89,13 +110,27 @@ func (u LLMTokenUsage) Available() bool {
 }
 
 type LLMCompanyHealthAssessment struct {
-	Summary           string         `json:"summary"`
-	Recommendation    string         `json:"recommendation"`
-	RiskLevel         string         `json:"risk_level"`
-	PositiveSignals   []string       `json:"positive_signals"`
-	Concerns          []string       `json:"concerns"`
-	FollowUpQuestions []string       `json:"follow_up_questions"`
-	TokenUsage        *LLMTokenUsage `json:"token_usage,omitempty"`
+	Summary                string                          `json:"summary"`
+	Recommendation         string                          `json:"recommendation"`
+	RiskLevel              string                          `json:"risk_level"`
+	PositiveSignals        []string                        `json:"positive_signals"`
+	Concerns               []string                        `json:"concerns"`
+	FollowUpQuestions      []string                        `json:"follow_up_questions"`
+	ArticleReviews         []LLMCompanyHealthArticleReview `json:"article_reviews,omitempty"`
+	StoryInsight           string                          `json:"story_insight,omitempty"`
+	ScoreModifier          *int                            `json:"score_modifier,omitempty"`
+	ScoreModifierReason    string                          `json:"score_modifier_reason,omitempty"`
+	ScoreModifierNovelFact string                          `json:"score_modifier_novel_fact,omitempty"`
+	ScoreModifierSources   []string                        `json:"score_modifier_sources,omitempty"`
+	TokenUsage             *LLMTokenUsage                  `json:"token_usage,omitempty"`
+}
+
+type LLMCompanyHealthArticleReview struct {
+	URL             string `json:"url"`
+	Source          string `json:"source,omitempty"`
+	Related         bool   `json:"related"`
+	RelevanceReason string `json:"relevance_reason,omitempty"`
+	NovelFact       string `json:"novel_fact,omitempty"`
 }
 
 type CompanyHealthEvidence struct {
@@ -122,5 +157,9 @@ type CompanyHealthContext struct {
 	Website                 string
 	Summary                 string
 	Industry                string
+	Industries              []string
+	Ticker                  string
+	EstimatedEmployees      *int
+	FoundedYear             *int
 	RequireResolvedIdentity bool
 }

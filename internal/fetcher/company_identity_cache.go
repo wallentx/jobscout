@@ -14,6 +14,7 @@ type CompanyIdentityRecord struct {
 	Summary  string
 	Industry string
 	Identity *domain.JobIdentityMetadata
+	Metadata *domain.JobMetadata
 }
 
 type PersistentCompanyIdentityStore interface {
@@ -102,6 +103,7 @@ func ApplyCachedIdentity(job *Job, record CompanyIdentityRecord) {
 		job.CompanyIndustry = record.Industry
 		setCachedIdentityEvidence(job, "industry", record.Industry, copiedEvidence(record.Identity, "industry"))
 	}
+	domain.MergeJobMetadataFields(job, domain.Job{Metadata: record.Metadata})
 }
 
 func seedCompanyIdentityFromTrustedJobs(jobs []Job, cache *CompanyIdentityCache) int {
@@ -118,6 +120,7 @@ func seedCompanyIdentityFromTrustedJobs(jobs []Job, cache *CompanyIdentityCache)
 			Summary:  jobs[i].CompanySummary,
 			Industry: jobs[i].CompanyIndustry,
 			Identity: CloneJobIdentityMetadata(jobs[i].CompanyIdentity),
+			Metadata: domain.CloneJobMetadata(jobs[i].Metadata),
 		})
 	}
 	return copied
@@ -211,6 +214,7 @@ func trustedIdentityRecordFromJob(job Job) (CompanyIdentityRecord, int, int, int
 	if identity.Website != nil || identity.Summary != nil || identity.Industry != nil {
 		record.Identity = &identity
 	}
+	record.Metadata = domain.CloneJobMetadata(job.Metadata)
 	return record, websiteRank, summaryRank, industryRank
 }
 

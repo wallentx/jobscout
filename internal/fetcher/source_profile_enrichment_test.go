@@ -77,6 +77,24 @@ func TestSourceProfileEnricherSkipsLLMWhenDeterministicProfileCompletesIdentity(
 	if job.CompanyIndustry != "Fintech" {
 		t.Fatalf("CompanyIndustry = %q; want deterministic profile industry", job.CompanyIndustry)
 	}
+	if job.Metadata == nil || job.Metadata.Source == nil || job.Metadata.Company == nil {
+		t.Fatalf("Metadata = %#v; want profile metadata", job.Metadata)
+	}
+	if job.Metadata.Source.CompanyProfileURL != "https://builtin.com/company/affirm" {
+		t.Fatalf("Metadata.Source.CompanyProfileURL = %q; want profile URL", job.Metadata.Source.CompanyProfileURL)
+	}
+	if job.Metadata.Company.EmployeeRange != "501-1,000 employees" {
+		t.Fatalf("Metadata.Company.EmployeeRange = %q; want company size", job.Metadata.Company.EmployeeRange)
+	}
+	if job.Metadata.Company.EstimatedEmployees == nil || *job.Metadata.Company.EstimatedEmployees != 750 {
+		t.Fatalf("Metadata.Company.EstimatedEmployees = %#v; want 750", job.Metadata.Company.EstimatedEmployees)
+	}
+	if job.Metadata.Company.FoundedYear == nil || *job.Metadata.Company.FoundedYear != 2012 {
+		t.Fatalf("Metadata.Company.FoundedYear = %#v; want 2012", job.Metadata.Company.FoundedYear)
+	}
+	if job.Metadata.Company.Headquarters != "San Francisco, CA" {
+		t.Fatalf("Metadata.Company.Headquarters = %q; want headquarters", job.Metadata.Company.Headquarters)
+	}
 }
 
 func TestSourceProfileEnricherUsesCachedHTMLForLaterLLMWithoutRefetch(t *testing.T) {
@@ -453,7 +471,7 @@ func affirmBuiltInProfileHTML() string {
 	return `<html><body>
 		<h1>Affirm</h1>
 		<a href="https://www.affirm.com">Website</a>
-		<div>Industry: Fintech Website Headquarters</div>
+		<div>Industry: Fintech Company size 501-1,000 employees Headquarters San Francisco, CA Founded 2012 Website</div>
 		<h2>What We Do</h2>
 		<p>Affirm builds pay-over-time financial products for consumers and merchants.</p>
 		<h2>Why Work With Us</h2>

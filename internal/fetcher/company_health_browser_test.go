@@ -92,6 +92,15 @@ func TestEmployerReviewSignalFromSearchResultExtractsRatingAndFlags(t *testing.T
 	if len(withSnippet.Flags) == 0 {
 		t.Fatalf("employerReviewSignalFromSearchResult().Flags = %v; want extracted flags", withSnippet.Flags)
 	}
+
+	withCategoryRatings := employerReviewSignalFromSearchResult(
+		"indeed",
+		"Acme Employee Reviews 3.8 Work-Life Balance 3.2 Pay & Benefits 3.4 Management 3.6 Culture",
+		pageLink{Text: "Acme Employee Reviews", URL: "https://www.indeed.com/cmp/Acme/reviews"},
+	)
+	if withCategoryRatings.Rating != "3.5/5" {
+		t.Fatalf("employerReviewSignalFromSearchResult().Rating = %q; want averaged category rating", withCategoryRatings.Rating)
+	}
 }
 
 func TestEmployerReviewSourceRecognizesReviewHosts(t *testing.T) {

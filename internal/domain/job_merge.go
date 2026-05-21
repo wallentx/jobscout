@@ -52,6 +52,7 @@ func MergeJobIdentityFields(existing *Job, incoming Job) {
 	if strings.TrimSpace(existing.Description) == "" && strings.TrimSpace(incoming.Description) != "" {
 		existing.Description = incoming.Description
 	}
+	MergeJobMetadataFields(existing, incoming)
 }
 
 func JobCompanyWebsiteMissingOrInvalid(website string) bool {

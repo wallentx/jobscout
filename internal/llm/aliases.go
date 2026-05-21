@@ -10,6 +10,8 @@ type LLMAuthConfig = config.LLMAuthConfig
 type LLMProviderConfig = config.LLMProviderConfig
 type CriteriaConfig = domain.CriteriaConfig
 type CompanyHealthEvidence = domain.CompanyHealthEvidence
+type CompanyHealthConcernArticle = domain.CompanyHealthConcernArticle
+type CompanyHealthConcernStory = domain.CompanyHealthConcernStory
 type CompanyHealthContext = domain.CompanyHealthContext
 type CompanyHealthResult = domain.CompanyHealthResult
 type EmployerReviewSignal = domain.EmployerReviewSignal
@@ -20,6 +22,7 @@ type JobIdentityEnrichment = domain.JobIdentityEnrichment
 type JobIdentityPage = domain.JobIdentityPage
 type LayoffSignal = domain.LayoffSignal
 type LLMCompanyHealthAssessment = domain.LLMCompanyHealthAssessment
+type LLMCompanyHealthArticleReview = domain.LLMCompanyHealthArticleReview
 type LLMTokenUsage = domain.LLMTokenUsage
 type RoleFamilyID = domain.RoleFamilyID
 

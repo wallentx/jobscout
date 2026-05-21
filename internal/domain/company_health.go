@@ -51,6 +51,7 @@ func CompanyHealthWithDataSources(identity CompanyHealthContext, ticker string, 
 	}
 	recordCompanyIdentitySource(result, identity)
 	initCompanyHealthAssessments(result)
+	applyCompanyHealthContextFacts(result, identity)
 	recordCompanySiteProfileFetchError(result, siteProfileErr)
 
 	// Wikipedia lookup
@@ -172,6 +173,9 @@ func CompanyHealthWithDataSources(identity CompanyHealthContext, ticker string, 
 	if strings.TrimSpace(secLookupTicker) == "" {
 		secLookupTicker = result.DiscoveredTicker
 	}
+	if strings.TrimSpace(secLookupTicker) == "" {
+		secLookupTicker = identity.Ticker
+	}
 	cik10, foundTicker, foundName, err := secLookupCIK(company, secLookupTicker)
 	secRiskTerms := 0
 	if err == nil {
@@ -263,6 +267,7 @@ func CompanyHealthWithDataSources(identity CompanyHealthContext, ticker string, 
 		if len(hnSignals) > 0 {
 			result.SignalsUsed = append(result.SignalsUsed, "hn_vibe_check")
 			result.HNSignals = hnSignals
+			result.ConcernStories = appendUniqueCompanyHealthConcernStories(result.ConcernStories, concernStoriesFromHNSignals(hnSignals)...)
 			result.Sources["hn"] = map[string]any{
 				"neg_hits": hnNeg,
 				"pos_hits": hnPos,
@@ -278,37 +283,38 @@ func CompanyHealthWithDataSources(identity CompanyHealthContext, ticker string, 
 			}
 		}
 
-		titles, neg, pos, rejectedNews, err := googleNewsSentimentForContext(identity)
-		result.RejectedEvidence = append(result.RejectedEvidence, rejectedNews...)
+		newsResult, err := googleNewsSentimentDetailsForContext(identity)
+		result.RejectedEvidence = append(result.RejectedEvidence, newsResult.Rejected...)
 		if err == nil {
 			result.SignalsUsed = append(result.SignalsUsed, "google_news_rss")
 			result.Sources["news"] = map[string]any{
-				"titles":   titles,
-				"neg_hits": neg,
-				"pos_hits": pos,
+				"titles":   newsResult.Titles,
+				"neg_hits": newsResult.NegHits,
+				"pos_hits": newsResult.PosHits,
 			}
-			negHits = neg
-			posHits = pos
-			if neg >= 3 && neg > pos {
+			result.ConcernStories = appendUniqueCompanyHealthConcernStories(result.ConcernStories, newsResult.ConcernStories...)
+			negHits = newsResult.NegHits
+			posHits = newsResult.PosHits
+			if newsResult.NegHits >= 3 && newsResult.NegHits > newsResult.PosHits {
 				result.Score -= 10
 				result.Flags = append(result.Flags, "negative_news_signal")
 				result.Notes = append(result.Notes, "News titles contain multiple negative-risk keywords.")
-			} else if neg >= 1 && neg > pos {
+			} else if newsResult.NegHits >= 1 && newsResult.NegHits > newsResult.PosHits {
 				result.Score -= 4
 				result.Notes = append(result.Notes, "News titles contain some negative-risk keywords.")
-			} else if neg == 0 && len(titles) > 5 {
+			} else if newsResult.NegHits == 0 && len(newsResult.Titles) > 5 {
 				// Bonus for clean record if we actually found news
 				result.Score += 5
 				result.Notes = append(result.Notes, "No negative news keywords detected in recent headlines.")
 			}
-			if pos >= 2 && pos > neg {
+			if newsResult.PosHits >= 2 && newsResult.PosHits > newsResult.NegHits {
 				result.Score += 4
 				result.Notes = append(result.Notes, "News titles contain multiple positive-momentum keywords.")
-			} else if pos >= 1 && pos > neg {
+			} else if newsResult.PosHits >= 1 && newsResult.PosHits > newsResult.NegHits {
 				result.Score += 2
 				result.Notes = append(result.Notes, "News titles contain some positive-momentum keywords.")
 			}
-			if result.Confidence == "low" && len(titles) > 0 {
+			if result.Confidence == "low" && len(newsResult.Titles) > 0 {
 				result.Confidence = "medium"
 			}
 		}
@@ -334,6 +340,7 @@ func CompanyHealthWithDataSources(identity CompanyHealthContext, ticker string, 
 			result.Flags = append(result.Flags, "layoff_news_detected")
 			result.Notes = append(result.Notes, fmt.Sprintf("Found %d recent layoff headlines (Contributing to Risk Score).", len(layoffSignals)))
 			result.LayoffSignals = layoffSignals
+			result.ConcernStories = appendUniqueCompanyHealthConcernStories(result.ConcernStories, concernStoriesFromLayoffSignals(layoffSignals)...)
 		}
 	}
 
@@ -410,6 +417,10 @@ func recordCompanyIdentitySource(result *CompanyHealthResult, identity CompanyHe
 	if strings.TrimSpace(identity.Website) == "" &&
 		strings.TrimSpace(identity.Summary) == "" &&
 		strings.TrimSpace(identity.Industry) == "" &&
+		len(identity.Industries) == 0 &&
+		strings.TrimSpace(identity.Ticker) == "" &&
+		identity.EstimatedEmployees == nil &&
+		identity.FoundedYear == nil &&
 		len(identity.Aliases) == 0 {
 		return
 	}
@@ -421,12 +432,42 @@ func recordCompanyIdentitySource(result *CompanyHealthResult, identity CompanyHe
 		"summary":  strings.TrimSpace(identity.Summary),
 		"industry": strings.TrimSpace(identity.Industry),
 	}
+	if len(identity.Industries) > 0 {
+		companyIdentity["industries"] = strings.Join(identity.Industries, ", ")
+	}
+	if strings.TrimSpace(identity.Ticker) != "" {
+		companyIdentity["ticker"] = strings.ToUpper(strings.TrimSpace(identity.Ticker))
+	}
+	if identity.EstimatedEmployees != nil {
+		companyIdentity["estimated_employees"] = fmt.Sprintf("%d", *identity.EstimatedEmployees)
+	}
+	if identity.FoundedYear != nil {
+		companyIdentity["founded_year"] = fmt.Sprintf("%d", *identity.FoundedYear)
+	}
 	if len(identity.Aliases) > 0 {
 		companyIdentity["aliases"] = strings.Join(identity.Aliases, ", ")
 	}
 	result.Sources["company_identity"] = companyIdentity
 	if !companyHealthSignalUsed(result.SignalsUsed, "job_company_identity") {
 		result.SignalsUsed = append(result.SignalsUsed, "job_company_identity")
+	}
+}
+
+func applyCompanyHealthContextFacts(result *CompanyHealthResult, identity CompanyHealthContext) {
+	if result == nil {
+		return
+	}
+	if identity.FoundedYear != nil {
+		observeFoundedYear(result, *identity.FoundedYear, "job_company_metadata", "", "medium", "Founded year came from stored company metadata.")
+	}
+	if identity.EstimatedEmployees != nil {
+		observeEmployeeCount(result, *identity.EstimatedEmployees, "job_company_metadata", "", "medium", "Employee count came from stored company metadata.")
+	}
+	if ticker := strings.ToUpper(strings.TrimSpace(identity.Ticker)); ticker != "" && result.DiscoveredTicker == "" {
+		result.DiscoveredTicker = ticker
+		if !companyHealthSignalUsed(result.SignalsUsed, "job_company_ticker") {
+			result.SignalsUsed = append(result.SignalsUsed, "job_company_ticker")
+		}
 	}
 }
 
