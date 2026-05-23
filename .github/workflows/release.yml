@@ -159,6 +159,14 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Cache Go tools
+        uses: actions/cache@v4
+        with:
+          path: .tools
+          key: ${{ runner.os }}-${{ runner.arch }}-go-tools-${{ hashFiles('Makefile', 'go.mod') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-go-tools-
+
       - name: Run release gate
         env:
           RELEASE_TAG: ${{ env.JOBSCOUT_RELEASE_TAG }}
@@ -171,6 +179,10 @@ jobs:
       - resolve-release
       - gate
     timeout-minutes: 30
+    permissions:
+      id-token: write
+      attestations: write
+      contents: read
     env:
       JOBSCOUT_RELEASE_TAG: ${{ needs.resolve-release.outputs.release_tag }}
       JOBSCOUT_CHECKOUT_REF: ${{ needs.resolve-release.outputs.checkout_ref }}
@@ -218,6 +230,11 @@ jobs:
           RELEASE_GOOS: ${{ matrix.goos }}
           RELEASE_GOARCH: ${{ matrix.goarch }}
         run: make release
+
+      - name: Generate build provenance attestation
+        uses: actions/attest@v4
+        with:
+          subject-path: 'dist/jobscout_${{ env.JOBSCOUT_RELEASE_TAG }}_${{ matrix.goos }}_${{ matrix.goarch }}.*'
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v7
