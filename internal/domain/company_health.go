@@ -56,7 +56,7 @@ func CompanyHealthWithDataSources(identity CompanyHealthContext, ticker string, 
 
 	// Wikipedia lookup
 
-	wikiSum, err := wikiGetSummary(company)
+	wikiSum, err := wikiGetSummaryForIdentity(identity)
 
 	if err == nil && wikiSum != nil {
 		wikiURL := fmt.Sprintf(wikiSummaryURL, url.PathEscape(wikiSum.Title))

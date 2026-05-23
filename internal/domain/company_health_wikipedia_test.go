@@ -194,3 +194,27 @@ func TestParseWikidataCompanyFactsGetsTickerFromStockExchangeQualifier(t *testin
 		t.Fatalf("TickerClaimCount = %d, want 1", facts.TickerClaimCount)
 	}
 }
+
+func TestValidateWikiRelevanceForIdentityUsesKnownIndustryContext(t *testing.T) {
+	identity := CompanyHealthContext{
+		Company:  "Acme Hire",
+		Website:  "https://acmehire.example",
+		Industry: "Recruitment Technology",
+	}
+
+	unrelated := &WikiSummary{
+		Title:   "Acme Hire",
+		Extract: "Acme Hire was a British manufacturing firm founded in 1922 and known for industrial equipment.",
+	}
+	if validateWikiRelevanceForIdentity(identity, unrelated) {
+		t.Fatal("validateWikiRelevanceForIdentity() = true; want unrelated same-name result rejected")
+	}
+
+	related := &WikiSummary{
+		Title:   "Acme Hire",
+		Extract: "Acme Hire is a recruitment automation company that builds hiring workflow tools.",
+	}
+	if !validateWikiRelevanceForIdentity(identity, related) {
+		t.Fatal("validateWikiRelevanceForIdentity() = false; want industry-matching result accepted")
+	}
+}

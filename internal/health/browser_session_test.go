@@ -223,7 +223,8 @@ func TestApplyOptionalLLMCompanyHealthFetchesConcernArticlesAndAppliesNovelModif
 
 	published := time.Now().AddDate(0, -1, 0)
 	session := &fakeBrowserSession{
-		articleText: "Acme's credit line was suspended after a regulatory review of its lending controls.",
+		articleText: "Acme's credit line was suspended after a regulatory review of its lending controls." +
+			strings.Repeat(" The article adds operational context that is not visible from the headline alone.", 20),
 	}
 	ctx := ContextWithBrowserSession(context.Background(), session)
 	result := &domain.CompanyHealthResult{
@@ -259,5 +260,56 @@ func TestApplyOptionalLLMCompanyHealthFetchesConcernArticlesAndAppliesNovelModif
 	}
 	if result.LLMAssessment == nil || result.LLMAssessment.StoryInsight == "" {
 		t.Fatalf("LLMAssessment = %#v; want story insight", result.LLMAssessment)
+	}
+}
+
+func TestApplyOptionalLLMCompanyHealthSkipsShortConcernArticleText(t *testing.T) {
+	originalInit := initConfiguredLLMForTask
+	originalEvaluate := evaluateCompanyHealthWithLLM
+	defer func() {
+		initConfiguredLLMForTask = originalInit
+		evaluateCompanyHealthWithLLM = originalEvaluate
+	}()
+
+	initConfiguredLLMForTask = func(ctx context.Context, appCfg *config.AppConfig, task string) (llms.Model, func(), error) {
+		return fakeHealthLLM{}, func() {}, nil
+	}
+	evaluateCompanyHealthWithLLM = func(ctx context.Context, model llms.Model, result *domain.CompanyHealthResult) (*domain.LLMCompanyHealthAssessment, error) {
+		if len(result.ConcernStoryArticles) != 0 {
+			t.Fatalf("len(ConcernStoryArticles) = %d, want 0 for low-value article text", len(result.ConcernStoryArticles))
+		}
+		return &domain.LLMCompanyHealthAssessment{RiskLevel: "low"}, nil
+	}
+
+	published := time.Now().AddDate(0, -1, 0)
+	session := &fakeBrowserSession{articleText: "Sign in to continue."}
+	ctx := ContextWithBrowserSession(context.Background(), session)
+	result := &domain.CompanyHealthResult{
+		Company:        "Acme",
+		Score:          70,
+		Confidence:     "medium",
+		Sources:        map[string]any{},
+		EmploymentRisk: &domain.EmploymentRisk{Level: "Low", Score: 5},
+		ConcernStories: []domain.CompanyHealthConcernStory{
+			{
+				Source:  "google_news_rss",
+				Title:   "Acme faces regulatory investigation",
+				URL:     "https://news.example/acme-investigation",
+				Date:    &published,
+				Concern: "negative news keyword: investigation",
+			},
+		},
+	}
+
+	ApplyOptionalLLMCompanyHealth(ctx, &config.AppConfig{
+		LLM: config.LLMConfig{
+			Enabled:       true,
+			CompanyHealth: true,
+			Provider:      "openai",
+		},
+	}, result)
+
+	if session.articleCalls != 1 {
+		t.Fatalf("article calls = %d, want 1", session.articleCalls)
 	}
 }

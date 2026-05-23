@@ -404,6 +404,21 @@ func TestBuildCompanyHealthLLMPromptIncludesConcernArticleContext(t *testing.T) 
 	}
 }
 
+func TestBuildCompanyHealthLLMPromptRestrictsArticleReviewsToArticleContext(t *testing.T) {
+	prompt := buildCompanyHealthLLMPrompt(&CompanyHealthResult{Company: "Acme"})
+
+	for _, expected := range []string{
+		"article_reviews must be empty when article_context is absent",
+		"Review only article_context entries in article_reviews",
+		"Use the exact article_context url as the article_reviews url",
+		"score_modifier_sources must contain only exact article_context urls",
+	} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("buildCompanyHealthLLMPrompt() missing %q in:\n%s", expected, prompt)
+		}
+	}
+}
+
 func TestEvaluateCompanyHealthWithLLMParsesStoryInsightAndModifier(t *testing.T) {
 	llm := fakeContentLLM{content: `{
 		"summary": "Recent coverage adds one concrete risk.",

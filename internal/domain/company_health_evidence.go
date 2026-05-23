@@ -19,7 +19,7 @@ func healthEvidenceMatchesCompanyContext(title string, evidenceURL string, ident
 		return true, ""
 	}
 	if !healthEvidenceMatchesCompanyName(title, names) && !healthEvidenceMatchesIdentityContext(evidenceText, identity) {
-		return false, "company name not present"
+		return false, "insufficient identity context"
 	}
 	return true, ""
 }

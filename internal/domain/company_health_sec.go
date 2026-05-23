@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 var errSECCompanyNotFound = errors.New("company not found in SEC database")
@@ -43,15 +44,15 @@ type SECSubmission struct {
 	} `json:"filings"`
 }
 
+var secTickersCache = struct {
+	sync.Mutex
+	tickers map[string]SECCompanyTicker
+}{}
+
 // secLookupCIK looks up a company's CIK in the SEC database
 func secLookupCIK(company string, ticker string) (cik10, foundTicker, foundName string, err error) {
-	data, err := httpGet(secTickersURL)
+	tickers, err := loadSECTickers()
 	if err != nil {
-		return "", "", "", err
-	}
-
-	var tickers map[string]SECCompanyTicker
-	if err := json.Unmarshal(data, &tickers); err != nil {
 		return "", "", "", err
 	}
 
@@ -83,6 +84,37 @@ func secLookupCIK(company string, ticker string) (cik10, foundTicker, foundName 
 	}
 
 	return "", "", "", errSECCompanyNotFound
+}
+
+func loadSECTickers() (map[string]SECCompanyTicker, error) {
+	secTickersCache.Lock()
+	if secTickersCache.tickers != nil {
+		tickers := secTickersCache.tickers
+		secTickersCache.Unlock()
+		return tickers, nil
+	}
+	secTickersCache.Unlock()
+
+	data, err := httpGet(secTickersURL)
+	if err != nil {
+		return nil, err
+	}
+
+	var tickers map[string]SECCompanyTicker
+	if err := json.Unmarshal(data, &tickers); err != nil {
+		return nil, err
+	}
+	if tickers == nil {
+		tickers = map[string]SECCompanyTicker{}
+	}
+
+	secTickersCache.Lock()
+	if secTickersCache.tickers == nil {
+		secTickersCache.tickers = tickers
+	}
+	cached := secTickersCache.tickers
+	secTickersCache.Unlock()
+	return cached, nil
 }
 
 // secGetSubmissions fetches SEC submissions for a CIK

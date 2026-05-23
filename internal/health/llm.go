@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -20,6 +21,7 @@ var (
 )
 
 const maxCompanyHealthLLMConcernStories = 3
+const minCompanyHealthConcernArticleTextChars = 1000
 
 func LLMCompanyHealthEnabled(appCfg *config.AppConfig) bool {
 	return appCfg != nil && appCfg.LLM.Enabled && appCfg.LLM.CompanyHealth
@@ -178,22 +180,51 @@ func attachConcernStoryArticles(ctx context.Context, result *domain.CompanyHealt
 	}
 	stories := selectConcernStoriesForLLM(result.ConcernStories, maxCompanyHealthLLMConcernStories)
 	if len(stories) == 0 {
+		logDebug("browser concern article lookup skipped company=%q reason=no_recent_high_concern_stories candidates=%d", result.Company, len(result.ConcernStories))
 		return
 	}
 	articles := make([]domain.CompanyHealthConcernArticle, 0, len(stories))
-	for _, story := range stories {
+	for index, story := range stories {
 		if strings.TrimSpace(story.URL) == "" {
+			logDebug("browser concern article skipped company=%q story=%d reason=missing_url title=%q", result.Company, index+1, story.Title)
 			continue
 		}
+		logDebug(
+			"browser concern article selected company=%q story=%d/%d source=%q title=%q url_host=%q concern=%q date=%s",
+			result.Company,
+			index+1,
+			len(stories),
+			story.Source,
+			story.Title,
+			logURLHost(story.URL),
+			story.Concern,
+			formatOptionalTime(story.Date),
+		)
 		text, err := fetchBrowserConcernStoryTextThrottled(ctx, result.Company, story.URL)
 		if err != nil {
 			logDebug("browser concern article fetch failed company=%q url=%q error=%v", result.Company, story.URL, err)
 			continue
 		}
 		text = strings.TrimSpace(text)
-		if text == "" {
+		if !concernArticleTextUseful(text) {
+			logDebug(
+				"browser concern article skipped company=%q source=%q title=%q url_host=%q reason=low_value_text text_chars=%d",
+				result.Company,
+				story.Source,
+				story.Title,
+				logURLHost(story.URL),
+				len(text),
+			)
 			continue
 		}
+		logDebug(
+			"browser concern article accepted company=%q source=%q title=%q url_host=%q text_chars=%d",
+			result.Company,
+			story.Source,
+			story.Title,
+			logURLHost(story.URL),
+			len(text),
+		)
 		articles = append(articles, domain.CompanyHealthConcernArticle{
 			Source:  story.Source,
 			Title:   story.Title,
@@ -204,6 +235,21 @@ func attachConcernStoryArticles(ctx context.Context, result *domain.CompanyHealt
 		})
 	}
 	result.ConcernStoryArticles = articles
+}
+
+func concernArticleTextUseful(text string) bool {
+	text = strings.TrimSpace(text)
+	if len(text) < minCompanyHealthConcernArticleTextChars {
+		return false
+	}
+	lower := strings.ToLower(text)
+	switch {
+	case strings.Contains(lower, "sign in to continue") && len(text) < minCompanyHealthConcernArticleTextChars*2:
+		return false
+	case strings.Contains(lower, "enable javascript") && len(text) < minCompanyHealthConcernArticleTextChars*2:
+		return false
+	}
+	return true
 }
 
 func selectConcernStoriesForLLM(stories []domain.CompanyHealthConcernStory, limit int) []domain.CompanyHealthConcernStory {
@@ -247,23 +293,40 @@ func applyLLMCompanyHealthScoreModifier(result *domain.CompanyHealthResult, asse
 	if result == nil || assessment == nil {
 		return
 	}
+	logLLMCompanyHealthArticleReviews(result.Company, assessment)
 	allowed := relatedArticleURLSet(result.ConcernStoryArticles, assessment.ArticleReviews)
 	if len(allowed) == 0 {
+		logDebug("llm company health modifier rejected company=%q reason=no_related_articles article_reviews=%d", result.Company, len(assessment.ArticleReviews))
 		assessment.StoryInsight = ""
 		assessment.ScoreModifier = nil
 		return
 	}
 	if strings.TrimSpace(assessment.StoryInsight) == "" && assessment.ScoreModifier == nil {
+		logDebug("llm company health modifier skipped company=%q reason=no_story_insight_or_modifier related_articles=%d", result.Company, len(allowed))
 		return
 	}
 	if assessment.ScoreModifier == nil || *assessment.ScoreModifier == 0 {
+		logDebug("llm company health modifier skipped company=%q reason=no_modifier story_insight=%t related_articles=%d", result.Company, strings.TrimSpace(assessment.StoryInsight) != "", len(allowed))
 		return
 	}
 	if !modifierUsesAllowedSource(assessment.ScoreModifierSources, allowed) {
+		logDebug(
+			"llm company health modifier rejected company=%q reason=modifier_sources_not_related modifier=%d sources=%q related_articles=%d",
+			result.Company,
+			*assessment.ScoreModifier,
+			strings.Join(assessment.ScoreModifierSources, ", "),
+			len(allowed),
+		)
 		assessment.ScoreModifier = nil
 		return
 	}
 	if !novelModifierFactValid(assessment.ScoreModifierNovelFact, result) {
+		logDebug(
+			"llm company health modifier rejected company=%q reason=missing_or_non_novel_fact modifier=%d fact_len=%d",
+			result.Company,
+			*assessment.ScoreModifier,
+			len(strings.TrimSpace(assessment.ScoreModifierNovelFact)),
+		)
 		assessment.ScoreModifier = nil
 		return
 	}
@@ -279,6 +342,7 @@ func applyLLMCompanyHealthScoreModifier(result *domain.CompanyHealthResult, asse
 	newScore := clampHealthScoreForRisk(oldScore+delta, result.EmploymentRisk)
 	actualDelta := newScore - oldScore
 	if actualDelta == 0 {
+		logDebug("llm company health modifier rejected company=%q reason=no_effect_after_caps requested=%d old_score=%d risk_score=%d", result.Company, delta, oldScore, healthRiskScore(result.EmploymentRisk))
 		assessment.ScoreModifier = nil
 		return
 	}
@@ -289,6 +353,38 @@ func applyLLMCompanyHealthScoreModifier(result *domain.CompanyHealthResult, asse
 		reason = strings.TrimSpace(assessment.ScoreModifierNovelFact)
 	}
 	result.Notes = append(result.Notes, fmt.Sprintf("LLM article review adjusted score %+d: %s", actualDelta, reason))
+	logDebug(
+		"llm company health modifier accepted company=%q requested=%d applied=%d old_score=%d new_score=%d reason=%q novel_fact=%q sources=%q",
+		result.Company,
+		delta,
+		actualDelta,
+		oldScore,
+		newScore,
+		reason,
+		assessment.ScoreModifierNovelFact,
+		strings.Join(assessment.ScoreModifierSources, ", "),
+	)
+}
+
+func logLLMCompanyHealthArticleReviews(company string, assessment *domain.LLMCompanyHealthAssessment) {
+	if assessment == nil {
+		return
+	}
+	if strings.TrimSpace(assessment.StoryInsight) != "" {
+		logDebug("llm company health story insight company=%q chars=%d insight=%q", company, len(assessment.StoryInsight), assessment.StoryInsight)
+	}
+	for index, review := range assessment.ArticleReviews {
+		logDebug(
+			"llm company health article review company=%q article=%d source=%q url_host=%q related=%t relevance=%q novel_fact_len=%d",
+			company,
+			index+1,
+			review.Source,
+			logURLHost(review.URL),
+			review.Related,
+			review.RelevanceReason,
+			len(strings.TrimSpace(review.NovelFact)),
+		)
+	}
 }
 
 func relatedArticleURLSet(articles []domain.CompanyHealthConcernArticle, reviews []domain.LLMCompanyHealthArticleReview) map[string]bool {
@@ -351,8 +447,30 @@ func clampHealthScoreForRisk(score int, risk *domain.EmploymentRisk) int {
 	return score
 }
 
+func healthRiskScore(risk *domain.EmploymentRisk) int {
+	if risk == nil {
+		return 0
+	}
+	return risk.Score
+}
+
 func normalizedStoryURL(rawURL string) string {
 	return strings.TrimRight(strings.ToLower(strings.TrimSpace(rawURL)), "/")
+}
+
+func logURLHost(rawURL string) string {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return ""
+	}
+	return parsed.Hostname()
+}
+
+func formatOptionalTime(value *time.Time) string {
+	if value == nil {
+		return ""
+	}
+	return value.Format(time.RFC3339)
 }
 
 func shouldSkipEmployerReviewLookup(result *domain.CompanyHealthResult) bool {
