@@ -61,9 +61,26 @@ func TestBuildPromptIncludesCriteria(t *testing.T) {
 		"Role families: devops_sre_systems",
 		"Priority signals: reliability, automation",
 		"### Job Posting to Evaluate:",
+		"Set matches=false only when the posting explicitly conflicts with a hard criterion.",
+		"Do not reject solely because compensation, location, years of experience, or priority-signal details are missing or unclear.",
 	} {
 		if !strings.Contains(prompt, expected) {
 			t.Fatalf("buildPrompt() missing %q in:\n%s", expected, prompt)
+		}
+	}
+}
+
+func TestBuildLLMSearchPromptRequiresVerifiedJobs(t *testing.T) {
+	prompt := buildLLMSearchPrompt("Find matching jobs.")
+
+	for _, expected := range []string{
+		"Use only real current job postings whose direct application URL is present in the prompt context or available through your search/tooling context.",
+		"Do not invent companies, roles, URLs, compensation, descriptions, company websites, or company summaries.",
+		"If no real current direct application URLs can be verified from the available context, return an empty JSON array.",
+		"return ONLY the raw JSON array",
+	} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("buildLLMSearchPrompt() missing %q in:\n%s", expected, prompt)
 		}
 	}
 }
@@ -479,7 +496,7 @@ func TestBuildCompanyHealthLLMPromptIncludesAllSmallRejectedEvidence(t *testing.
 		"news | Acme unrelated article | rejected: domain mismatch | https://news.example/1",
 		"hacker_news | Wrong Acme thread | rejected: company name mismatch",
 	} {
-		if !containsString(input.RejectedEvidence, expected) {
+		if !slices.Contains(input.RejectedEvidence, expected) {
 			t.Fatalf("input.RejectedEvidence = %#v, want to contain %q", input.RejectedEvidence, expected)
 		}
 	}
@@ -559,15 +576,6 @@ func parseCompanyHealthPromptInput(t *testing.T, prompt string) companyHealthLLM
 		t.Fatalf("json.Unmarshal(company health prompt input) error = %v", err)
 	}
 	return input
-}
-
-func containsString(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
 }
 
 func rejectedEvidenceSummaryBySourceReason(summary []rejectedEvidenceOmissionSummary) map[string]int {
