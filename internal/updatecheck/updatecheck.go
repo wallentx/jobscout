@@ -11,12 +11,13 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/wallentx/jobscout/internal/netutil"
 	"golang.org/x/mod/semver"
 )
 
 const (
 	LatestReleaseURL = "https://api.github.com/repos/wallentx/jobscout/releases/latest"
-	userAgent        = "jobscout (+https://github.com/wallentx/jobscout)"
+	userAgent        = netutil.JobscoutUserAgent
 	requestTimeout   = 3 * time.Second
 )
 

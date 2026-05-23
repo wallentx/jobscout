@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -322,7 +323,7 @@ func jobFilterPersistedDiff(before Job, after Job) string {
 	if before.Remote != after.Remote {
 		changes = append(changes, debugFieldChange("remote", before.Remote, after.Remote))
 	}
-	if !equalStringSlices(before.WhyMatches, after.WhyMatches) {
+	if !slices.Equal(before.WhyMatches, after.WhyMatches) {
 		changes = append(changes, fmt.Sprintf("why_matches: %d -> %d", len(before.WhyMatches), len(after.WhyMatches)))
 	}
 	if len(changes) == 0 {
@@ -353,18 +354,6 @@ func jobFilterRejectedDiff(job Job, res *LLMEvaluationResult) string {
 
 func debugFieldChange(field string, before string, after string) string {
 	return fmt.Sprintf("%s: %q -> %q", field, strings.TrimSpace(before), strings.TrimSpace(after))
-}
-
-func equalStringSlices(a []string, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func jobFilterBatchesBySource(jobs []Job, indexes []int) [][]int {
