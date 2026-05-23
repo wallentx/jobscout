@@ -364,9 +364,6 @@ func discoverBrowserPublicProfileFacts(ctx context.Context, browser *rod.Browser
 		candidates := publicProfileIndustryCandidates(job, links, pageText)
 		profileFetches := 0
 		for _, candidate := range candidates {
-			if addCompanyPublicProfileEvidence(&profiles, seen, companyPublicProfileEvidenceFromText(candidate.Source, candidate.URL, candidate.Title, candidate.Snippet)) && len(profiles) >= 3 {
-				return profiles
-			}
 			if profileFetches >= 2 {
 				continue
 			}
@@ -548,8 +545,7 @@ func extractBrowserPageContent(ctx context.Context, browser *rod.Browser, pageUR
 		}
 
 		withReusableBrowserPage(ctx, browser, timeout, pageURL, func(page *rod.Page) {
-			page.MustWaitLoad()
-			time.Sleep(companyHealthBrowserSettleDelay)
+			waitBrowserPageReady(page, companyHealthBrowserSettleDelay)
 
 			info := page.MustInfo()
 			baseURL, err := url.Parse(info.URL)
@@ -611,13 +607,134 @@ func withReusableBrowserPage(ctx context.Context, browser *rod.Browser, timeout 
 	if slot.page == nil {
 		slot.page = browser.MustPage()
 	}
-	page := slot.page.Timeout(timeout)
-	defer page.CancelTimeout()
+	started := time.Now()
+	err = rod.Try(func() {
+		page := slot.page.Timeout(timeout)
+		defer page.CancelTimeout()
 
-	wait := page.MustWaitNavigation()
-	page.MustNavigate(pageURL)
-	wait()
-	fn(page)
+		page.MustNavigate("about:blank")
+		wait := page.MustWaitNavigation()
+		page.MustNavigate(pageURL)
+		if err := rod.Try(func() { wait() }); err != nil {
+			page = slot.page.Timeout(timeout)
+			defer page.CancelTimeout()
+			if !browserPageBodyAvailable(page) {
+				panic(err)
+			}
+			logDebug("browser navigation wait incomplete url=%q error=%v; using current DOM", pageURL, SimplifySiteSearchError(err))
+		}
+		if dismissed := dismissBrowserPageInterruptions(page); dismissed > 0 {
+			logDebug("browser page interruptions dismissed url=%q count=%d", pageURL, dismissed)
+		}
+		fn(page)
+	})
+	captureBrowserPageDebugSnapshot(slot.page, pageURL, "browser_page", time.Since(started), err)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func waitBrowserPageReady(page *rod.Page, settleDelay time.Duration) {
+	if page == nil {
+		return
+	}
+	waitPage := page.Timeout(3 * time.Second)
+	defer waitPage.CancelTimeout()
+	if err := rod.Try(func() { waitPage.MustWaitLoad() }); err != nil {
+		logDebug("browser page load wait incomplete: %v; using current DOM", SimplifySiteSearchError(err))
+	}
+	if settleDelay > 0 {
+		time.Sleep(settleDelay)
+	}
+	if dismissed := dismissBrowserPageInterruptions(page); dismissed > 0 {
+		logDebug("browser page interruptions dismissed after settle count=%d", dismissed)
+	}
+}
+
+func browserPageBodyAvailable(page *rod.Page) bool {
+	if page == nil {
+		return false
+	}
+	return rod.Try(func() {
+		shortPage := page.Timeout(2 * time.Second)
+		defer shortPage.CancelTimeout()
+		info := shortPage.MustInfo()
+		if info == nil || strings.TrimSpace(info.URL) == "" || strings.EqualFold(strings.TrimSpace(info.URL), "about:blank") {
+			panic("no navigated page")
+		}
+		shortPage.MustElement("body")
+	}) == nil
+}
+
+func dismissBrowserPageInterruptions(page *rod.Page) int {
+	if page == nil {
+		return 0
+	}
+	dismissed := 0
+	if err := rod.Try(func() {
+		res, err := page.Eval(`() => {
+			const normalize = (value) => (value || "").replace(/\s+/g, " ").trim().toLowerCase();
+			const visible = (el) => {
+				if (!el || !el.isConnected) return false;
+				const style = window.getComputedStyle(el);
+				if (style.display === "none" || style.visibility === "hidden" || style.pointerEvents === "none") return false;
+				const rect = el.getBoundingClientRect();
+				return rect.width > 0 && rect.height > 0;
+			};
+			const exactLabels = new Set([
+				"close",
+				"dismiss",
+				"not now",
+				"skip",
+				"maybe later",
+				"continue without signing in",
+				"continue without an account"
+			]);
+			const partialLabels = [
+				"close dialog",
+				"close modal",
+				"dismiss dialog",
+				"dismiss modal"
+			];
+			const selectors = [
+				"button",
+				"[role='button']",
+				"a[aria-label]",
+				"[aria-label]",
+				"[title]",
+				"[data-testid*='close' i]",
+				"[data-test*='close' i]"
+			];
+			const seen = new Set();
+			let dismissed = 0;
+			for (const el of Array.from(document.querySelectorAll(selectors.join(",")))) {
+				if (seen.has(el) || !visible(el)) continue;
+				seen.add(el);
+				const label = normalize(
+					el.innerText ||
+					el.textContent ||
+					el.getAttribute("aria-label") ||
+					el.getAttribute("title") ||
+					el.getAttribute("data-testid") ||
+					el.getAttribute("data-test")
+				);
+				if (!label) continue;
+				if (!exactLabels.has(label) && !partialLabels.some((partial) => label.includes(partial))) continue;
+				el.click();
+				dismissed++;
+			}
+			return dismissed;
+		}`)
+		if err != nil {
+			panic(err)
+		}
+		if res != nil {
+			dismissed = res.Value.Int()
+		}
+	}); err != nil {
+		logDebug("browser page interruption dismissal skipped: %v", SimplifySiteSearchError(err))
+	}
+	return dismissed
 }
 
 func reusableBrowserPagePoolFor(browser *rod.Browser) *reusableBrowserPagePool {

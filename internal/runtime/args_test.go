@@ -183,9 +183,34 @@ func TestParseArgsSourcesFlagWithEqualsAndAliases(t *testing.T) {
 	}
 }
 
+func TestParseArgsFetchLimitOverrides(t *testing.T) {
+	options, err := ParseArgs([]string{
+		"jobscout",
+		"--candidate-limit=12",
+		"--accepted-limit",
+		"30",
+		"--fetch-dry-run",
+	})
+	if err != nil {
+		t.Fatalf("ParseArgs() error = %v", err)
+	}
+	if options.CandidateLimitPerSource == nil || *options.CandidateLimitPerSource != 12 {
+		t.Fatalf("ParseArgs(...).CandidateLimitPerSource = %v; want 12", options.CandidateLimitPerSource)
+	}
+	if options.AcceptedLimit == nil || *options.AcceptedLimit != 30 {
+		t.Fatalf("ParseArgs(...).AcceptedLimit = %v; want 30", options.AcceptedLimit)
+	}
+}
+
 func TestParseArgsSourcesFlagRejectsUnsupportedSource(t *testing.T) {
 	if _, err := ParseArgs([]string{"jobscout", "--sources", "rss,google"}); err == nil {
 		t.Fatal("ParseArgs(... --sources rss,google) error = nil; want error")
+	}
+}
+
+func TestParseArgsFetchLimitRejectsNegativeValue(t *testing.T) {
+	if _, err := ParseArgs([]string{"jobscout", "--accepted-limit=-1"}); err == nil {
+		t.Fatal("ParseArgs(... --accepted-limit=-1) error = nil; want error")
 	}
 }
 

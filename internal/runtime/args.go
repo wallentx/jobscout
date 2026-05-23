@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -35,12 +36,14 @@ type Paths struct {
 }
 
 type Options struct {
-	Paths           Paths
-	Debug           bool
-	Demo            bool
-	SourceSelection []string
-	Command         string
-	CommandArgs     []string
+	Paths                   Paths
+	Debug                   bool
+	Demo                    bool
+	SourceSelection         []string
+	CandidateLimitPerSource *int
+	AcceptedLimit           *int
+	Command                 string
+	CommandArgs             []string
 }
 
 func DefaultDir() string {
@@ -95,6 +98,18 @@ func ParseArgs(args []string) (Options, error) {
 				return Options{}, err
 			}
 			options.SourceSelection = sources
+		case strings.HasPrefix(arg, "--candidate-limit="):
+			value, err := parseNonNegativeIntFlag("--candidate-limit", strings.TrimPrefix(arg, "--candidate-limit="))
+			if err != nil {
+				return Options{}, err
+			}
+			options.CandidateLimitPerSource = &value
+		case strings.HasPrefix(arg, "--accepted-limit="):
+			value, err := parseNonNegativeIntFlag("--accepted-limit", strings.TrimPrefix(arg, "--accepted-limit="))
+			if err != nil {
+				return Options{}, err
+			}
+			options.AcceptedLimit = &value
 		case arg == "--config":
 			if i+1 >= len(args) {
 				return Options{}, fmt.Errorf("--config requires a file path")
@@ -117,6 +132,26 @@ func ParseArgs(args []string) (Options, error) {
 			}
 			options.SourceSelection = sources
 			i++
+		case arg == "--candidate-limit":
+			if i+1 >= len(args) {
+				return Options{}, fmt.Errorf("--candidate-limit requires a non-negative integer")
+			}
+			value, err := parseNonNegativeIntFlag("--candidate-limit", args[i+1])
+			if err != nil {
+				return Options{}, err
+			}
+			options.CandidateLimitPerSource = &value
+			i++
+		case arg == "--accepted-limit":
+			if i+1 >= len(args) {
+				return Options{}, fmt.Errorf("--accepted-limit requires a non-negative integer")
+			}
+			value, err := parseNonNegativeIntFlag("--accepted-limit", args[i+1])
+			if err != nil {
+				return Options{}, err
+			}
+			options.AcceptedLimit = &value
+			i++
 		case arg == "--migrate":
 			return Options{}, fmt.Errorf("--migrate has been removed; use --import to load JSON exports into the configured SQLite database")
 		case isCommand(arg):
@@ -128,6 +163,18 @@ func ParseArgs(args []string) (Options, error) {
 		}
 	}
 	return options, nil
+}
+
+func parseNonNegativeIntFlag(name string, raw string) (int, error) {
+	valueText := strings.TrimSpace(raw)
+	if valueText == "" {
+		return 0, fmt.Errorf("%s requires a non-negative integer", name)
+	}
+	value, err := strconv.Atoi(valueText)
+	if err != nil || value < 0 {
+		return 0, fmt.Errorf("%s requires a non-negative integer", name)
+	}
+	return value, nil
 }
 
 func isCommand(arg string) bool {

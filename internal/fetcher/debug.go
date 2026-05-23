@@ -65,3 +65,14 @@ func logDebug(format string, args ...interface{}) {
 	message := fmt.Sprintf(format, args...)
 	_, _ = fmt.Fprintf(file, "%s fetcher: %s\n", time.Now().Format(time.RFC3339), message)
 }
+
+func debugSettings() (bool, string) {
+	fetcherDebug.Lock()
+	defer fetcherDebug.Unlock()
+
+	path := strings.TrimSpace(fetcherDebug.path)
+	if path == "" {
+		path = "debug.log"
+	}
+	return fetcherDebug.enabled, path
+}

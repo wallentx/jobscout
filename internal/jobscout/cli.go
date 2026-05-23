@@ -110,6 +110,7 @@ func runFetchDryRun(options appruntime.Options, stores appruntime.Stores, jsonOu
 		return 1
 	}
 	config.ApplyFetchSourceSelection(appCfg, options.SourceSelection)
+	config.ApplyFetchLimitOverrides(appCfg, options.CandidateLimitPerSource, options.AcceptedLimit)
 
 	criteriaCfg, err := config.LoadCriteriaConfig(options.Paths.Config)
 	if err != nil {

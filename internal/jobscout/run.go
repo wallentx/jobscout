@@ -171,6 +171,12 @@ func renderHelp() string {
   --sources <list>        Use selected active fetch sources: rss, site, llm, llm_web, all
   --sources=<list>        Same as --sources <list>
                             llm_web is an opt-in experimental source
+  --candidate-limit <n>
+                          Evaluate at most n site candidates per source; 0 disables the cap
+  --candidate-limit=<n>
+                          Same as --candidate-limit <n>
+  --accepted-limit <n>    Return at most n accepted jobs from a fetch; 0 disables the cap
+  --accepted-limit=<n>    Same as --accepted-limit <n>
   --config <path>         Use an alternate config file
   --config=<path>         Same as --config <path>
   -h, --help              Show this help

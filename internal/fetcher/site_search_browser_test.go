@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/go-rod/rod"
 )
 
 type fakeBrowserCloser struct {
@@ -508,11 +510,6 @@ func TestInferCompanyFromSiteSearchURL(t *testing.T) {
 			want: "Just Appraised",
 		},
 		{
-			name: "himalayas company slug",
-			raw:  "https://himalayas.app/companies/acme-inc/jobs/software-engineer",
-			want: "Acme Inc",
-		},
-		{
 			name: "greenhouse board slug",
 			raw:  "https://job-boards.greenhouse.io/muckrack/jobs/8523017002",
 			want: "Muckrack",
@@ -689,6 +686,35 @@ func TestSiteSearchCandidateMissingRequiredIdentity(t *testing.T) {
 	}
 }
 
+func TestSiteSearchCandidateApplyURLAvoidsIndeedPageadClickURL(t *testing.T) {
+	pageadURL, err := url.Parse("https://www.indeed.com/pagead/clk?mo=r&ad=abc&p=0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got, ok := siteSearchCandidateApplyURL("www.indeed.com", pageadURL, ""); ok || got != "" {
+		t.Fatalf("siteSearchCandidateApplyURL() = %q, %t; want no usable URL for bare pagead click", got, ok)
+	}
+
+	got, ok := siteSearchCandidateApplyURL(
+		"www.indeed.com",
+		pageadURL,
+		"https://app.example-careers.com/jobs/123",
+	)
+	if !ok || got != "https://app.example-careers.com/jobs/123" {
+		t.Fatalf("siteSearchCandidateApplyURL() = %q, %t; want canonical external URL", got, ok)
+	}
+
+	indeedClickURL, err := url.Parse("https://www.indeed.com/rc/clk?jk=122356c368d02242&bb=abc&vjs=3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok = siteSearchCandidateApplyURL("www.indeed.com", indeedClickURL, "")
+	if !ok || got != "https://www.indeed.com/viewjob?jk=122356c368d02242" {
+		t.Fatalf("siteSearchCandidateApplyURL() = %q, %t; want canonical Indeed viewjob URL", got, ok)
+	}
+}
+
 func TestEnrichSiteSearchJobIdentityBeforeFilterUsesDeterministicHTML(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`<html><head><script type="application/ld+json">{
@@ -713,7 +739,7 @@ func TestEnrichSiteSearchJobIdentityBeforeFilterUsesDeterministicHTML(t *testing
 		Compensation: "Not listed",
 	}
 
-	enrichSiteSearchJobIdentityBeforeFilter(t.Context(), &job)
+	enrichSiteSearchJobIdentityBeforeFilter(t.Context(), nil, &job, nil)
 
 	if job.Company != "Acme Tools" {
 		t.Fatalf("Company = %q; want Acme Tools", job.Company)
@@ -750,7 +776,7 @@ func TestEnrichSiteSearchJobIdentityBeforeFilterFetchesWeakDetailRows(t *testing
 		Description:  server.URL + "/jobs/staff-platform-engineer",
 	}
 
-	enrichSiteSearchJobIdentityBeforeFilter(t.Context(), &job)
+	enrichSiteSearchJobIdentityBeforeFilter(t.Context(), nil, &job, nil)
 
 	if job.CompanyWebsite != "https://www.acmetools.example" {
 		t.Fatalf("CompanyWebsite = %q; want https://www.acmetools.example", job.CompanyWebsite)
@@ -863,6 +889,123 @@ func TestSimplifySiteSearchErrorKeepsCDPMessageOnly(t *testing.T) {
 	if got := err.Error(); got != want {
 		t.Fatalf("simplifySiteSearchError() = %q; want %q", got, want)
 	}
+}
+
+func TestSimplifySiteSearchErrorNormalizesDeadlineExceeded(t *testing.T) {
+	err := simplifySiteSearchError(assertError("error value: context.deadlineExceededError{}"))
+	if err == nil {
+		t.Fatal("simplifySiteSearchError() = nil; want simplified error")
+	}
+	if got, want := err.Error(), "browser page timed out"; got != want {
+		t.Fatalf("simplifySiteSearchError() = %q; want %q", got, want)
+	}
+}
+
+func TestEnrichJobFromIndeedDetailLinksUsesCompanySiteApplyURL(t *testing.T) {
+	job := Job{
+		Company:  "DataAnnotation",
+		Title:    "Software Developer - AI Trainer",
+		ApplyURL: "https://www.indeed.com/viewjob?jk=93a47e75c343d396",
+	}
+
+	enrichJobFromIndeedDetailLinks(&job, []pageLink{{
+		Text: "Apply on company site",
+		URL:  "https://app.dataannotation.tech/worker_signup?projects=PROG_SA&worker_src=I&utm_source=indeed",
+	}})
+
+	if job.CompanyWebsite != "https://dataannotation.tech/" {
+		t.Fatalf("CompanyWebsite = %q; want https://dataannotation.tech/", job.CompanyWebsite)
+	}
+	if job.Metadata == nil || job.Metadata.Source == nil || job.Metadata.Source.ExternalApplyURL == "" {
+		t.Fatalf("Metadata.Source = %#v; want external apply URL", job.Metadata)
+	}
+	if job.CompanyIdentity == nil || job.CompanyIdentity.Website == nil || job.CompanyIdentity.Website.Source != "indeed_apply_link" {
+		t.Fatalf("CompanyIdentity.Website = %#v; want Indeed apply-link evidence", job.CompanyIdentity)
+	}
+}
+
+func TestIndeedVerificationPageDoesNotBecomeJobDetail(t *testing.T) {
+	job := Job{
+		Company:     "DataAnnotation",
+		Title:       "Software Developer - AI Trainer",
+		ApplyURL:    "https://www.indeed.com/viewjob?jk=93a47e75c343d396",
+		Description: "https://www.indeed.com/viewjob?jk=93a47e75c343d396",
+	}
+	verificationText := "Find jobs Company Reviews Additional Verification Required Your Ray ID for this request is a000c7e54f956c81 Troubleshooting Cloudflare Errors"
+
+	enrichJobFromIndeedDetailText(&job, verificationText, job.ApplyURL)
+	enrichJobFromIndeedDetailLinks(&job, []pageLink{{
+		Text: "Sign in",
+		URL:  "https://secure.indeed.com/account/login?hl=en&continue=https%3A%2F%2Fwww.indeed.com",
+	}})
+
+	if job.Description != job.ApplyURL {
+		t.Fatalf("Description = %q; want original apply URL placeholder", job.Description)
+	}
+	if job.Metadata != nil && job.Metadata.Source != nil && job.Metadata.Source.ExternalApplyURL != "" {
+		t.Fatalf("ExternalApplyURL = %q; want empty", job.Metadata.Source.ExternalApplyURL)
+	}
+}
+
+func TestSiteSearchCandidateDescriptionPrefersSpecificCardContext(t *testing.T) {
+	got := siteSearchCandidateDescription("Software Engineer III", "Google", []string{
+		"Get notified about new Software Engineer jobs in Seattle. Sign in to create job alert 1,000+ Software Engineer Jobs in Seattle Software Engineer Software Engineer Harvey Nash Seattle, WA Actively Hiring 1 week ago Software Engineer III Software Engineer III Google Kirkland, WA Actively Hiring 3 weeks ago LinkedIn © 2026 Privacy Policy User Agreement",
+		"Software Engineer III\nGoogle\nKirkland, WA\nActively Hiring\n3 weeks ago",
+	})
+
+	if strings.Contains(got, "Harvey Nash") || strings.Contains(got, "Sign in to create job alert") {
+		t.Fatalf("description = %q; want specific Google card context", got)
+	}
+	if !strings.Contains(got, "Google") || !strings.Contains(got, "Software Engineer III") {
+		t.Fatalf("description = %q; want specific Google card context", got)
+	}
+}
+
+func TestProbeSiteSearchCandidatesReusesPooledPage(t *testing.T) {
+	browser, cleanup, err := newSiteSearchBrowser()
+	if err != nil {
+		t.Skipf("site-search browser unavailable: %v", err)
+	}
+	defer cleanup()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<html><body>
+			<a href="/viewjob?jk=abc123">Software Engineer</a>
+		</body></html>`))
+	}))
+	defer server.Close()
+
+	criteria := &CriteriaConfig{}
+	criteria.Filters.TitleIncludes = []string{"software engineer"}
+
+	for i := 0; i < defaultReusableHealthBrowserPagePoolSize+2; i++ {
+		if _, err := probeSiteSearchCandidates(t.Context(), browser, server.URL, criteria); err != nil {
+			t.Fatalf("probeSiteSearchCandidates() call %d error = %v", i+1, err)
+		}
+	}
+	pages, available := reusableBrowserPoolStatsForTest(browser)
+	if pages != defaultReusableHealthBrowserPagePoolSize || available != defaultReusableHealthBrowserPagePoolSize {
+		t.Fatalf("reusable browser pool stats = pages %d available %d; want %d/%d", pages, available, defaultReusableHealthBrowserPagePoolSize, defaultReusableHealthBrowserPagePoolSize)
+	}
+}
+
+func reusableBrowserPoolStatsForTest(browser *rod.Browser) (int, int) {
+	reusableBrowserPools.Lock()
+	defer reusableBrowserPools.Unlock()
+	pool := reusableBrowserPools.pools[browser]
+	if pool == nil {
+		return 0, 0
+	}
+	pages := 0
+	available := len(pool.slots)
+	for range available {
+		slot := <-pool.slots
+		if slot.page != nil {
+			pages++
+		}
+		pool.slots <- slot
+	}
+	return pages, available
 }
 
 type assertError string

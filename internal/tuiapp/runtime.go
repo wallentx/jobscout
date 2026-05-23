@@ -12,6 +12,8 @@ func ConfigureRuntime(options appruntime.Options, stores appruntime.Stores, buil
 	runtimeSQLitePath = options.Paths.SQLite
 	setRuntimeDebug(options.Debug, runtimeDebugPath)
 	runtimeSourceSelection = append([]string(nil), options.SourceSelection...)
+	runtimeCandidateLimitPerSource = cloneRuntimeIntPtr(options.CandidateLimitPerSource)
+	runtimeAcceptedLimit = cloneRuntimeIntPtr(options.AcceptedLimit)
 	runtimeBuildVersion = buildVersion
 	if stores.Jobs != nil {
 		runtimeJobStore = stores.Jobs
@@ -26,4 +28,12 @@ func ConfigureRuntime(options appruntime.Options, stores appruntime.Stores, buil
 
 func NewModel() tea.Model {
 	return initialModel()
+}
+
+func cloneRuntimeIntPtr(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }
