@@ -22,6 +22,7 @@ var (
 
 const maxCompanyHealthLLMConcernStories = 3
 const minCompanyHealthConcernArticleTextChars = 1000
+const debugLLMHealthPreviewRunes = 160
 
 func LLMCompanyHealthEnabled(appCfg *config.AppConfig) bool {
 	return appCfg != nil && appCfg.LLM.Enabled && appCfg.LLM.CompanyHealth
@@ -297,8 +298,7 @@ func applyLLMCompanyHealthScoreModifier(result *domain.CompanyHealthResult, asse
 	allowed := relatedArticleURLSet(result.ConcernStoryArticles, assessment.ArticleReviews)
 	if len(allowed) == 0 {
 		logDebug("llm company health modifier rejected company=%q reason=no_related_articles article_reviews=%d", result.Company, len(assessment.ArticleReviews))
-		assessment.StoryInsight = ""
-		assessment.ScoreModifier = nil
+		clearArticleDerivedAssessmentFields(assessment)
 		return
 	}
 	if strings.TrimSpace(assessment.StoryInsight) == "" && assessment.ScoreModifier == nil {
@@ -307,9 +307,10 @@ func applyLLMCompanyHealthScoreModifier(result *domain.CompanyHealthResult, asse
 	}
 	if assessment.ScoreModifier == nil || *assessment.ScoreModifier == 0 {
 		logDebug("llm company health modifier skipped company=%q reason=no_modifier story_insight=%t related_articles=%d", result.Company, strings.TrimSpace(assessment.StoryInsight) != "", len(allowed))
+		clearArticleScoreModifierFields(assessment)
 		return
 	}
-	if !modifierUsesAllowedSource(assessment.ScoreModifierSources, allowed) {
+	if !modifierUsesOnlyAllowedSources(assessment.ScoreModifierSources, allowed) {
 		logDebug(
 			"llm company health modifier rejected company=%q reason=modifier_sources_not_related modifier=%d sources=%q related_articles=%d",
 			result.Company,
@@ -317,7 +318,7 @@ func applyLLMCompanyHealthScoreModifier(result *domain.CompanyHealthResult, asse
 			strings.Join(assessment.ScoreModifierSources, ", "),
 			len(allowed),
 		)
-		assessment.ScoreModifier = nil
+		clearArticleScoreModifierFields(assessment)
 		return
 	}
 	if !novelModifierFactValid(assessment.ScoreModifierNovelFact, result) {
@@ -327,7 +328,7 @@ func applyLLMCompanyHealthScoreModifier(result *domain.CompanyHealthResult, asse
 			*assessment.ScoreModifier,
 			len(strings.TrimSpace(assessment.ScoreModifierNovelFact)),
 		)
-		assessment.ScoreModifier = nil
+		clearArticleScoreModifierFields(assessment)
 		return
 	}
 
@@ -343,7 +344,7 @@ func applyLLMCompanyHealthScoreModifier(result *domain.CompanyHealthResult, asse
 	actualDelta := newScore - oldScore
 	if actualDelta == 0 {
 		logDebug("llm company health modifier rejected company=%q reason=no_effect_after_caps requested=%d old_score=%d risk_score=%d", result.Company, delta, oldScore, healthRiskScore(result.EmploymentRisk))
-		assessment.ScoreModifier = nil
+		clearArticleScoreModifierFields(assessment)
 		return
 	}
 	result.Score = newScore
@@ -353,36 +354,62 @@ func applyLLMCompanyHealthScoreModifier(result *domain.CompanyHealthResult, asse
 		reason = strings.TrimSpace(assessment.ScoreModifierNovelFact)
 	}
 	result.Notes = append(result.Notes, fmt.Sprintf("LLM article review adjusted score %+d: %s", actualDelta, reason))
+	novelFact := strings.TrimSpace(assessment.ScoreModifierNovelFact)
 	logDebug(
-		"llm company health modifier accepted company=%q requested=%d applied=%d old_score=%d new_score=%d reason=%q novel_fact=%q sources=%q",
+		"llm company health modifier accepted company=%q requested=%d applied=%d old_score=%d new_score=%d reason_len=%d reason_preview=%q novel_fact_len=%d novel_fact_preview=%q sources=%q",
 		result.Company,
 		delta,
 		actualDelta,
 		oldScore,
 		newScore,
-		reason,
-		assessment.ScoreModifierNovelFact,
+		debugTextLen(reason),
+		debugTextPreview(reason),
+		debugTextLen(novelFact),
+		debugTextPreview(novelFact),
 		strings.Join(assessment.ScoreModifierSources, ", "),
 	)
+}
+
+func clearArticleDerivedAssessmentFields(assessment *domain.LLMCompanyHealthAssessment) {
+	if assessment == nil {
+		return
+	}
+	assessment.ArticleReviews = nil
+	assessment.StoryInsight = ""
+	clearArticleScoreModifierFields(assessment)
+}
+
+func clearArticleScoreModifierFields(assessment *domain.LLMCompanyHealthAssessment) {
+	if assessment == nil {
+		return
+	}
+	assessment.ScoreModifier = nil
+	assessment.ScoreModifierReason = ""
+	assessment.ScoreModifierNovelFact = ""
+	assessment.ScoreModifierSources = nil
 }
 
 func logLLMCompanyHealthArticleReviews(company string, assessment *domain.LLMCompanyHealthAssessment) {
 	if assessment == nil {
 		return
 	}
-	if strings.TrimSpace(assessment.StoryInsight) != "" {
-		logDebug("llm company health story insight company=%q chars=%d insight=%q", company, len(assessment.StoryInsight), assessment.StoryInsight)
+	if insight := strings.TrimSpace(assessment.StoryInsight); insight != "" {
+		logDebug("llm company health story insight company=%q chars=%d insight_preview=%q", company, debugTextLen(insight), debugTextPreview(insight))
 	}
 	for index, review := range assessment.ArticleReviews {
+		relevanceReason := strings.TrimSpace(review.RelevanceReason)
+		novelFact := strings.TrimSpace(review.NovelFact)
 		logDebug(
-			"llm company health article review company=%q article=%d source=%q url_host=%q related=%t relevance=%q novel_fact_len=%d",
+			"llm company health article review company=%q article=%d source=%q url_host=%q related=%t relevance_len=%d relevance_preview=%q novel_fact_len=%d novel_fact_preview=%q",
 			company,
 			index+1,
 			review.Source,
 			logURLHost(review.URL),
 			review.Related,
-			review.RelevanceReason,
-			len(strings.TrimSpace(review.NovelFact)),
+			debugTextLen(relevanceReason),
+			debugTextPreview(relevanceReason),
+			debugTextLen(novelFact),
+			debugTextPreview(novelFact),
 		)
 	}
 }
@@ -405,13 +432,17 @@ func relatedArticleURLSet(articles []domain.CompanyHealthConcernArticle, reviews
 	return related
 }
 
-func modifierUsesAllowedSource(sources []string, allowed map[string]bool) bool {
+func modifierUsesOnlyAllowedSources(sources []string, allowed map[string]bool) bool {
+	if len(sources) == 0 || len(allowed) == 0 {
+		return false
+	}
 	for _, source := range sources {
-		if allowed[normalizedStoryURL(source)] {
-			return true
+		key := normalizedStoryURL(source)
+		if key == "" || !allowed[key] {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 func novelModifierFactValid(fact string, result *domain.CompanyHealthResult) bool {
@@ -456,6 +487,22 @@ func healthRiskScore(risk *domain.EmploymentRisk) int {
 
 func normalizedStoryURL(rawURL string) string {
 	return strings.TrimRight(strings.ToLower(strings.TrimSpace(rawURL)), "/")
+}
+
+func debugTextPreview(value string) string {
+	value = strings.Join(strings.Fields(value), " ")
+	if value == "" {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) <= debugLLMHealthPreviewRunes {
+		return value
+	}
+	return string(runes[:debugLLMHealthPreviewRunes]) + "...[truncated]"
+}
+
+func debugTextLen(value string) int {
+	return len([]rune(strings.TrimSpace(value)))
 }
 
 func logURLHost(rawURL string) string {
