@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -244,7 +245,7 @@ func TestApplyCompanyIdentitySearchResultPreservesExistingFields(t *testing.T) {
 		t.Fatal("identity.Summary is empty, want LLM summary")
 	}
 	for _, expected := range []string{"Acme", "AcmeCloud", "Acme Cloud Inc."} {
-		if !stringSliceContains(identity.Aliases, expected) {
+		if !slices.Contains(identity.Aliases, expected) {
 			t.Fatalf("identity.Aliases = %#v, want %q", identity.Aliases, expected)
 		}
 	}

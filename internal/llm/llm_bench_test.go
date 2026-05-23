@@ -419,7 +419,7 @@ func TestScoreBenchmarkOutputAppliesInvalidJSONCap(t *testing.T) {
 	}
 }
 
-func TestFormatBenchmarkRecordSummaryUsesColorAndShortLines(t *testing.T) {
+func TestFormatBenchmarkRecordSummaryUsesColorAndTaskNormalization(t *testing.T) {
 	summary := formatBenchmarkRecordSummary(llmBenchmarkRunRecord{
 		Model:                 "gpt-4o-mini",
 		Task:                  "autonomous_job_search",

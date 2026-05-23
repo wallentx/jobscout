@@ -30,6 +30,7 @@ func HTTPGet(urlStr string, timeout time.Duration, userAgent string, headers map
 		return nil, err
 	}
 	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		_ = resp.Body.Close()
 	}()
 
