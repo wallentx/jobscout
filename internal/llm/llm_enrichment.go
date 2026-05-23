@@ -19,6 +19,7 @@ import (
 
 const maxCompanyHealthRejectedEvidenceInPrompt = 12
 const maxCompanyHealthArticleTextChars = 6000
+const llmSearchSystemInstruction = "You are a JSON-only job search API. Return only a valid JSON array. Use empty strings for unknown required fields and do not invent missing facts."
 
 // LLMEvaluationResult holds the parsed JSON output from the LLM
 type LLMEvaluationResult struct {
@@ -182,16 +183,11 @@ func executeLLMSearch(ctx context.Context, llm llms.Model, prompt string) ([]Job
 }
 
 func executeLLMSearchWithUsage(ctx context.Context, llm llms.Model, prompt string) ([]Job, LLMTokenUsage, error) {
-	// We append a JSON requirement so the Go app can parse the result,
-	// but we do absolutely no "prompt engineering" on how or where it searches.
-	fullPrompt := prompt + "\n\nCRITICAL SYSTEM INSTRUCTION: You must return your response ONLY as a valid JSON array of objects. Each object must include these string keys: \"company\", \"title\", \"remote\", \"compensation\", \"apply_url\", and \"description\". When available, include \"company_website\" for the actual company's website, not the job board or application URL, \"company_summary\" for a brief factual company summary, and \"company_industry\" for the company's industry. For any list of reasons it matches, put them in a string array under the key \"why_matches\". Do NOT wrap the JSON in markdown blocks, return ONLY the raw JSON array."
-
-	messages := []llms.MessageContent{
-		llms.TextParts(llms.ChatMessageTypeHuman, fullPrompt),
-	}
+	fullPrompt := buildLLMSearchPrompt(prompt)
+	messages := buildLLMSearchMessages(fullPrompt)
 
 	logDebug("llm job search: generation start prompt_chars=%d", len(fullPrompt))
-	resp, err := llm.GenerateContent(ctx, messages, llmJSONCallOptions(0.7, 8192)...)
+	resp, err := llm.GenerateContent(ctx, messages, llmJSONCallOptions(0.2, 8192)...)
 	if err != nil {
 		logDebug("llm job search: generation failed: %v", err)
 		return nil, LLMTokenUsage{}, fmt.Errorf("LLM generation failed: %v", err)
@@ -211,6 +207,29 @@ func executeLLMSearchWithUsage(ctx context.Context, llm llms.Model, prompt strin
 	}
 	logDebug("llm job search: parsed jobs=%d response_chars=%d", len(jobs), len(resp.Choices[0].Content))
 	return jobs, usage, nil
+}
+
+func buildLLMSearchMessages(prompt string) []llms.MessageContent {
+	return []llms.MessageContent{
+		llms.TextParts(llms.ChatMessageTypeSystem, llmSearchSystemInstruction),
+		llms.TextParts(llms.ChatMessageTypeHuman, prompt),
+	}
+}
+
+func buildLLMSearchPrompt(prompt string) string {
+	var fullPrompt strings.Builder
+	fullPrompt.WriteString(prompt)
+	fullPrompt.WriteString("\n\nCRITICAL SYSTEM INSTRUCTION: ")
+	fullPrompt.WriteString("Use only real current job postings whose direct application URL is present in the prompt context or available through your search/tooling context. ")
+	fullPrompt.WriteString("Do not invent companies, roles, URLs, compensation, descriptions, company websites, or company summaries. ")
+	fullPrompt.WriteString("If no real current direct application URLs can be verified from the available context, return an empty JSON array. ")
+	fullPrompt.WriteString("You must return your response ONLY as a valid JSON array of objects. ")
+	fullPrompt.WriteString("Each object must include these string keys: \"company\", \"title\", \"remote\", \"compensation\", \"apply_url\", and \"description\". ")
+	fullPrompt.WriteString("If any required string field is unavailable in the verified context, use an empty string for that field instead of guessing. ")
+	fullPrompt.WriteString("When available, include \"company_website\" for the actual company's website, not the job board or application URL, \"company_summary\" for a brief factual company summary, and \"company_industry\" for the company's industry. ")
+	fullPrompt.WriteString("For any list of reasons it matches, put them in a string array under the key \"why_matches\". ")
+	fullPrompt.WriteString("Do NOT wrap the JSON in markdown blocks, return ONLY the raw JSON array.")
+	return fullPrompt.String()
 }
 
 func ExecuteLLMSearch(ctx context.Context, llm llms.Model, prompt string) ([]Job, error) {
@@ -813,14 +832,20 @@ func buildPrompt(job Job, criteria *CriteriaConfig) string {
 	fmt.Fprintf(&promptBuilder, "Compensation Raw: %s\n", job.Compensation)
 	fmt.Fprintf(&promptBuilder, "Description: %s\n\n", job.Description)
 
+	promptBuilder.WriteString("### Evaluation Rules:\n")
+	promptBuilder.WriteString("Set matches=false only when the posting explicitly conflicts with a hard criterion. ")
+	promptBuilder.WriteString("Do not reject solely because compensation, location, years of experience, or priority-signal details are missing or unclear. ")
+	promptBuilder.WriteString("When facts are missing but there is no explicit conflict, keep matches=true and mention what still needs verification in why_it_matches. ")
+	promptBuilder.WriteString("Use why_rejected only for explicit hard failures such as below-minimum compensation, unsupported work setting, excluded title or industry, or role mismatch.\n\n")
+
 	promptBuilder.WriteString("### Output Format:\n")
 	promptBuilder.WriteString("Instead of a text list, return ONLY valid JSON matching this schema:\n")
 	promptBuilder.WriteString("{\n")
-	promptBuilder.WriteString(`  "matches": boolean, // true if it meets all hard criteria, false otherwise` + "\n")
+	promptBuilder.WriteString(`  "matches": boolean, // false only when explicit posted facts fail hard criteria` + "\n")
 	promptBuilder.WriteString(`  "compensation_extracted": string, // The clear compensation string, e.g. "$180k-$220k base"` + "\n")
 	promptBuilder.WriteString(`  "remote_eligibility": string, // E.g. "US-Remote", "Hybrid", "Onsite"` + "\n")
-	promptBuilder.WriteString(`  "why_it_matches": [string], // Array of bullet points explaining why it matches priority signals` + "\n")
-	promptBuilder.WriteString(`  "why_rejected": [string] // If matches is false, explain which hard criteria failed` + "\n")
+	promptBuilder.WriteString(`  "why_it_matches": [string], // Array of bullet points explaining matching signals and any missing facts that still need verification` + "\n")
+	promptBuilder.WriteString(`  "why_rejected": [string] // If matches is false, explain which explicit hard criteria failed` + "\n")
 	promptBuilder.WriteString("}\n")
 
 	return promptBuilder.String()
