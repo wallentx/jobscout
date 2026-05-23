@@ -111,6 +111,17 @@ func observeEmployeeCount(
 	reason string,
 ) bool {
 	assessment := ensureCompanyHealthField(result, "estimated_employees")
+	if !plausibleEmployeeCount(count) {
+		assessment.Evidence = append(assessment.Evidence, CompanyHealthEvidence{
+			Value:      fmt.Sprintf("%d", count),
+			Source:     source,
+			URL:        sourceURL,
+			Confidence: confidence,
+			Accepted:   false,
+			Reason:     "ignored implausibly low employee-count estimate",
+		})
+		return false
+	}
 	accepted := false
 
 	if result.EstimatedEmployees == nil {
@@ -150,6 +161,10 @@ func observeEmployeeCount(
 	})
 
 	return accepted
+}
+
+func plausibleEmployeeCount(count int) bool {
+	return count >= 2
 }
 
 func ObserveEmployeeCount(

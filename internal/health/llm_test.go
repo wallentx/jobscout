@@ -105,3 +105,63 @@ func TestApplyOptionalLLMCompanyIdentitySkipsCompleteIdentity(t *testing.T) {
 		t.Fatalf("ApplyOptionalLLMCompanyIdentity() = %#v, want unchanged identity", got)
 	}
 }
+
+func TestApplyLLMCompanyHealthScoreModifierRequiresOnlyRelatedArticleSources(t *testing.T) {
+	storyURL := "https://news.example/acme-risk"
+	allowed := map[string]bool{normalizedStoryURL(storyURL): true}
+
+	if !modifierUsesOnlyAllowedSources([]string{storyURL + "/"}, allowed) {
+		t.Fatal("modifierUsesOnlyAllowedSources() = false, want true for only related article source")
+	}
+
+	for name, sources := range map[string][]string{
+		"none":      nil,
+		"blank":     {""},
+		"unrelated": {"https://other.example/acme-risk"},
+		"mixed":     {storyURL, "https://other.example/acme-risk"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if modifierUsesOnlyAllowedSources(sources, allowed) {
+				t.Fatalf("modifierUsesOnlyAllowedSources(%#v) = true, want false", sources)
+			}
+		})
+	}
+}
+
+func TestApplyLLMCompanyHealthScoreModifierClearsRejectedArticleFields(t *testing.T) {
+	delta := -5
+	assessment := &domain.LLMCompanyHealthAssessment{
+		StoryInsight: "Unrelated coverage should not be retained as company insight.",
+		ArticleReviews: []domain.LLMCompanyHealthArticleReview{
+			{
+				URL:             "https://other.example/not-acme",
+				Related:         true,
+				RelevanceReason: "This is not the article context URL.",
+				NovelFact:       "This fact came from an unrelated URL.",
+			},
+		},
+		ScoreModifier:          &delta,
+		ScoreModifierReason:    "Unrelated article reason.",
+		ScoreModifierNovelFact: "Unrelated article fact.",
+		ScoreModifierSources:   []string{"https://other.example/not-acme"},
+	}
+	result := &domain.CompanyHealthResult{
+		Company: "Acme",
+		Score:   70,
+		ConcernStoryArticles: []domain.CompanyHealthConcernArticle{
+			{URL: "https://news.example/acme-risk"},
+		},
+	}
+
+	applyLLMCompanyHealthScoreModifier(result, assessment)
+
+	if result.Score != 70 {
+		t.Fatalf("Score = %d, want unchanged 70", result.Score)
+	}
+	if assessment.StoryInsight != "" || len(assessment.ArticleReviews) != 0 {
+		t.Fatalf("article fields = insight %q reviews %#v; want cleared", assessment.StoryInsight, assessment.ArticleReviews)
+	}
+	if assessment.ScoreModifier != nil || assessment.ScoreModifierReason != "" || assessment.ScoreModifierNovelFact != "" || len(assessment.ScoreModifierSources) != 0 {
+		t.Fatalf("modifier fields were not cleared: %#v", assessment)
+	}
+}

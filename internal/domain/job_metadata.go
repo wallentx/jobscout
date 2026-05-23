@@ -132,6 +132,9 @@ func NormalizeCompanyMetadata(metadata *CompanyMetadata) *CompanyMetadata {
 	metadata.Revenue = strings.TrimSpace(metadata.Revenue)
 	metadata.Ticker = strings.ToUpper(strings.TrimSpace(metadata.Ticker))
 	metadata.Exchange = strings.ToUpper(strings.TrimSpace(metadata.Exchange))
+	if metadata.EstimatedEmployees != nil && !plausibleEmployeeCount(*metadata.EstimatedEmployees) {
+		metadata.EstimatedEmployees = nil
+	}
 	if len(metadata.Industries) == 0 &&
 		metadata.EmployeeRange == "" &&
 		metadata.EstimatedEmployees == nil &&
@@ -223,9 +226,13 @@ func MergeJobMetadataFields(existing *Job, incoming Job) {
 }
 
 func CompanyHealthContextForJob(job Job) CompanyHealthContext {
+	website := strings.TrimSpace(job.CompanyWebsite)
+	if JobCompanyWebsiteMissingOrInvalid(website) {
+		website = ""
+	}
 	identity := CompanyHealthContext{
 		Company:  strings.TrimSpace(job.Company),
-		Website:  strings.TrimSpace(job.CompanyWebsite),
+		Website:  website,
 		Summary:  strings.TrimSpace(job.CompanySummary),
 		Industry: strings.TrimSpace(job.CompanyIndustry),
 	}

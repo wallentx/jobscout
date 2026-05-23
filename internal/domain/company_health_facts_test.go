@@ -48,6 +48,22 @@ func TestObserveEmployeeCountPromotesHigherConfidenceSource(t *testing.T) {
 	}
 }
 
+func TestObserveEmployeeCountIgnoresSingleEmployeeEstimate(t *testing.T) {
+	result := &CompanyHealthResult{}
+	initCompanyHealthAssessments(result)
+
+	if observeEmployeeCount(result, 1, "job_company_metadata", "", "medium", "bad single-employee estimate") {
+		t.Fatal("observeEmployeeCount() accepted single-employee estimate; want ignored")
+	}
+	if result.EstimatedEmployees != nil {
+		t.Fatalf("EstimatedEmployees = %#v; want nil", result.EstimatedEmployees)
+	}
+	assessment := result.FieldAssessments["estimated_employees"]
+	if assessment == nil || len(assessment.Evidence) != 1 || assessment.Evidence[0].Accepted {
+		t.Fatalf("estimated_employees assessment = %#v; want rejected evidence", assessment)
+	}
+}
+
 func TestFinalizeCompanyHealthAssessmentsMarksGap(t *testing.T) {
 	result := &CompanyHealthResult{}
 	initCompanyHealthAssessments(result)

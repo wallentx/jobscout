@@ -106,8 +106,8 @@ func validateWikiRelevance(query string, summary *WikiSummary) bool {
 	return true
 }
 
-// wikiGetSummary searches for and retrieves a Wikipedia summary
-func wikiGetSummary(company string) (summary *WikiSummary, err error) {
+func wikiGetSummaryForIdentity(identity CompanyHealthContext) (summary *WikiSummary, err error) {
+	company := strings.TrimSpace(identity.Company)
 	// Search for title
 	searchURL := fmt.Sprintf("%s?q=%s&limit=1", wikiTitleSearchURL, url.QueryEscape(company))
 	data, err := httpGet(searchURL)
@@ -140,11 +140,57 @@ func wikiGetSummary(company string) (summary *WikiSummary, err error) {
 	}
 
 	// Validate
-	if !validateWikiRelevance(company, &wikiSum) {
+	if !validateWikiRelevanceForIdentity(identity, &wikiSum) {
 		return nil, fmt.Errorf("wikipedia result deemed irrelevant")
 	}
 
 	return &wikiSum, nil
+}
+
+func validateWikiRelevanceForIdentity(identity CompanyHealthContext, summary *WikiSummary) bool {
+	company := strings.TrimSpace(identity.Company)
+	if summary == nil || !validateWikiRelevance(company, summary) {
+		return false
+	}
+	contextTerms := meaningfulWikiIdentityContextTerms(identity)
+	if len(contextTerms) == 0 {
+		return true
+	}
+	text := strings.ToLower(summary.Title + " " + summary.Extract)
+	for _, term := range contextTerms {
+		if strings.Contains(text, term) {
+			return true
+		}
+	}
+	return false
+}
+
+func meaningfulWikiIdentityContextTerms(identity CompanyHealthContext) []string {
+	values := append([]string{}, identity.Industry)
+	values = append(values, identity.Industries...)
+	terms := make([]string, 0, len(values))
+	seen := make(map[string]bool)
+	for _, value := range values {
+		for _, token := range strings.FieldsFunc(strings.ToLower(value), func(r rune) bool {
+			return (r < 'a' || r > 'z') && (r < '0' || r > '9')
+		}) {
+			if len(token) < 4 || isGenericWikiIdentityContextTerm(token) || seen[token] {
+				continue
+			}
+			seen[token] = true
+			terms = append(terms, token)
+		}
+	}
+	return terms
+}
+
+func isGenericWikiIdentityContextTerm(token string) bool {
+	switch strings.ToLower(strings.TrimSpace(token)) {
+	case "business", "company", "corporate", "digital", "enterprise", "group", "industry", "internet", "platform", "product", "products", "saas", "service", "services", "software", "solution", "solutions", "system", "systems", "technology", "technologies":
+		return true
+	default:
+		return false
+	}
 }
 
 func wikiGetCompanyFacts(summary *WikiSummary) (*WikidataCompanyFacts, error) {
