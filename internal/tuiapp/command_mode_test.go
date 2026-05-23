@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -123,6 +124,31 @@ func TestExecuteOperatorHealthCommandRequiresCompany(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "usage: health <company>") {
 		t.Fatalf("executeOperatorCommand(health) error = %q; want usage guidance", err)
+	}
+}
+
+func TestExecuteOperatorFetchCommandParsesOverrides(t *testing.T) {
+	result, err := executeOperatorCommand(`fetch --sources rss,site --sources llm --candidate-limit 7 --accepted-limit=3 --no-llm`)
+	if err == nil {
+		t.Fatal("executeOperatorCommand(fetch) error = nil; want --no-llm source conflict")
+	}
+
+	result, err = executeOperatorCommand(`fetch --sources rss,site --candidate-limit 7 --accepted-limit=3`)
+	if err != nil {
+		t.Fatalf("executeOperatorCommand(fetch) error = %v", err)
+	}
+	if result.FetchOptions == nil {
+		t.Fatal("FetchOptions = nil; want parsed fetch options")
+	}
+	options := result.FetchOptions
+	if !options.SourceSelectionSet || strings.Join(options.SourceSelection, ",") != "rss,site" {
+		t.Fatalf("SourceSelection = set:%t %#v; want rss,site", options.SourceSelectionSet, options.SourceSelection)
+	}
+	if options.CandidateLimitPerSource == nil || *options.CandidateLimitPerSource != 7 {
+		t.Fatalf("CandidateLimitPerSource = %#v; want 7", options.CandidateLimitPerSource)
+	}
+	if options.AcceptedLimit == nil || *options.AcceptedLimit != 3 {
+		t.Fatalf("AcceptedLimit = %#v; want 3", options.AcceptedLimit)
 	}
 }
 
@@ -425,6 +451,78 @@ func TestCommandModeHealthPoolShowsSelectableFlagsAfterCompany(t *testing.T) {
 	}
 }
 
+func TestCommandModeFetchPoolShowsSelectableFlagsAfterDash(t *testing.T) {
+	m := model{
+		termWidth:     100,
+		termHeight:    30,
+		tableHeight:   calculateTableHeight(30),
+		activeFilters: filterValuesFromStatuses(nil),
+		commandInput:  newOperatorCommandInput(),
+		isCommanding:  true,
+	}
+	m.commandInput.Focus()
+	m.commandInput.SetValue("fetch -")
+	m.commandTypedInput = "fetch -"
+
+	labels := commandCompletionLabels(m.operatorCommandPool())
+	want := []string{"--sources", "--candidate-limit", "--accepted-limit", "--no-llm"}
+	if strings.Join(labels, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("operatorCommandPool labels = %#v; want %#v", labels, want)
+	}
+	if hint := m.operatorCommandGhostHint(); hint != "" {
+		t.Fatalf("operatorCommandGhostHint() = %q; want no hint while completions are available", hint)
+	}
+}
+
+func TestCommandModeFetchSourceValueCompletion(t *testing.T) {
+	m := model{
+		termWidth:     100,
+		termHeight:    30,
+		tableHeight:   calculateTableHeight(30),
+		activeFilters: filterValuesFromStatuses(nil),
+		commandInput:  newOperatorCommandInput(),
+		isCommanding:  true,
+	}
+	m.commandInput.Focus()
+	m.commandInput.SetValue("fetch --sources si")
+	m.commandTypedInput = "fetch --sources si"
+
+	labels := commandCompletionLabels(m.operatorCommandPool())
+	if strings.Join(labels, "\x00") != "site" {
+		t.Fatalf("operatorCommandPool labels = %#v; want site", labels)
+	}
+}
+
+func TestCommandModeFetchLimitHintsOnlyForMissingValues(t *testing.T) {
+	if hint := operatorCommandGhostHint("fetch --candidate-limit"); hint != " 15" {
+		t.Fatalf("operatorCommandGhostHint(candidate flag) = %q; want default limit hint", hint)
+	}
+	if hint := operatorCommandGhostHint("fetch --candidate-limit "); hint != "15" {
+		t.Fatalf("operatorCommandGhostHint(candidate flag space) = %q; want default limit hint", hint)
+	}
+	if hint := operatorCommandGhostHint("fetch --candidate-limit 1"); hint != "" {
+		t.Fatalf("operatorCommandGhostHint(candidate value typed) = %q; want no hint", hint)
+	}
+	if hint := operatorCommandGhostHint("fetch --sources "); hint != "" {
+		t.Fatalf("operatorCommandGhostHint(sources) = %q; want source completions instead of hint", hint)
+	}
+}
+
+func TestCommandInputInlineViewSuppressesGhostWhenCursorInsideValue(t *testing.T) {
+	m := model{commandInput: newOperatorCommandInput()}
+	m.commandInput.Focus()
+	m.commandInput.SetValue("fetch --candidate-limit 15")
+	m.commandInput.SetCursor(len([]rune("fetch --candidate-limit ")))
+
+	rendered := ansi.Strip(m.commandInputInlineView("15", lipgloss.NewStyle()))
+	if strings.Contains(rendered, "fetch --candidate-limit 1515") {
+		t.Fatalf("commandInputInlineView duplicated ghost inside value: %q", rendered)
+	}
+	if !strings.Contains(rendered, "fetch --candidate-limit 15") {
+		t.Fatalf("commandInputInlineView() = %q; want original input text", rendered)
+	}
+}
+
 func TestCommandModeHealthPoolHidesDuplicateWebsiteFlag(t *testing.T) {
 	m := model{
 		termWidth:     100,
@@ -580,6 +678,29 @@ func TestCommandModeHelpMentionsTabSelection(t *testing.T) {
 	rendered := ansi.Strip(m.View())
 	if !strings.Contains(rendered, "Tab Select/Cycle") {
 		t.Fatalf("command mode help missing tab selection hint:\n%s", rendered)
+	}
+}
+
+func TestCommandModeResultLineDoesNotChangeViewHeight(t *testing.T) {
+	base := model{
+		termWidth:     100,
+		termHeight:    30,
+		tableHeight:   calculateTableHeight(30),
+		activeFilters: filterValuesFromStatuses(nil),
+		commandInput:  newOperatorCommandInput(),
+		isCommanding:  true,
+	}
+	base.commandInput.Focus()
+	base.commandInput.SetValue("debug status")
+
+	withResult := base
+	withResult.commandResultTitle = "Debug"
+	withResult.commandResultMessage = "Debug is off."
+
+	baseLines := strings.Count(ansi.Strip(base.View()), "\n")
+	resultLines := strings.Count(ansi.Strip(withResult.View()), "\n")
+	if resultLines != baseLines {
+		t.Fatalf("command view lines with result = %d; want %d", resultLines, baseLines)
 	}
 }
 
