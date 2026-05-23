@@ -45,6 +45,7 @@ System_Boundary(jobscout, "jobscout") {
   Component(domain, "Domain model", "internal/domain", "Jobs, criteria, role families, company identity, scoring rules, and merge logic")
   ComponentDb(store, "Local storage", "internal/storage", "SQLite job, health, and company identity stores")
   Component(update, "Update check", "internal/updatecheck", "Checks the latest GitHub release at startup unless disabled")
+  Component(netutil, "Internal package: netutil", "internal/netutil", "Generated placeholder for an unclassified internal package")
 }
 
 Rel(user, entry, "Runs commands")
