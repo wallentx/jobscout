@@ -234,16 +234,8 @@ func (m model) commandInputInlineView(ghost string, ghostStyle lipgloss.Style) s
 	if valueWidth := lipgloss.Width(input.Value()); valueWidth > 0 {
 		input.Width = valueWidth
 	}
-	if ghost != "" && input.Position() < len([]rune(input.Value())) {
-		value := []rune(input.Value())
-		position := input.Position()
-		if position < 0 {
-			position = 0
-		}
-		return string(value[:position]) + ghostStyle.Render(ghost) + string(value[position:])
-	}
 	view := input.View()
-	if ghost != "" {
+	if ghost != "" && input.Position() >= len([]rune(input.Value())) {
 		view += ghostStyle.Render(ghost)
 	}
 	return view

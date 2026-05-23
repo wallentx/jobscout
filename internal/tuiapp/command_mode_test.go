@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -504,6 +505,21 @@ func TestCommandModeFetchLimitHintsOnlyForMissingValues(t *testing.T) {
 	}
 	if hint := operatorCommandGhostHint("fetch --sources "); hint != "" {
 		t.Fatalf("operatorCommandGhostHint(sources) = %q; want source completions instead of hint", hint)
+	}
+}
+
+func TestCommandInputInlineViewSuppressesGhostWhenCursorInsideValue(t *testing.T) {
+	m := model{commandInput: newOperatorCommandInput()}
+	m.commandInput.Focus()
+	m.commandInput.SetValue("fetch --candidate-limit 15")
+	m.commandInput.SetCursor(len([]rune("fetch --candidate-limit ")))
+
+	rendered := ansi.Strip(m.commandInputInlineView("15", lipgloss.NewStyle()))
+	if strings.Contains(rendered, "fetch --candidate-limit 1515") {
+		t.Fatalf("commandInputInlineView duplicated ghost inside value: %q", rendered)
+	}
+	if !strings.Contains(rendered, "fetch --candidate-limit 15") {
+		t.Fatalf("commandInputInlineView() = %q; want original input text", rendered)
 	}
 }
 

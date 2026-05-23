@@ -40,6 +40,21 @@ type operatorCommandCompletion struct {
 	Value string
 }
 
+type fetchCommandHintDefaults struct {
+	CandidateLimitPerSource string
+	AcceptedLimit           string
+}
+
+var defaultFetchCommandHintValues = newFetchCommandHintDefaults()
+
+func newFetchCommandHintDefaults() fetchCommandHintDefaults {
+	fetch := config.DefaultAppConfig().Fetch
+	return fetchCommandHintDefaults{
+		CandidateLimitPerSource: strconv.Itoa(fetch.CandidateLimitPerSource),
+		AcceptedLimit:           strconv.Itoa(fetch.AcceptedLimit),
+	}
+}
+
 var operatorCommandSpecs = []operatorCommandSpec{
 	{
 		Name:    "debug",
@@ -572,9 +587,9 @@ func fetchCommandValueHint(rest string) string {
 	}
 	switch flag {
 	case "--candidate-limit":
-		return commandValueHintText(rest, strconv.Itoa(config.DefaultAppConfig().Fetch.CandidateLimitPerSource))
+		return commandValueHintText(rest, defaultFetchCommandHintValues.CandidateLimitPerSource)
 	case "--accepted-limit":
-		return commandValueHintText(rest, strconv.Itoa(config.DefaultAppConfig().Fetch.AcceptedLimit))
+		return commandValueHintText(rest, defaultFetchCommandHintValues.AcceptedLimit)
 	default:
 		return ""
 	}
