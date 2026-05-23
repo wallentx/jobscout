@@ -196,21 +196,32 @@ jobs:
             | tr -d '\r'
           )"
 
-          label="$(
+          first_label_line="$(
             printf '%s\n' "$raw_label" \
-              | tr '[:upper:]' '[:lower:]' \
-              | tr -cs '[:alnum:]_-' '\n' \
-              | awk '/^(added|changed|fixed|dependencies)$/ { print; exit }'
+              | awk 'NF { print; exit }'
           )"
 
-          case "$label" in
-            added|changed|fixed|dependencies)
-              ;;
-            *)
-              echo "Copilot returned invalid label: ${raw_label:-<empty>}" >&2
-              exit 1
-              ;;
-          esac
+          label_tokens="$(
+            printf '%s\n' "$first_label_line" \
+              | tr '[:upper:]' '[:lower:]' \
+              | tr -cs '[:alnum:]_-' '\n' \
+              | awk '/^(added|changed|fixed|dependencies)$/ { print }'
+          )"
+
+          label_count="$(
+            printf '%s\n' "$label_tokens" \
+              | awk 'NF { count++ } END { print count + 0 }'
+          )"
+
+          if [ "$label_count" -ne 1 ]; then
+            echo "Copilot returned invalid label: ${raw_label:-<empty>}" >&2
+            exit 1
+          fi
+
+          label="$(
+            printf '%s\n' "$label_tokens" \
+              | awk 'NF { print; exit }'
+          )"
 
           echo "label=$label" >> "$GITHUB_OUTPUT"
 
