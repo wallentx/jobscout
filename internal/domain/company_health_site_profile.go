@@ -199,6 +199,9 @@ func EnrichCompanyHealthContextFromSiteProfile(identity CompanyHealthContext, pr
 	if strings.TrimSpace(identity.Industry) == "" {
 		identity.Industry = strings.TrimSpace(profile.Industry)
 	}
+	if strings.TrimSpace(profile.Industry) != "" {
+		identity.Industries = appendUniqueNonEmptyStrings(identity.Industries, profile.Industry)
+	}
 	return identity
 }
 

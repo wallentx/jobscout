@@ -19,6 +19,8 @@ var (
 	evaluateCompanyHealthWithLLM       = llmpkg.EvaluateCompanyHealthWithLLM
 )
 
+const maxCompanyHealthLLMConcernStories = 3
+
 func LLMCompanyHealthEnabled(appCfg *config.AppConfig) bool {
 	return appCfg != nil && appCfg.LLM.Enabled && appCfg.LLM.CompanyHealth
 }
@@ -137,6 +139,12 @@ func ApplyOptionalLLMCompanyHealth(ctx context.Context, appCfg *config.AppConfig
 		logDebug("timing company=%q step=browser_employer_reviews duration=%s signals=%d", result.Company, time.Since(reviewStart).Round(time.Millisecond), len(result.EmployerReviews))
 	}
 
+	articleStart := time.Now()
+	attachConcernStoryArticles(ctx, result)
+	if len(result.ConcernStoryArticles) > 0 {
+		logDebug("timing company=%q step=browser_concern_articles duration=%s articles=%d", result.Company, time.Since(articleStart).Round(time.Millisecond), len(result.ConcernStoryArticles))
+	}
+
 	assessmentStart := time.Now()
 	logDebug("llm company health assessment start company=%q signals=%d rejected_evidence=%d", result.Company, len(result.SignalsUsed), len(result.RejectedEvidence))
 	var assessment *domain.LLMCompanyHealthAssessment
@@ -149,6 +157,7 @@ func ApplyOptionalLLMCompanyHealth(ctx context.Context, appCfg *config.AppConfig
 		logDebug("llm company health assessment failed company=%q duration=%s error=%v", result.Company, time.Since(assessmentStart).Round(time.Millisecond), err)
 		return
 	}
+	applyLLMCompanyHealthScoreModifier(result, assessment)
 	result.LLMAssessment = assessment
 	logDebug("timing company=%q step=llm_assessment duration=%s token_usage=%s", result.Company, time.Since(assessmentStart).Round(time.Millisecond), debugLLMHealthTokenUsage(assessment.TokenUsage))
 	logDebug(
@@ -161,6 +170,189 @@ func ApplyOptionalLLMCompanyHealth(ctx context.Context, appCfg *config.AppConfig
 		len(assessment.Recommendation),
 		time.Since(assessmentStart).Round(time.Millisecond),
 	)
+}
+
+func attachConcernStoryArticles(ctx context.Context, result *domain.CompanyHealthResult) {
+	if result == nil || len(result.ConcernStories) == 0 {
+		return
+	}
+	stories := selectConcernStoriesForLLM(result.ConcernStories, maxCompanyHealthLLMConcernStories)
+	if len(stories) == 0 {
+		return
+	}
+	articles := make([]domain.CompanyHealthConcernArticle, 0, len(stories))
+	for _, story := range stories {
+		if strings.TrimSpace(story.URL) == "" {
+			continue
+		}
+		text, err := fetchBrowserConcernStoryTextThrottled(ctx, result.Company, story.URL)
+		if err != nil {
+			logDebug("browser concern article fetch failed company=%q url=%q error=%v", result.Company, story.URL, err)
+			continue
+		}
+		text = strings.TrimSpace(text)
+		if text == "" {
+			continue
+		}
+		articles = append(articles, domain.CompanyHealthConcernArticle{
+			Source:  story.Source,
+			Title:   story.Title,
+			URL:     story.URL,
+			Date:    story.Date,
+			Concern: story.Concern,
+			Text:    text,
+		})
+	}
+	result.ConcernStoryArticles = articles
+}
+
+func selectConcernStoriesForLLM(stories []domain.CompanyHealthConcernStory, limit int) []domain.CompanyHealthConcernStory {
+	if limit <= 0 || len(stories) == 0 {
+		return nil
+	}
+	selected := make([]domain.CompanyHealthConcernStory, 0, limit)
+	seen := make(map[string]bool)
+	for _, story := range stories {
+		key := normalizedStoryURL(story.URL)
+		if key == "" || seen[key] || story.Date == nil {
+			continue
+		}
+		if time.Since(*story.Date) > 365*24*time.Hour || story.Date.After(time.Now().Add(24*time.Hour)) {
+			continue
+		}
+		seen[key] = true
+		selected = append(selected, story)
+		if len(selected) >= limit {
+			break
+		}
+	}
+	return selected
+}
+
+func fetchBrowserConcernStoryTextThrottled(ctx context.Context, company string, rawURL string) (string, error) {
+	var text string
+	err := runThrottledHealthStep(ctx, companyHealthBrowserSem, "browser concern article", company, func() error {
+		var fetchErr error
+		if session := browserSessionFromContext(ctx); session != nil {
+			text, fetchErr = session.FetchArticleText(ctx, rawURL)
+		} else {
+			text, fetchErr = fetcher.FetchBrowserArticleText(ctx, rawURL)
+		}
+		return fetchErr
+	})
+	return text, err
+}
+
+func applyLLMCompanyHealthScoreModifier(result *domain.CompanyHealthResult, assessment *domain.LLMCompanyHealthAssessment) {
+	if result == nil || assessment == nil {
+		return
+	}
+	allowed := relatedArticleURLSet(result.ConcernStoryArticles, assessment.ArticleReviews)
+	if len(allowed) == 0 {
+		assessment.StoryInsight = ""
+		assessment.ScoreModifier = nil
+		return
+	}
+	if strings.TrimSpace(assessment.StoryInsight) == "" && assessment.ScoreModifier == nil {
+		return
+	}
+	if assessment.ScoreModifier == nil || *assessment.ScoreModifier == 0 {
+		return
+	}
+	if !modifierUsesAllowedSource(assessment.ScoreModifierSources, allowed) {
+		assessment.ScoreModifier = nil
+		return
+	}
+	if !novelModifierFactValid(assessment.ScoreModifierNovelFact, result) {
+		assessment.ScoreModifier = nil
+		return
+	}
+
+	delta := *assessment.ScoreModifier
+	if delta > 10 {
+		delta = 10
+	}
+	if delta < -10 {
+		delta = -10
+	}
+	oldScore := result.Score
+	newScore := clampHealthScoreForRisk(oldScore+delta, result.EmploymentRisk)
+	actualDelta := newScore - oldScore
+	if actualDelta == 0 {
+		assessment.ScoreModifier = nil
+		return
+	}
+	result.Score = newScore
+	assessment.ScoreModifier = &actualDelta
+	reason := strings.TrimSpace(assessment.ScoreModifierReason)
+	if reason == "" {
+		reason = strings.TrimSpace(assessment.ScoreModifierNovelFact)
+	}
+	result.Notes = append(result.Notes, fmt.Sprintf("LLM article review adjusted score %+d: %s", actualDelta, reason))
+}
+
+func relatedArticleURLSet(articles []domain.CompanyHealthConcernArticle, reviews []domain.LLMCompanyHealthArticleReview) map[string]bool {
+	articleURLs := make(map[string]bool, len(articles))
+	for _, article := range articles {
+		if key := normalizedStoryURL(article.URL); key != "" {
+			articleURLs[key] = true
+		}
+	}
+	related := make(map[string]bool)
+	for _, review := range reviews {
+		key := normalizedStoryURL(review.URL)
+		if key == "" || !review.Related || !articleURLs[key] {
+			continue
+		}
+		related[key] = true
+	}
+	return related
+}
+
+func modifierUsesAllowedSource(sources []string, allowed map[string]bool) bool {
+	for _, source := range sources {
+		if allowed[normalizedStoryURL(source)] {
+			return true
+		}
+	}
+	return false
+}
+
+func novelModifierFactValid(fact string, result *domain.CompanyHealthResult) bool {
+	fact = strings.TrimSpace(fact)
+	if len(fact) < 20 {
+		return false
+	}
+	foldedFact := strings.ToLower(fact)
+	for _, story := range result.ConcernStories {
+		title := strings.ToLower(strings.TrimSpace(story.Title))
+		if title != "" && (foldedFact == title || strings.Contains(title, foldedFact)) {
+			return false
+		}
+	}
+	return true
+}
+
+func clampHealthScoreForRisk(score int, risk *domain.EmploymentRisk) int {
+	if risk != nil {
+		switch {
+		case risk.Score >= 75 && score > 40:
+			score = 40
+		case risk.Score >= 50 && score > 55:
+			score = 55
+		}
+	}
+	if score < 0 {
+		return 0
+	}
+	if score > 100 {
+		return 100
+	}
+	return score
+}
+
+func normalizedStoryURL(rawURL string) string {
+	return strings.TrimRight(strings.ToLower(strings.TrimSpace(rawURL)), "/")
 }
 
 func shouldSkipEmployerReviewLookup(result *domain.CompanyHealthResult) bool {

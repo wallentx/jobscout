@@ -80,6 +80,21 @@ func TestExtractBuiltInJobsFromListingParsesExpandedCards(t *testing.T) {
 	if first.CompanyIdentity == nil || first.CompanyIdentity.Industry == nil || first.CompanyIdentity.Industry.URL != "https://builtin.com/company/cadence-care" {
 		t.Fatalf("jobs[0].CompanyIdentity.Industry = %#v; want Built In company profile evidence URL", first.CompanyIdentity)
 	}
+	if first.Metadata == nil || first.Metadata.Source == nil {
+		t.Fatalf("jobs[0].Metadata = %#v; want Built In source metadata", first.Metadata)
+	}
+	if got := strings.Join(first.Metadata.Source.Industries, ","); got != "Artificial Intelligence,Healthtech,Machine Learning,Software,Telehealth" {
+		t.Fatalf("jobs[0].Metadata.Source.Industries = %#v; want full Built In industry list", first.Metadata.Source.Industries)
+	}
+	if got := strings.Join(first.Metadata.Source.Skills, ","); got != "AWS,Kubernetes,Terraform" {
+		t.Fatalf("jobs[0].Metadata.Source.Skills = %#v; want structured skills", first.Metadata.Source.Skills)
+	}
+	if got := first.Metadata.Source.CompanyProfileURL; got != "https://builtin.com/company/cadence-care" {
+		t.Fatalf("jobs[0].Metadata.Source.CompanyProfileURL = %q; want Built In profile URL", got)
+	}
+	if got := strings.Join(first.Metadata.Source.Locations, ","); got != "United States" {
+		t.Fatalf("jobs[0].Metadata.Source.Locations = %#v; want United States", first.Metadata.Source.Locations)
+	}
 	if !strings.Contains(first.Description, "Top skills: AWS, Kubernetes, Terraform") {
 		t.Fatalf("jobs[0].Description = %q; want top skills included", first.Description)
 	}

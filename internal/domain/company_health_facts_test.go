@@ -3,7 +3,12 @@ package domain
 import (
 	"strings"
 	"testing"
+	"time"
 )
+
+func intPtr(value int) *int {
+	return &value
+}
 
 func TestObserveFoundedYearMarksConflict(t *testing.T) {
 	result := &CompanyHealthResult{}
@@ -54,28 +59,6 @@ func TestFinalizeCompanyHealthAssessmentsMarksGap(t *testing.T) {
 		if assessment == nil || assessment.Status != fieldStatusGap {
 			t.Fatalf("%s assessment = %#v; want gap", field, assessment)
 		}
-	}
-}
-
-func TestHealthEvidenceRejectsCircleGamingFalsePositive(t *testing.T) {
-	identity := CompanyHealthContext{
-		Company:  "Circle",
-		Website:  "https://www.circle.com",
-		Summary:  "Circle provides financial technology for stablecoin payments.",
-		Industry: "Financial Technology",
-	}
-
-	ok, reason := healthEvidenceMatchesCompanyContext(
-		"Full Circle developer hit by layoffs at game publisher",
-		"https://www.gamesindustry.biz/full-circle-layoffs",
-		identity,
-	)
-
-	if ok {
-		t.Fatal("healthEvidenceMatchesCompanyContext() accepted gaming evidence for Circle fintech")
-	}
-	if reason == "" {
-		t.Fatal("healthEvidenceMatchesCompanyContext() reason is empty")
 	}
 }
 
@@ -244,9 +227,83 @@ func TestCompanyHealthContextDomainAcceptsBareDomain(t *testing.T) {
 	}
 }
 
-func TestGoogleNewsSentimentForContextSearchesAliases(t *testing.T) {
+func TestCompanyHealthContextForJobUsesOpportunisticMetadata(t *testing.T) {
+	job := Job{
+		Company:         "Circle",
+		CompanyWebsite:  "https://www.circle.com",
+		CompanySummary:  "Circle builds stablecoin payment infrastructure.",
+		CompanyIndustry: "Blockchain",
+		Metadata: &JobMetadata{
+			Source: &JobSourceMetadata{
+				Industries: []string{"Blockchain", "Fintech", "Payments", "Cryptocurrency"},
+			},
+			Company: &CompanyMetadata{
+				Industries:         []string{"Financial Services", "Cryptocurrency"},
+				EstimatedEmployees: intPtr(1200),
+				FoundedYear:        intPtr(2013),
+				Ticker:             "CRCL",
+			},
+		},
+	}
+
+	identity := CompanyHealthContextForJob(job)
+
+	if identity.Company != "Circle" || identity.Website != "https://www.circle.com" {
+		t.Fatalf("CompanyHealthContextForJob() = %#v; want job identity", identity)
+	}
+	if got := strings.Join(identity.Industries, ","); got != "Blockchain,Fintech,Payments,Cryptocurrency,Financial Services" {
+		t.Fatalf("identity.Industries = %#v; want combined unique industries", identity.Industries)
+	}
+	if identity.Ticker != "CRCL" {
+		t.Fatalf("identity.Ticker = %q; want CRCL", identity.Ticker)
+	}
+	if identity.EstimatedEmployees == nil || *identity.EstimatedEmployees != 1200 {
+		t.Fatalf("identity.EstimatedEmployees = %#v; want 1200", identity.EstimatedEmployees)
+	}
+	if identity.FoundedYear == nil || *identity.FoundedYear != 2013 {
+		t.Fatalf("identity.FoundedYear = %#v; want 2013", identity.FoundedYear)
+	}
+}
+
+func TestLayoffQueriesUseDomainAndIndustryContext(t *testing.T) {
 	identity := CompanyHealthContext{
-		Company: "Acme",
+		Company:    "Acme",
+		Aliases:    []string{"Acme Payments Group"},
+		Website:    "https://www.acme.example",
+		Industry:   "Payments",
+		Industries: []string{"Fintech", "Risk Management", "Banking"},
+	}
+
+	queries := companyHealthLayoffQueries(identity)
+
+	if len(queries) < 2 {
+		t.Fatalf("companyHealthLayoffQueries() = %#v; want primary company and alias queries", queries)
+	}
+	if queries[0] != `"Acme" acme.example payments fintech risk layoffs` {
+		t.Fatalf("queries[0] = %q; want domain and useful industry terms", queries[0])
+	}
+	if queries[1] != `"Acme Payments Group" acme.example payments fintech risk layoffs` {
+		t.Fatalf("queries[1] = %q; want alias query with same context", queries[1])
+	}
+}
+
+func TestGoogleNewsRSSQueryQuotesBareMultiWordCompanyNames(t *testing.T) {
+	if got, want := googleNewsRSSQuery("Acme Cloud"), `"Acme Cloud"`; got != want {
+		t.Fatalf("googleNewsRSSQuery() = %q; want %q", got, want)
+	}
+	if got, want := googleNewsRSSQuery(`"Acme Cloud" acme.example layoffs`), `"Acme Cloud" acme.example layoffs`; got != want {
+		t.Fatalf("googleNewsRSSQuery() = %q; want explicit query unchanged", got)
+	}
+	if got, want := googleNewsRSSQuery("site:acme.example layoffs"), "site:acme.example layoffs"; got != want {
+		t.Fatalf("googleNewsRSSQuery() = %q; want operator query unchanged", got)
+	}
+}
+
+func TestGoogleNewsSentimentForContextSearchesAliasesWithContext(t *testing.T) {
+	identity := CompanyHealthContext{
+		Company:  "Acme",
+		Website:  "https://www.acme.example",
+		Industry: "Cloud Infrastructure",
 		Aliases: []string{
 			"Acme Cloud",
 		},
@@ -255,11 +312,11 @@ func TestGoogleNewsSentimentForContextSearchesAliases(t *testing.T) {
 	fetch := func(query string) ([]RSSItem, error) {
 		queries = append(queries, query)
 		switch query {
-		case "Acme":
+		case `"Acme" acme.example cloud infrastructure`:
 			return []RSSItem{
 				{Title: "Generic cloud market update", Link: "https://news.google.com/rss/articles/generic"},
 			}, nil
-		case "Acme Cloud":
+		case `"Acme Cloud" acme.example cloud infrastructure`:
 			return []RSSItem{
 				{Title: "Acme Cloud announces expansion and new hiring plans", Link: "https://news.example/acme-cloud-expansion"},
 			}, nil
@@ -272,8 +329,8 @@ func TestGoogleNewsSentimentForContextSearchesAliases(t *testing.T) {
 	if err != nil {
 		t.Fatalf("googleNewsSentimentForContextWithFetcher() error = %v", err)
 	}
-	if strings.Join(queries, "\x00") != "Acme\x00Acme Cloud" {
-		t.Fatalf("queries = %#v, want primary company and alias", queries)
+	if strings.Join(queries, "\x00") != `"Acme" acme.example cloud infrastructure`+"\x00"+`"Acme Cloud" acme.example cloud infrastructure` {
+		t.Fatalf("queries = %#v, want primary company and alias with domain and industry context", queries)
 	}
 	if strings.Join(titles, "\x00") != "Acme Cloud announces expansion and new hiring plans" {
 		t.Fatalf("titles = %#v, want alias-matched title", titles)
@@ -283,22 +340,63 @@ func TestGoogleNewsSentimentForContextSearchesAliases(t *testing.T) {
 	}
 }
 
+func TestGoogleNewsSentimentCapturesRecentConcernStories(t *testing.T) {
+	pubDate := time.Now().AddDate(0, -2, 0).Format(time.RFC1123Z)
+	identity := CompanyHealthContext{
+		Company:  "Acme",
+		Website:  "https://acme.example",
+		Industry: "security software",
+	}
+	fetch := func(query string) ([]RSSItem, error) {
+		return []RSSItem{
+			{
+				Title:   "Acme security software faces regulatory investigation",
+				Link:    "https://news.example/acme-investigation",
+				PubDate: pubDate,
+			},
+			{
+				Title:   "Acme security software opens new office",
+				Link:    "https://news.example/acme-office",
+				PubDate: pubDate,
+			},
+		}, nil
+	}
+
+	result, err := googleNewsSentimentDetailsForContextWithFetcher(identity, fetch)
+	if err != nil {
+		t.Fatalf("googleNewsSentimentDetailsForContextWithFetcher() error = %v", err)
+	}
+	if len(result.ConcernStories) != 1 {
+		t.Fatalf("ConcernStories = %#v; want one high-concern story", result.ConcernStories)
+	}
+	story := result.ConcernStories[0]
+	if story.Source != "google_news_rss" || story.URL != "https://news.example/acme-investigation" {
+		t.Fatalf("ConcernStories[0] = %#v; want Google News investigation story", story)
+	}
+	if story.Date == nil {
+		t.Fatalf("ConcernStories[0].Date = nil; want parsed pubDate")
+	}
+	if story.Concern == "" {
+		t.Fatalf("ConcernStories[0].Concern = empty; want concern reason")
+	}
+}
+
 func TestFilterLayoffSignalsForContextReturnsRejectedEvidence(t *testing.T) {
 	identity := CompanyHealthContext{
-		Company:  "Circle",
-		Website:  "https://www.circle.com",
-		Summary:  "Circle provides financial technology for stablecoin payments.",
+		Company:  "Acme",
+		Website:  "https://www.acme.example",
+		Summary:  "Acme provides financial technology products.",
 		Industry: "Financial Technology",
 	}
 	signals := []LayoffSignal{
-		{Title: "Circle cuts 100 jobs", URL: "https://www.circle.com/news/jobs"},
-		{Title: "Full Circle studio hit by layoffs", URL: "https://www.gamesindustry.biz/full-circle-layoffs"},
+		{Title: "Acme cuts 100 jobs", URL: "https://www.acme.example/news/jobs"},
+		{Title: "OtherCo cuts 100 jobs", URL: "https://news.example/otherco-layoffs"},
 	}
 
 	filtered, rejected := filterLayoffSignalsForContext(signals, identity)
 
-	if len(filtered) != 1 || filtered[0].Title != "Circle cuts 100 jobs" {
-		t.Fatalf("filtered signals = %#v, want only Circle domain signal", filtered)
+	if len(filtered) != 1 || filtered[0].Title != "Acme cuts 100 jobs" {
+		t.Fatalf("filtered signals = %#v, want only Acme signal", filtered)
 	}
 	if len(rejected) != 1 {
 		t.Fatalf("rejected evidence = %#v, want one rejected signal", rejected)

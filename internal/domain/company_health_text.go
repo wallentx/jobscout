@@ -105,12 +105,3 @@ func wordHitCount(text string, keywords []string) int {
 	}
 	return count
 }
-
-func containsAny(text string, needles []string) bool {
-	for _, needle := range needles {
-		if strings.Contains(text, needle) {
-			return true
-		}
-	}
-	return false
-}

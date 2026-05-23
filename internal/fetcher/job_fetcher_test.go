@@ -1506,6 +1506,13 @@ func TestEnrichJobFromHTMLExtractsStructuredJobPosting(t *testing.T) {
 				"unitText":"YEAR"
 			}
 		},
+		"datePosted":"2026-05-01",
+		"validThrough":"2026-06-01T00:00:00Z",
+		"employmentType":["FULL_TIME","REMOTE"],
+		"jobLocation":[
+			{"@type":"Place","address":{"addressLocality":"Austin","addressRegion":"TX","addressCountry":"US"}},
+			{"@type":"Place","address":{"addressLocality":"Remote","addressCountry":"US"}}
+		],
 		"industry":["Database","Cloud"]
 	}</script>`
 
@@ -1531,6 +1538,24 @@ func TestEnrichJobFromHTMLExtractsStructuredJobPosting(t *testing.T) {
 	}
 	if job.CompanyIdentity == nil || job.CompanyIdentity.Website == nil || job.CompanyIdentity.Website.Source != "structured_job_posting" {
 		t.Fatalf("CompanyIdentity.Website = %#v; want structured_job_posting evidence", job.CompanyIdentity)
+	}
+	if job.Metadata == nil || job.Metadata.Source == nil {
+		t.Fatalf("Metadata = %#v; want structured source metadata", job.Metadata)
+	}
+	if got := strings.Join(job.Metadata.Source.Industries, ","); got != "Database,Cloud" {
+		t.Fatalf("Metadata.Source.Industries = %#v; want Database,Cloud", job.Metadata.Source.Industries)
+	}
+	if job.Metadata.Source.DatePosted != "2026-05-01" {
+		t.Fatalf("Metadata.Source.DatePosted = %q; want 2026-05-01", job.Metadata.Source.DatePosted)
+	}
+	if job.Metadata.Source.ValidThrough != "2026-06-01T00:00:00Z" {
+		t.Fatalf("Metadata.Source.ValidThrough = %q; want valid-through timestamp", job.Metadata.Source.ValidThrough)
+	}
+	if got := strings.Join(job.Metadata.Source.EmploymentTypes, ","); got != "FULL_TIME,REMOTE" {
+		t.Fatalf("Metadata.Source.EmploymentTypes = %#v; want FULL_TIME,REMOTE", job.Metadata.Source.EmploymentTypes)
+	}
+	if got := strings.Join(job.Metadata.Source.Locations, "|"); got != "Austin, TX, US|Remote, US" {
+		t.Fatalf("Metadata.Source.Locations = %#v; want structured locations", job.Metadata.Source.Locations)
 	}
 }
 
@@ -1562,6 +1587,9 @@ func TestEnrichJobFromHTMLExtractsBuiltInHowToApplyWebsite(t *testing.T) {
 	}
 	if job.CompanyIdentity == nil || job.CompanyIdentity.Website == nil || job.CompanyIdentity.Website.Source != "builtin_how_to_apply" {
 		t.Fatalf("CompanyIdentity.Website = %#v; want builtin_how_to_apply evidence", job.CompanyIdentity)
+	}
+	if job.Metadata == nil || job.Metadata.Source == nil || job.Metadata.Source.ExternalApplyURL != "https://www.mongodb.com/careers/job/?gh_jid=7727920&gh_src=abc" {
+		t.Fatalf("Metadata.Source = %#v; want Built In external apply URL", job.Metadata)
 	}
 }
 

@@ -37,6 +37,9 @@ func enrichJobFromCompanyProfileHTML(job *Job, rawHTML string, profileURL string
 	if job == nil || strings.TrimSpace(rawHTML) == "" {
 		return
 	}
+	if source := job.EnsureSourceMetadata(); strings.TrimSpace(profileURL) != "" {
+		source.CompanyProfileURL = strings.TrimSpace(profileURL)
+	}
 	if website := extractCompanyWebsiteFromHTML(rawHTML, profileURL, job.Company); website != "" {
 		job.CompanyWebsite = website
 		setJobIdentityEvidence(job, "website", website, "company_profile", profileURL, "high", false, "Website extracted from source company profile.")
@@ -48,6 +51,43 @@ func enrichJobFromCompanyProfileHTML(job *Job, rawHTML string, profileURL string
 	if industry := extractCompanyProfileIndustry(rawHTML); industry != "" {
 		job.CompanyIndustry = industry
 		setJobIdentityEvidence(job, "industry", industry, "company_profile", profileURL, "high", false, "Industry extracted from source company profile.")
+	}
+	applyCompanyProfileMetadata(job, rawHTML, profileURL)
+}
+
+func applyCompanyProfileMetadata(job *Job, rawHTML string, profileURL string) {
+	if job == nil {
+		return
+	}
+	text := normalizeHTMLText(rawHTML)
+	evidence := companyPublicProfileEvidenceFromText("builtin", profileURL, "", text)
+	if !companyPublicProfileEvidenceUseful(evidence) && strings.TrimSpace(job.CompanyIndustry) == "" {
+		return
+	}
+	companyMetadata := job.EnsureCompanyMetadata()
+	if strings.TrimSpace(evidence.Industry) != "" {
+		companyMetadata.Industries = appendUniqueString(companyMetadata.Industries, evidence.Industry)
+	}
+	if strings.TrimSpace(job.CompanyIndustry) != "" {
+		companyMetadata.Industries = appendUniqueString(companyMetadata.Industries, job.CompanyIndustry)
+	}
+	if strings.TrimSpace(evidence.EmployeeRange) != "" {
+		companyMetadata.EmployeeRange = evidence.EmployeeRange
+	}
+	if evidence.EstimatedEmployees != nil {
+		companyMetadata.EstimatedEmployees = evidence.EstimatedEmployees
+	}
+	if evidence.FoundedYear != nil {
+		companyMetadata.FoundedYear = evidence.FoundedYear
+	}
+	if strings.TrimSpace(evidence.Headquarters) != "" {
+		companyMetadata.Headquarters = evidence.Headquarters
+	}
+	if strings.TrimSpace(evidence.Revenue) != "" {
+		companyMetadata.Revenue = evidence.Revenue
+	}
+	if strings.TrimSpace(evidence.Industry) != "" {
+		job.EnsureSourceMetadata().Industries = appendUniqueString(job.EnsureSourceMetadata().Industries, evidence.Industry)
 	}
 }
 

@@ -6,11 +6,31 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wallentx/jobscout/internal/domain"
 	healthpkg "github.com/wallentx/jobscout/internal/health"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
+
+func TestFormatEmployerReviewSummaryShowsIndeedIndicator(t *testing.T) {
+	got := formatEmployerReviewSummary(domain.EmployerReviewSignal{
+		Source: "indeed",
+		Flags:  []string{"long hours", "low pay"},
+	})
+	if got != "Indeed | - | long hours, low pay" {
+		t.Fatalf("formatEmployerReviewSummary() = %q; want Indeed negative indicator with findings", got)
+	}
+
+	withRating := formatEmployerReviewSummary(domain.EmployerReviewSignal{
+		Source: "indeed",
+		Rating: "3.5/5",
+		Flags:  []string{"long hours"},
+	})
+	if withRating != "Indeed | 3.5/5 | long hours" {
+		t.Fatalf("formatEmployerReviewSummary() = %q; want numeric rating before flags", withRating)
+	}
+}
 
 func TestLoadCompanyHealthDoesNotMutateCacheInCmd(t *testing.T) {
 	prevHealthStore := runtimeHealthStore

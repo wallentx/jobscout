@@ -151,6 +151,12 @@ func (s *SQLiteStore) ensureMigrations() error {
 				CREATE INDEX IF NOT EXISTS idx_company_identity_keys_type_value ON company_identity_keys(key_type, key_value);
 			`,
 		},
+		{
+			version: 6,
+			sql: `
+				ALTER TABLE jobs ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '';
+			`,
+		},
 	}
 
 	for _, migration := range migrations {
@@ -199,6 +205,7 @@ func (s *SQLiteStore) LoadJobs() ([]Job, error) {
 			company_summary,
 			company_industry,
 			company_identity_json,
+			metadata_json,
 			title,
 			remote,
 			compensation,
@@ -223,12 +230,14 @@ func (s *SQLiteStore) LoadJobs() ([]Job, error) {
 		var job Job
 		var whyMatchesJSON string
 		var companyIdentityJSON string
+		var metadataJSON string
 		if err := rows.Scan(
 			&job.Company,
 			&job.CompanyWebsite,
 			&job.CompanySummary,
 			&job.CompanyIndustry,
 			&companyIdentityJSON,
+			&metadataJSON,
 			&job.Title,
 			&job.Remote,
 			&job.Compensation,
@@ -248,6 +257,12 @@ func (s *SQLiteStore) LoadJobs() ([]Job, error) {
 			if err := json.Unmarshal([]byte(companyIdentityJSON), &job.CompanyIdentity); err != nil {
 				job.CompanyIdentity = nil
 			}
+		}
+		if strings.TrimSpace(metadataJSON) != "" {
+			if err := json.Unmarshal([]byte(metadataJSON), &job.Metadata); err != nil {
+				job.Metadata = nil
+			}
+			job.Metadata = domain.NormalizeJobMetadata(job.Metadata)
 		}
 		job.DateDiscovered = formatUnixDate(job.DateAdded)
 		jobs = append(jobs, job)
@@ -278,6 +293,7 @@ func (s *SQLiteStore) SaveJobs(jobs []Job) error {
 			company_summary,
 			company_industry,
 			company_identity_json,
+			metadata_json,
 			title,
 			remote,
 			compensation,
@@ -287,7 +303,7 @@ func (s *SQLiteStore) SaveJobs(jobs []Job) error {
 			status,
 			date_added,
 			description
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		_ = tx.Rollback()
@@ -312,6 +328,15 @@ func (s *SQLiteStore) SaveJobs(jobs []Job) error {
 			}
 			companyIdentityJSON = string(identityBytes)
 		}
+		metadataJSON := ""
+		if metadata := domain.NormalizeJobMetadata(domain.CloneJobMetadata(job.Metadata)); metadata != nil {
+			metadataBytes, err := json.Marshal(metadata)
+			if err != nil {
+				_ = tx.Rollback()
+				return fmt.Errorf("marshal metadata for %s - %s: %w", job.Company, job.Title, err)
+			}
+			metadataJSON = string(metadataBytes)
+		}
 
 		dateAdded := job.DateAdded
 		if dateAdded <= 0 {
@@ -324,6 +349,7 @@ func (s *SQLiteStore) SaveJobs(jobs []Job) error {
 			job.CompanySummary,
 			job.CompanyIndustry,
 			companyIdentityJSON,
+			metadataJSON,
 			job.Title,
 			job.Remote,
 			job.Compensation,

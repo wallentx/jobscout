@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/anthropic"
@@ -17,6 +18,7 @@ import (
 )
 
 const maxCompanyHealthRejectedEvidenceInPrompt = 12
+const maxCompanyHealthArticleTextChars = 6000
 
 // LLMEvaluationResult holds the parsed JSON output from the LLM
 type LLMEvaluationResult struct {
@@ -79,8 +81,18 @@ type companyHealthLLMInput struct {
 	LayoffHeadlines      []string                          `json:"layoff_headlines,omitempty"`
 	HackerNewsHighlights []string                          `json:"hacker_news_highlights,omitempty"`
 	EmployerReviews      []string                          `json:"employer_reviews,omitempty"`
+	ArticleContext       []companyHealthArticleContext     `json:"article_context,omitempty"`
 	RejectedEvidence     []string                          `json:"rejected_evidence,omitempty"`
 	RejectedOmitted      []rejectedEvidenceOmissionSummary `json:"rejected_evidence_omitted_summary,omitempty"`
+}
+
+type companyHealthArticleContext struct {
+	Source  string `json:"source"`
+	Title   string `json:"title"`
+	URL     string `json:"url,omitempty"`
+	Date    string `json:"date,omitempty"`
+	Concern string `json:"concern,omitempty"`
+	Text    string `json:"text"`
 }
 
 type rejectedEvidenceOmissionSummary struct {
@@ -549,6 +561,9 @@ func buildCompanyHealthLLMPromptWithStats(result *CompanyHealthResult) (string, 
 		for _, signal := range result.EmployerReviews {
 			input.EmployerReviews = append(input.EmployerReviews, formatEmployerReviewSignal(signal))
 		}
+		for _, article := range result.ConcernStoryArticles {
+			input.ArticleContext = append(input.ArticleContext, formatCompanyHealthArticleContext(article))
+		}
 		input.RejectedEvidence, input.RejectedOmitted, stats = rejectedHealthEvidenceForPrompt(result.RejectedEvidence)
 	}
 
@@ -561,6 +576,9 @@ func buildCompanyHealthLLMPromptWithStats(result *CompanyHealthResult) (string, 
 	prompt.WriteString("Review this deterministic company health assessment for a job seeker. ")
 	prompt.WriteString("Do not invent facts. Use only the supplied signals. ")
 	prompt.WriteString("Do not rely on rejected evidence; it is included only to explain disambiguation decisions. ")
+	prompt.WriteString("If article_context is present, decide whether each article is actually related to the target company before using it. ")
+	prompt.WriteString("Use company identity, website/domain, aliases, industry, and article body text for that decision. ")
+	prompt.WriteString("Only provide a score modifier when related article text contains concrete novel information not already represented by the score, flags, notes, headlines, or employer reviews. ")
 	prompt.WriteString("Explain whether this company looks worth further investigation as a potential employer.\n\n")
 	prompt.WriteString("Assessment JSON:\n")
 	prompt.Write(data)
@@ -571,9 +589,38 @@ func buildCompanyHealthLLMPromptWithStats(result *CompanyHealthResult) (string, 
 	prompt.WriteString(`  "risk_level": string,` + "\n")
 	prompt.WriteString(`  "positive_signals": [string],` + "\n")
 	prompt.WriteString(`  "concerns": [string],` + "\n")
-	prompt.WriteString(`  "follow_up_questions": [string]` + "\n")
+	prompt.WriteString(`  "follow_up_questions": [string],` + "\n")
+	prompt.WriteString(`  "article_reviews": [{"url": string, "source": string, "related": boolean, "relevance_reason": string, "novel_fact": string}],` + "\n")
+	prompt.WriteString(`  "story_insight": string,` + "\n")
+	prompt.WriteString(`  "score_modifier": number,` + "\n")
+	prompt.WriteString(`  "score_modifier_reason": string,` + "\n")
+	prompt.WriteString(`  "score_modifier_novel_fact": string,` + "\n")
+	prompt.WriteString(`  "score_modifier_sources": [string]` + "\n")
 	prompt.WriteString("}\n")
 	return prompt.String(), stats
+}
+
+func formatCompanyHealthArticleContext(article CompanyHealthConcernArticle) companyHealthArticleContext {
+	date := ""
+	if article.Date != nil {
+		date = article.Date.Format(time.RFC3339)
+	}
+	return companyHealthArticleContext{
+		Source:  strings.TrimSpace(article.Source),
+		Title:   strings.TrimSpace(article.Title),
+		URL:     strings.TrimSpace(article.URL),
+		Date:    date,
+		Concern: strings.TrimSpace(article.Concern),
+		Text:    truncateCompanyHealthArticleText(article.Text),
+	}
+}
+
+func truncateCompanyHealthArticleText(text string) string {
+	text = strings.TrimSpace(text)
+	if len(text) <= maxCompanyHealthArticleTextChars {
+		return text
+	}
+	return strings.TrimSpace(text[:maxCompanyHealthArticleTextChars])
 }
 
 func rejectedHealthEvidenceForPrompt(evidence []CompanyHealthEvidence) ([]string, []rejectedEvidenceOmissionSummary, companyHealthPromptStats) {

@@ -126,6 +126,71 @@ func TestJobJSONAcceptsSimpleCompanyIdentityMap(t *testing.T) {
 	}
 }
 
+func TestJobJSONPreservesOpportunisticMetadata(t *testing.T) {
+	input := []byte(`{
+		"company": "Acme",
+		"title": "Staff Engineer",
+		"remote": "Remote",
+		"compensation": "$200,000",
+		"apply_url": "https://builtin.com/job/staff-engineer/123",
+		"metadata": {
+			"source": {
+				"posting_url": "https://builtin.com/job/staff-engineer/123",
+				"external_apply_url": "https://acme.example/careers/123",
+				"company_profile_url": "https://builtin.com/company/acme",
+				"date_posted": "2026-05-01",
+				"valid_through": "2026-06-01",
+				"employment_type": "FULL_TIME",
+				"locations": ["Austin, TX", "Remote"],
+				"industries": ["Fintech", "Payments"],
+				"skills": ["Go", "Kubernetes"]
+			},
+			"company": {
+				"industries": ["Fintech", "Payments"],
+				"employee_range": "501-1,000 employees",
+				"estimated_employees": 750,
+				"founded_year": 2018,
+				"headquarters": "Austin, TX",
+				"revenue": "$100M-$500M",
+				"ticker": "ACME",
+				"exchange": "NYSE",
+				"public": true
+			}
+		}
+	}`)
+
+	var job Job
+	if err := json.Unmarshal(input, &job); err != nil {
+		t.Fatalf("json.Unmarshal(Job) error = %v", err)
+	}
+	if job.Metadata == nil || job.Metadata.Source == nil || job.Metadata.Company == nil {
+		t.Fatalf("Job.Metadata = %#v; want source and company metadata", job.Metadata)
+	}
+	if got := job.Metadata.Source.ExternalApplyURL; got != "https://acme.example/careers/123" {
+		t.Fatalf("ExternalApplyURL = %q; want external apply URL", got)
+	}
+	if got := strings.Join(job.Metadata.Source.Skills, ","); got != "Go,Kubernetes" {
+		t.Fatalf("Source.Skills = %#v; want Go,Kubernetes", job.Metadata.Source.Skills)
+	}
+	if job.Metadata.Company.EstimatedEmployees == nil || *job.Metadata.Company.EstimatedEmployees != 750 {
+		t.Fatalf("EstimatedEmployees = %#v; want 750", job.Metadata.Company.EstimatedEmployees)
+	}
+	if job.Metadata.Company.Public == nil || !*job.Metadata.Company.Public {
+		t.Fatalf("Public = %#v; want true", job.Metadata.Company.Public)
+	}
+
+	encoded, err := json.Marshal(job)
+	if err != nil {
+		t.Fatalf("json.Marshal(Job) error = %v", err)
+	}
+	out := string(encoded)
+	for _, want := range []string{`"metadata"`, `"external_apply_url":"https://acme.example/careers/123"`, `"estimated_employees":750`, `"public":true`} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("json.Marshal(Job) = %s; want %s", out, want)
+		}
+	}
+}
+
 func TestLooksLikeCompanyWebsiteRejectsDeepLinkAndTrackingHosts(t *testing.T) {
 	tests := []string{
 		"https://sofi.app.link/open",

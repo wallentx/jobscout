@@ -30,11 +30,13 @@ func enrichJobFromBuiltInJobHTML(job *Job, rawHTML string, pageURL string) {
 	if strings.TrimSpace(job.Title) == "" {
 		job.Title = extractQuotedJSField(rawHTML, "title")
 	}
-	if !jobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
-		return
-	}
 	applyURL := extractQuotedJSField(rawHTML, "howToApply")
 	if applyURL == "" {
+		return
+	}
+	applyURL = strings.TrimSpace(html.UnescapeString(applyURL))
+	job.EnsureSourceMetadata().ExternalApplyURL = applyURL
+	if !jobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
 		return
 	}
 	website := normalizeCompanyWebsiteURL(applyURL)

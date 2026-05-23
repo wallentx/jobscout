@@ -21,14 +21,6 @@ func healthEvidenceMatchesCompanyContext(title string, evidenceURL string, ident
 	if !healthEvidenceMatchesCompanyName(title, names) && !healthEvidenceMatchesIdentityContext(evidenceText, identity) {
 		return false, "company name not present"
 	}
-
-	industry := strings.ToLower(identity.Industry)
-	if industryLooksFinancial(industry) && containsAny(evidenceText, []string{"skate", "game", "gaming", "gamesindustry", "shacknews", "developer full circle", "video game", "publisher"}) {
-		return false, "evidence industry conflicts with company industry"
-	}
-	if containsAny(industry, []string{"healthcare", "medical", "clinical"}) && containsAny(evidenceText, []string{"game", "gaming", "crypto", "banking"}) {
-		return false, "evidence industry conflicts with company industry"
-	}
 	return true, ""
 }
 
@@ -87,7 +79,8 @@ func companyHealthContextTerms(identity CompanyHealthContext) []string {
 
 	seen := make(map[string]bool)
 	var terms []string
-	for _, text := range []string{identity.Summary, identity.Industry} {
+	texts := append([]string{identity.Summary, identity.Industry}, identity.Industries...)
+	for _, text := range texts {
 		if strings.Contains(strings.ToLower(text), "san antonio") && !seen["san_antonio"] {
 			seen["san_antonio"] = true
 			terms = append(terms, "san_antonio")
@@ -174,10 +167,6 @@ func companyHealthContextNames(identity CompanyHealthContext) []string {
 		names = append(names, name)
 	}
 	return names
-}
-
-func industryLooksFinancial(industry string) bool {
-	return containsAny(industry, []string{"financ", "fintech", "payments", "banking", "crypto", "stablecoin"})
 }
 
 func rejectedHealthEvidence(value string, source string, evidenceURL string, reason string) CompanyHealthEvidence {

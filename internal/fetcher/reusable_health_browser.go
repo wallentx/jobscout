@@ -56,6 +56,24 @@ func (s *ReusableHealthBrowser) FetchEmployerReviewSignals(ctx context.Context, 
 	return discoverEmployerReviewSignals(ctx, browser, company), nil
 }
 
+func (s *ReusableHealthBrowser) FetchArticleText(ctx context.Context, rawURL string) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return "", nil
+	}
+	browser, err := s.getBrowser()
+	if err != nil {
+		return "", err
+	}
+	ctx, cancel := context.WithTimeout(ctx, companyProfileBrowserTimeout)
+	defer cancel()
+	text, _, err := extractBrowserPageContent(ctx, browser, rawURL)
+	return text, err
+}
+
 func (s *ReusableHealthBrowser) Close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -9,6 +9,7 @@ import (
 type BrowserSession interface {
 	FetchCompanySiteProfile(context.Context, domain.CompanyHealthContext) (*domain.CompanySiteProfile, error)
 	FetchEmployerReviewSignals(context.Context, string) ([]domain.EmployerReviewSignal, error)
+	FetchArticleText(context.Context, string) (string, error)
 }
 
 type browserSessionContextKey struct{}

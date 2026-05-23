@@ -9,6 +9,7 @@ For task-specific details, see:
 - [LLM Features](LLM_FEATURES.md)
 - [Benchmark Reports](BENCHMARKS.md)
 - [Demo Mode](DEMO_MODE.md)
+- [Data Inventory](DATA_INVENTORY.md)
 
 ## Design Goals
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tmc/langchaingo/llms"
 	"github.com/wallentx/jobscout/internal/domain"
@@ -370,6 +371,75 @@ func TestBuildCompanyHealthLLMPromptIncludesSignals(t *testing.T) {
 		if !strings.Contains(prompt, expected) {
 			t.Fatalf("buildCompanyHealthLLMPrompt() missing %q in:\n%s", expected, prompt)
 		}
+	}
+}
+
+func TestBuildCompanyHealthLLMPromptIncludesConcernArticleContext(t *testing.T) {
+	published := time.Date(2026, 2, 3, 0, 0, 0, 0, time.UTC)
+	result := &CompanyHealthResult{
+		Company: "Acme",
+		ConcernStoryArticles: []domain.CompanyHealthConcernArticle{
+			{
+				Source:  "google_news_rss",
+				Title:   "Acme faces regulatory investigation",
+				URL:     "https://news.example/acme-investigation",
+				Date:    &published,
+				Concern: "negative news keyword: investigation",
+				Text:    "Acme disclosed that a regulator opened an investigation into its hiring and safety practices.",
+			},
+		},
+	}
+
+	input := parseCompanyHealthPromptInput(t, buildCompanyHealthLLMPrompt(result))
+	if len(input.ArticleContext) != 1 {
+		t.Fatalf("len(input.ArticleContext) = %d, want 1", len(input.ArticleContext))
+	}
+	article := input.ArticleContext[0]
+	if article.URL != "https://news.example/acme-investigation" || article.Concern != "negative news keyword: investigation" {
+		t.Fatalf("ArticleContext[0] = %#v; want story metadata", article)
+	}
+	if !strings.Contains(article.Text, "regulator opened an investigation") {
+		t.Fatalf("ArticleContext[0].Text = %q; want fetched article text", article.Text)
+	}
+}
+
+func TestEvaluateCompanyHealthWithLLMParsesStoryInsightAndModifier(t *testing.T) {
+	llm := fakeContentLLM{content: `{
+		"summary": "Recent coverage adds one concrete risk.",
+		"recommendation": "Ask about the investigation before applying.",
+		"risk_level": "medium",
+		"positive_signals": [],
+		"concerns": ["Regulatory follow-up is warranted."],
+		"follow_up_questions": ["Has the matter been resolved?"],
+		"article_reviews": [{
+			"url": "https://news.example/acme-investigation",
+			"source": "google_news_rss",
+			"related": true,
+			"relevance_reason": "The page names Acme and its security software business.",
+			"novel_fact": "The article says a regulator opened an investigation into Acme's hiring and safety practices."
+		}],
+		"story_insight": "Recent coverage points to an unresolved regulatory issue that is broader than the headline alone.",
+		"score_modifier": -6,
+		"score_modifier_reason": "The page describes an active regulator investigation.",
+		"score_modifier_novel_fact": "The article says a regulator opened an investigation into Acme's hiring and safety practices.",
+		"score_modifier_sources": ["https://news.example/acme-investigation"]
+	}`}
+
+	assessment, err := evaluateCompanyHealthWithLLM(context.Background(), llm, &CompanyHealthResult{Company: "Acme"})
+	if err != nil {
+		t.Fatalf("evaluateCompanyHealthWithLLM() error = %v", err)
+	}
+	if assessment.StoryInsight == "" {
+		t.Fatalf("StoryInsight = empty; want article insight")
+	}
+	if assessment.ScoreModifier == nil || *assessment.ScoreModifier != -6 {
+		t.Fatalf("ScoreModifier = %#v; want -6", assessment.ScoreModifier)
+	}
+	if len(assessment.ArticleReviews) != 1 || !assessment.ArticleReviews[0].Related {
+		t.Fatalf("ArticleReviews = %#v; want one related review", assessment.ArticleReviews)
+	}
+	if assessment.ScoreModifierNovelFact == "" || len(assessment.ScoreModifierSources) != 1 {
+		t.Fatalf("assessment = %#v; want novel fact and source", assessment)
 	}
 }
 
