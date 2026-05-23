@@ -45,6 +45,10 @@ type acceptedEnrichmentStats struct {
 	companyAboutBlocked     int
 	companyAboutEmpty       int
 
+	browserCompanySearchTargets int
+	browserCompanySearchSuccess int
+	browserCompanySearchFailed  int
+
 	llmIdentityCalls int
 	llmInputTokens   int
 	llmOutputTokens  int
@@ -103,7 +107,7 @@ func (s *acceptedEnrichmentStats) log(duration string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	logDebug(
-		"identity enrichment accepted stats: jobs=%d description_checks=%d local_cache_hits=%d persistent_cache hits=%d misses=%d failed=%d writes=%d write_failed=%d apply_fetches=%d/%d failed=%d blocked=%d empty=%d source_profiles attempts=%d cache_hits=%d fetches=%d success=%d failed=%d blocked=%d skipped=%d company_homepage attempts=%d success=%d failed=%d blocked=%d empty=%d company_about attempts=%d success=%d failed=%d blocked=%d empty=%d llm_identity_calls=%d token_usage=%s same_company_copied_fields=%d duration=%s",
+		"identity enrichment accepted stats: jobs=%d description_checks=%d local_cache_hits=%d persistent_cache hits=%d misses=%d failed=%d writes=%d write_failed=%d apply_fetches=%d/%d failed=%d blocked=%d empty=%d source_profiles attempts=%d cache_hits=%d fetches=%d success=%d failed=%d blocked=%d skipped=%d company_homepage attempts=%d success=%d failed=%d blocked=%d empty=%d company_about attempts=%d success=%d failed=%d blocked=%d empty=%d browser_company_search targets=%d success=%d failed=%d llm_identity_calls=%d token_usage=%s same_company_copied_fields=%d duration=%s",
 		s.jobs,
 		s.descriptionChecks,
 		s.localCacheHits,
@@ -134,6 +138,9 @@ func (s *acceptedEnrichmentStats) log(duration string) {
 		s.companyAboutFailed,
 		s.companyAboutBlocked,
 		s.companyAboutEmpty,
+		s.browserCompanySearchTargets,
+		s.browserCompanySearchSuccess,
+		s.browserCompanySearchFailed,
 		s.llmIdentityCalls,
 		formatAcceptedEnrichmentTokenUsageLocked(s),
 		s.sameCompanyCopiedFields,

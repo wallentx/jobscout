@@ -3,6 +3,8 @@ package fetcher
 import (
 	"strconv"
 	"strings"
+
+	"github.com/wallentx/jobscout/internal/domain"
 )
 
 type jobIdentityDebugSnapshot struct {
@@ -95,10 +97,10 @@ func debugMissingIdentityFields(job Job) []string {
 	if jobCompanyMissingOrUnknown(job.Company) {
 		missing = append(missing, "company")
 	}
-	if jobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
+	if domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
 		missing = append(missing, "website")
 	}
-	if jobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) {
+	if domain.JobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) {
 		missing = append(missing, "summary")
 	}
 	if jobCompanyIndustryNeedsEnrichment(job) {
@@ -116,10 +118,10 @@ func logJobIdentityBatchSummary(stage string, jobs []Job, elapsed string) {
 		if jobCompanyMissingOrUnknown(job.Company) {
 			missingCompany++
 		}
-		if jobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
+		if domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
 			missingWebsite++
 		}
-		if jobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) {
+		if domain.JobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) {
 			missingSummary++
 		}
 		if jobCompanyIndustryNeedsEnrichment(job) {

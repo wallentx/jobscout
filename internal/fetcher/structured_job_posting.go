@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/wallentx/jobscout/internal/domain"
 )
 
 func enrichJobFromStructuredJobPosting(job *Job, rawHTML string, pageURL string) {
@@ -38,7 +40,7 @@ func enrichJobFromStructuredJobPosting(job *Job, rawHTML string, pageURL string)
 			job.Title = title
 		}
 
-		if jobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
+		if domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
 			if website := structuredHiringOrganizationWebsite(posting); website != "" && looksLikeCompanyWebsite(website, pageURL) {
 				website = normalizeCompanyWebsiteURL(website)
 				if candidateWebsiteMatchesCompany(website, job.Company) {
@@ -48,7 +50,7 @@ func enrichJobFromStructuredJobPosting(job *Job, rawHTML string, pageURL string)
 			}
 		}
 
-		if jobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) {
+		if domain.JobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) {
 			if description := structuredStringField(posting, "description"); description != "" {
 				if summary := extractCompanySummaryFromHTML(description, job.Company); summary != "" {
 					job.CompanySummary = summary
@@ -57,7 +59,7 @@ func enrichJobFromStructuredJobPosting(job *Job, rawHTML string, pageURL string)
 			}
 		}
 
-		if jobCompensationMissing(job.Compensation) {
+		if domain.JobCompensationMissing(job.Compensation) {
 			if compensation := structuredJobPostingCompensation(posting); compensation != "" {
 				job.Compensation = compensation
 			}

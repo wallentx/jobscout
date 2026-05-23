@@ -133,7 +133,7 @@ func shouldPreferApplyURLCompanyWebsite(job Job, inferred string) bool {
 	if strings.TrimSpace(inferred) == "" || strings.EqualFold(strings.TrimSpace(job.CompanyWebsite), inferred) {
 		return false
 	}
-	if jobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
+	if domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
 		return true
 	}
 	if job.CompanyIdentity == nil || job.CompanyIdentity.Website == nil {
@@ -141,28 +141,4 @@ func shouldPreferApplyURLCompanyWebsite(job Job, inferred string) bool {
 	}
 	source := strings.ToLower(strings.TrimSpace(job.CompanyIdentity.Website.Source))
 	return job.CompanyIdentity.Website.Provisional || source == "browser_company_search" || source == "source_payload"
-}
-
-func jobCompanyWebsiteMissingOrInvalid(website string) bool {
-	return domain.JobCompanyWebsiteMissingOrInvalid(website)
-}
-
-func JobCompanyWebsiteMissingOrInvalid(website string) bool {
-	return jobCompanyWebsiteMissingOrInvalid(website)
-}
-
-func jobCompanySummaryMissingOrInvalid(summary string, company string) bool {
-	return domain.JobCompanySummaryMissingOrInvalid(summary, company)
-}
-
-func JobCompanySummaryMissingOrInvalid(summary string, company string) bool {
-	return jobCompanySummaryMissingOrInvalid(summary, company)
-}
-
-func jobCompensationMissing(compensation string) bool {
-	return domain.JobCompensationMissing(compensation)
-}
-
-func JobCompensationMissing(compensation string) bool {
-	return jobCompensationMissing(compensation)
 }

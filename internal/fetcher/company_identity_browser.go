@@ -48,7 +48,7 @@ func browserCompanySearchKey(company string) string {
 
 func jobNeedsBrowserCompanySearch(job Job) bool {
 	company := strings.TrimSpace(job.Company)
-	return company != "" && !strings.EqualFold(company, "Unknown") && !isKnownNonJobApplyURL(job.ApplyURL) && jobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite)
+	return company != "" && !strings.EqualFold(company, "Unknown") && !isKnownNonJobApplyURL(job.ApplyURL) && domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite)
 }
 
 func applyBrowserCompanySiteProfile(ctx context.Context, job *Job, profile *domain.CompanySiteProfile, llmEnrich jobIdentityPageEnrichFunc) {
@@ -62,7 +62,7 @@ func applyBrowserCompanySiteProfile(ctx context.Context, job *Job, profile *doma
 	}()
 
 	evidenceURL := firstNonEmptyString(profile.SearchURL, profile.WebsiteURL)
-	if website := normalizeCompanyWebsiteURL(profile.WebsiteURL); website != "" && jobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
+	if website := normalizeCompanyWebsiteURL(profile.WebsiteURL); website != "" && domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
 		job.CompanyWebsite = website
 		setJobIdentityEvidence(job, "website", website, "browser_company_search", evidenceURL, "medium", false, "Website discovered from a browser search for the company.")
 	}

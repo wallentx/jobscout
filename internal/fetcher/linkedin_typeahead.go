@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -32,6 +33,13 @@ type linkedInTypeaheadCacheEntry struct {
 }
 
 type linkedInTypeaheadCache map[string]linkedInTypeaheadCacheEntry
+
+var linkedInTypeaheadMemoryCache = struct {
+	sync.Mutex
+	path   string
+	loaded bool
+	cache  linkedInTypeaheadCache
+}{}
 
 func refreshLinkedInCriteriaHints(ctx context.Context, criteria *CriteriaConfig) error {
 	if criteria == nil {
@@ -127,38 +135,75 @@ func saveLinkedInTypeaheadCacheEntry(kind string, query string, hit linkedInType
 }
 
 func loadLinkedInTypeaheadCache() (linkedInTypeaheadCache, error) {
-	if strings.TrimSpace(runtimeLinkedInTypeaheadCachePath) == "" {
+	cachePath := strings.TrimSpace(runtimeLinkedInTypeaheadCachePath)
+	if cachePath == "" {
 		return linkedInTypeaheadCache{}, nil
 	}
-	data, err := os.ReadFile(runtimeLinkedInTypeaheadCachePath)
+
+	linkedInTypeaheadMemoryCache.Lock()
+	if linkedInTypeaheadMemoryCache.loaded && linkedInTypeaheadMemoryCache.path == cachePath {
+		cache := cloneLinkedInTypeaheadCache(linkedInTypeaheadMemoryCache.cache)
+		linkedInTypeaheadMemoryCache.Unlock()
+		return cache, nil
+	}
+	linkedInTypeaheadMemoryCache.Unlock()
+
+	data, err := os.ReadFile(cachePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return linkedInTypeaheadCache{}, nil
+			cache := linkedInTypeaheadCache{}
+			storeLinkedInTypeaheadMemoryCache(cachePath, cache)
+			return cache, nil
 		}
 		return nil, err
 	}
 	var cache linkedInTypeaheadCache
 	if err := json.Unmarshal(data, &cache); err != nil {
-		return linkedInTypeaheadCache{}, nil
+		cache = linkedInTypeaheadCache{}
 	}
 	if cache == nil {
 		cache = linkedInTypeaheadCache{}
 	}
+	storeLinkedInTypeaheadMemoryCache(cachePath, cache)
 	return cache, nil
 }
 
 func saveLinkedInTypeaheadCache(cache linkedInTypeaheadCache) error {
-	if strings.TrimSpace(runtimeLinkedInTypeaheadCachePath) == "" {
+	cachePath := strings.TrimSpace(runtimeLinkedInTypeaheadCachePath)
+	if cachePath == "" {
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(runtimeLinkedInTypeaheadCachePath), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(cache, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(runtimeLinkedInTypeaheadCachePath, data, 0600)
+	if err := os.WriteFile(cachePath, data, 0600); err != nil {
+		return err
+	}
+	storeLinkedInTypeaheadMemoryCache(cachePath, cache)
+	return nil
+}
+
+func storeLinkedInTypeaheadMemoryCache(cachePath string, cache linkedInTypeaheadCache) {
+	linkedInTypeaheadMemoryCache.Lock()
+	linkedInTypeaheadMemoryCache.path = cachePath
+	linkedInTypeaheadMemoryCache.loaded = true
+	linkedInTypeaheadMemoryCache.cache = cloneLinkedInTypeaheadCache(cache)
+	linkedInTypeaheadMemoryCache.Unlock()
+}
+
+func cloneLinkedInTypeaheadCache(cache linkedInTypeaheadCache) linkedInTypeaheadCache {
+	if cache == nil {
+		return linkedInTypeaheadCache{}
+	}
+	clone := make(linkedInTypeaheadCache, len(cache))
+	for key, entry := range cache {
+		clone[key] = entry
+	}
+	return clone
 }
 
 func linkedInTypeaheadCacheKey(kind string, query string) string {
