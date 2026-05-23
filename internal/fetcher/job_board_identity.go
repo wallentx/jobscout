@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/wallentx/jobscout/internal/domain"
 )
 
 func enrichJobFromKnownJobBoardHTML(job *Job, rawHTML string, pageURL string) {
@@ -36,7 +37,7 @@ func enrichJobFromBuiltInJobHTML(job *Job, rawHTML string, pageURL string) {
 	}
 	applyURL = strings.TrimSpace(html.UnescapeString(applyURL))
 	job.EnsureSourceMetadata().ExternalApplyURL = applyURL
-	if !jobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
+	if !domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
 		return
 	}
 	website := normalizeCompanyWebsiteURL(applyURL)
@@ -61,13 +62,13 @@ func isBuiltInJobURL(rawURL string) bool {
 func enrichJobFromYCombinatorJobHTML(job *Job, rawHTML string, pageURL string) {
 	company := extractYCombinatorCompanyName(rawHTML, pageURL)
 	setJobCompanyIfMissing(job, company)
-	if jobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) {
+	if domain.JobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) {
 		if summary := extractYCombinatorCompanySummary(rawHTML, job.Company); summary != "" {
 			job.CompanySummary = summary
 			setJobIdentityEvidence(job, "summary", summary, "ycombinator_job_page", pageURL, "high", false, "Company summary extracted from Y Combinator job page.")
 		}
 	}
-	if jobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
+	if domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
 		if website := extractYCombinatorCompanyWebsite(rawHTML, pageURL, job.Company); website != "" {
 			job.CompanyWebsite = website
 			setJobIdentityEvidence(job, "website", website, "ycombinator_job_page", pageURL, "high", false, "Company website extracted from Y Combinator job page.")
@@ -90,7 +91,7 @@ func enrichJobFromGreenhouseJobHTML(job *Job, rawHTML string, pageURL string) {
 		setJobCompanyIfMissing(job, company)
 	}
 	setJobCompanyIfMissing(job, companyNameFromGreenhouseURL(pageURL))
-	if !jobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
+	if !domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
 		return
 	}
 	if logo == nil || logo.Length() == 0 {

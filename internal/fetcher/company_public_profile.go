@@ -134,7 +134,7 @@ func jobNeedsPublicProfileIndustry(job Job) bool {
 		strings.TrimSpace(job.Company) != "" &&
 		!strings.EqualFold(strings.TrimSpace(job.Company), "Unknown") &&
 		!isKnownNonJobApplyURL(job.ApplyURL) &&
-		!jobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) &&
+		!domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) &&
 		jobCompanyIndustryNeedsEnrichment(job)
 }
 
@@ -171,10 +171,6 @@ func discoverPublicProfileIndustry(ctx context.Context, job Job) *publicProfileI
 		logDebug("public profile industry: query candidates company=%q query=%q candidates=%d final_url=%q", job.Company, query, len(candidates), finalURL)
 		profileFetches := 0
 		for _, candidate := range candidates {
-			if industry := extractPublicProfileIndustryFromText(candidate.Snippet); industry != "" {
-				logDebug("public profile industry: snippet hit company=%q source=%q industry=%q url=%q", job.Company, candidate.Source, industry, candidate.URL)
-				return &publicProfileIndustryResult{Industry: industry, Source: candidate.Source, URL: candidate.URL}
-			}
 			if profileFetches >= 1 {
 				continue
 			}

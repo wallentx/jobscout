@@ -2,6 +2,8 @@ package fetcher
 
 import (
 	"strings"
+
+	"github.com/wallentx/jobscout/internal/domain"
 )
 
 func enrichJobFromDescription(job *Job) {
@@ -12,13 +14,13 @@ func enrichJobFromDescription(job *Job) {
 	if directApplyURL := extractDirectApplyURLFromHTML(job.Description, job.ApplyURL); directApplyURL != "" {
 		job.ApplyURL = directApplyURL
 	}
-	if jobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
+	if domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
 		if website := extractCompanyWebsiteFromHTML(job.Description, originalApplyURL, job.Company); website != "" {
 			job.CompanyWebsite = website
 			setJobIdentityEvidence(job, "website", website, "job_description", originalApplyURL, "medium", false, "Website extracted from job description HTML.")
 		}
 	}
-	if jobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) {
+	if domain.JobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) {
 		if summary := extractCompanySummaryFromHTML(job.Description, job.Company); summary != "" {
 			job.CompanySummary = summary
 			setJobIdentityEvidence(job, "summary", summary, "job_description", originalApplyURL, "medium", false, "Company summary extracted from job description HTML.")
@@ -33,7 +35,7 @@ func enrichJobFromDescription(job *Job) {
 		job.CompanyIndustry = summaryIndustry
 		setJobIdentityEvidence(job, "industry", summaryIndustry, "company_summary_inference", originalApplyURL, "low", true, "Industry inferred from company summary text.")
 	}
-	if compensation := extractCompensationFromHTML(job.Description); jobCompensationMissing(job.Compensation) && compensation != "" {
+	if compensation := extractCompensationFromHTML(job.Description); domain.JobCompensationMissing(job.Compensation) && compensation != "" {
 		job.Compensation = compensation
 	}
 }

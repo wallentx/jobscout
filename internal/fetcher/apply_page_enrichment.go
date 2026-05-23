@@ -2,10 +2,12 @@ package fetcher
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/go-rod/rod"
 	"github.com/wallentx/jobscout/internal/domain"
 )
 
@@ -18,6 +20,10 @@ func enrichJobFromApplyPageWithProfiles(ctx context.Context, job *Job, llmEnrich
 }
 
 func enrichJobFromApplyPageWithProfilesAndStats(ctx context.Context, job *Job, llmEnrich jobIdentityPageEnrichFunc, profileEnricher *sourceProfileEnricher, stats *acceptedEnrichmentStats) {
+	enrichJobFromApplyPageWithProfilesStatsAndBrowser(ctx, job, llmEnrich, profileEnricher, stats, nil)
+}
+
+func enrichJobFromApplyPageWithProfilesStatsAndBrowser(ctx context.Context, job *Job, llmEnrich jobIdentityPageEnrichFunc, profileEnricher *sourceProfileEnricher, stats *acceptedEnrichmentStats, browser *rod.Browser) {
 	if job == nil {
 		return
 	}
@@ -31,7 +37,7 @@ func enrichJobFromApplyPageWithProfilesAndStats(ctx context.Context, job *Job, l
 	sanitizeExistingJobIdentity(job)
 	setJobCompanyIfMissing(job, companyNameFromSummary(job.CompanySummary))
 	enrichJobIndustryFromExistingSummary(job)
-	if jobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
+	if domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
 		if website := inferCompanyWebsiteFromApplyURL(*job); website != "" {
 			job.CompanyWebsite = website
 			setJobIdentityEvidence(job, "website", website, "apply_url_host", job.ApplyURL, "medium", false, "Website inferred from a first-party apply URL host.")
@@ -50,30 +56,176 @@ func enrichJobFromApplyPageWithProfilesAndStats(ctx context.Context, job *Job, l
 	if jobNeedsApplyPageEnrichment(*job) {
 		stats.inc(&stats.applyFetchAttempts)
 		logDebug("identity enrichment apply/source pages: fetching apply_url=%q company=%q title=%q", job.ApplyURL, job.Company, job.Title)
-		rawHTML, finalURL, err := fetchApplyPage(ctx, job.ApplyURL)
-		if err == nil && strings.TrimSpace(rawHTML) != "" {
-			stats.inc(&stats.applyFetchSuccess)
-			logDebug("identity enrichment apply/source pages: fetched apply_url=%q final_url=%q bytes=%d llm=%t", job.ApplyURL, finalURL, len(rawHTML), llmEnrich != nil)
-			enrichJobFromHTML(job, rawHTML, finalURL)
-			if profileURL := extractSourceCompanyProfileURL(rawHTML, finalURL); profileURL != "" {
-				enrichJobFromSourceCompanyProfile(ctx, job, profileURL, llmEnrich, "llm_source_profile", profileEnricher, stats)
-			}
-			if jobNeedsLLMIdentityEnrichment(*job) {
-				stats.addLLMUsage(applyLLMJobIdentityEnrichment(ctx, job, buildJobIdentityPage(rawHTML, finalURL), llmEnrich, "llm_apply_page"))
-			}
-		} else if err != nil {
-			stats.inc(&stats.applyFetchFailed)
-			if isBlockedFetchError(err) {
-				stats.inc(&stats.applyFetchBlocked)
-			}
-			logDebug("identity enrichment apply/source pages: fetch failed apply_url=%q error=%v", job.ApplyURL, err)
+		if isIndeedURL(job.ApplyURL) {
+			enrichAcceptedIndeedJobWithBrowser(ctx, browser, job, llmEnrich, stats)
 		} else {
-			stats.inc(&stats.applyFetchEmpty)
-			logDebug("identity enrichment apply/source pages: empty apply page apply_url=%q", job.ApplyURL)
+			enrichAcceptedJobWithStaticApplyPage(ctx, job, llmEnrich, profileEnricher, stats)
 		}
 	}
 
 	enrichJobFromCompanyWebsitePagesWithStats(ctx, job, llmEnrich, stats)
+}
+
+func enrichAcceptedJobWithStaticApplyPage(ctx context.Context, job *Job, llmEnrich jobIdentityPageEnrichFunc, profileEnricher *sourceProfileEnricher, stats *acceptedEnrichmentStats) {
+	if job == nil {
+		return
+	}
+	rawHTML, finalURL, err := fetchApplyPage(ctx, job.ApplyURL)
+	if err == nil && strings.TrimSpace(rawHTML) != "" {
+		stats.inc(&stats.applyFetchSuccess)
+		logDebug("identity enrichment apply/source pages: fetched apply_url=%q final_url=%q bytes=%d llm=%t", job.ApplyURL, finalURL, len(rawHTML), llmEnrich != nil)
+		enrichJobFromHTML(job, rawHTML, finalURL)
+		if profileURL := extractSourceCompanyProfileURL(rawHTML, finalURL); profileURL != "" {
+			enrichJobFromSourceCompanyProfile(ctx, job, profileURL, llmEnrich, "llm_source_profile", profileEnricher, stats)
+		}
+		if jobNeedsLLMIdentityEnrichment(*job) {
+			stats.addLLMUsage(applyLLMJobIdentityEnrichment(ctx, job, buildJobIdentityPage(rawHTML, finalURL), llmEnrich, "llm_apply_page"))
+		}
+	} else if err != nil {
+		stats.inc(&stats.applyFetchFailed)
+		if isBlockedFetchError(err) {
+			stats.inc(&stats.applyFetchBlocked)
+		}
+		logDebug("identity enrichment apply/source pages: fetch failed apply_url=%q error=%v", job.ApplyURL, err)
+	} else {
+		stats.inc(&stats.applyFetchEmpty)
+		logDebug("identity enrichment apply/source pages: empty apply page apply_url=%q", job.ApplyURL)
+	}
+}
+
+func enrichAcceptedIndeedJobWithBrowser(ctx context.Context, browser *rod.Browser, job *Job, llmEnrich jobIdentityPageEnrichFunc, stats *acceptedEnrichmentStats) {
+	if job == nil {
+		return
+	}
+	if browser == nil {
+		stats.inc(&stats.applyFetchFailed)
+		logDebug("identity enrichment apply/source pages: skipped Indeed browser fetch apply_url=%q browser unavailable", job.ApplyURL)
+		return
+	}
+
+	pageText, links, err := extractBrowserPageContent(ctx, browser, job.ApplyURL)
+	if err != nil {
+		stats.inc(&stats.applyFetchFailed)
+		if isBlockedFetchError(err) {
+			stats.inc(&stats.applyFetchBlocked)
+		}
+		logDebug("identity enrichment apply/source pages: Indeed browser fetch failed apply_url=%q error=%v", job.ApplyURL, err)
+		return
+	}
+	if strings.TrimSpace(pageText) == "" {
+		stats.inc(&stats.applyFetchEmpty)
+		logDebug("identity enrichment apply/source pages: empty Indeed browser page apply_url=%q links=%d", job.ApplyURL, len(links))
+		return
+	}
+
+	stats.inc(&stats.applyFetchSuccess)
+	logDebug("identity enrichment apply/source pages: fetched Indeed apply_url=%q text_chars=%d links=%d llm=%t", job.ApplyURL, len(pageText), len(links), llmEnrich != nil)
+	enrichJobFromIndeedDetailText(job, pageText, job.ApplyURL)
+	enrichJobFromIndeedDetailLinks(job, links)
+	sanitizeExistingJobIdentity(job)
+	enrichAcceptedIndeedCompanyProfileWithBrowser(ctx, browser, job, llmEnrich, stats)
+	if jobNeedsLLMIdentityEnrichment(*job) {
+		stats.addLLMUsage(applyLLMJobIdentityEnrichment(ctx, job, buildJobIdentityPageFromBrowserText(pageText, links, job.ApplyURL), llmEnrich, "llm_indeed_detail"))
+	}
+}
+
+func enrichAcceptedIndeedCompanyProfileWithBrowser(ctx context.Context, browser *rod.Browser, job *Job, llmEnrich jobIdentityPageEnrichFunc, stats *acceptedEnrichmentStats) {
+	if job == nil || browser == nil || job.Metadata == nil || job.Metadata.Source == nil {
+		return
+	}
+	profileURL := strings.TrimSpace(job.Metadata.Source.CompanyProfileURL)
+	if profileURL == "" || publicProfileSource(profileURL) != "indeed" {
+		return
+	}
+
+	stats.inc(&stats.sourceProfileAttempts)
+	stats.inc(&stats.sourceProfileFetches)
+	logDebug("identity enrichment source profile: fetching Indeed profile_url=%q company=%q title=%q", profileURL, job.Company, job.Title)
+	pageText, links, err := extractBrowserPageContent(ctx, browser, profileURL)
+	if err != nil {
+		stats.inc(&stats.sourceProfileFailed)
+		if isBlockedFetchError(err) {
+			stats.inc(&stats.sourceProfileBlocked)
+		}
+		logDebug("identity enrichment source profile: Indeed browser fetch failed profile_url=%q error=%v", profileURL, err)
+		return
+	}
+	if strings.TrimSpace(pageText) == "" {
+		stats.inc(&stats.sourceProfileFailed)
+		logDebug("identity enrichment source profile: empty Indeed profile profile_url=%q links=%d", profileURL, len(links))
+		return
+	}
+
+	stats.inc(&stats.sourceProfileSuccess)
+	logDebug("identity enrichment source profile: fetched Indeed profile_url=%q text_chars=%d links=%d llm=%t", profileURL, len(pageText), len(links), llmEnrich != nil)
+	applyCompanyPublicProfileEvidence(job, companyPublicProfileEvidenceFromText("indeed", profileURL, job.Company, pageText), "indeed_profile")
+	if website := companyWebsiteFromProfileLinks(links, profileURL, job.Company); website != "" && domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
+		job.CompanyWebsite = website
+		setJobIdentityEvidence(job, "website", website, "indeed_company_profile", profileURL, "high", false, "Website extracted from Indeed company profile links.")
+	}
+	if jobNeedsLLMIdentityEnrichment(*job) {
+		stats.addLLMUsage(applyLLMJobIdentityEnrichment(ctx, job, buildJobIdentityPageFromBrowserText(pageText, links, profileURL), llmEnrich, "llm_indeed_profile"))
+	}
+}
+
+func buildJobIdentityPageFromBrowserText(pageText string, links []pageLink, pageURL string) JobIdentityPage {
+	text := strings.TrimSpace(pageText)
+	if len(links) > 0 {
+		linkText := make([]string, 0, min(len(links), 80))
+		for _, link := range links {
+			if strings.TrimSpace(link.URL) == "" {
+				continue
+			}
+			if strings.TrimSpace(link.Text) != "" {
+				linkText = append(linkText, strings.TrimSpace(link.Text)+" - "+strings.TrimSpace(link.URL))
+			} else {
+				linkText = append(linkText, strings.TrimSpace(link.URL))
+			}
+			if len(linkText) >= 80 {
+				break
+			}
+		}
+		if len(linkText) > 0 {
+			text += "\n\nLinks:\n- " + strings.Join(linkText, "\n- ")
+		}
+	}
+	return JobIdentityPage{
+		URL:  pageURL,
+		Text: text,
+	}
+}
+
+func acceptedJobEnrichmentBrowser(jobs []Job) (*rod.Browser, func()) {
+	if !acceptedJobsNeedBrowserEnrichment(jobs) {
+		return nil, nil
+	}
+	if FindSiteSearchBrowserBinary() == "" {
+		logDebug("identity enrichment apply/source pages: skipped accepted-job browser; browser unavailable")
+		return nil, nil
+	}
+
+	browser, cleanup, err := NewSiteSearchBrowser()
+	if err != nil {
+		logDebug("identity enrichment apply/source pages: accepted-job browser launch failed: %v", err)
+		return nil, nil
+	}
+	logDebug("identity enrichment apply/source pages: accepted-job browser started")
+	return browser, func() {
+		cleanup()
+		logDebug("identity enrichment apply/source pages: accepted-job browser cleanup complete")
+	}
+}
+
+func acceptedJobsNeedBrowserEnrichment(jobs []Job) bool {
+	for _, job := range jobs {
+		if isIndeedURL(job.ApplyURL) && jobNeedsApplyPageEnrichment(job) {
+			return true
+		}
+		if jobNeedsBrowserCompanySearch(job) {
+			return true
+		}
+	}
+	return false
 }
 
 func enrichJobFromBuiltInCompanyProfile(ctx context.Context, job *Job, llmEnrich jobIdentityPageEnrichFunc, profileEnricher *sourceProfileEnricher, stats *acceptedEnrichmentStats) {
@@ -124,6 +276,10 @@ func enrichJobsFromApplyPagesWithLLMStoreAndProgress(ctx context.Context, jobs [
 	cache := NewCompanyIdentityCache()
 	stats.addCopiedFields(seedCompanyIdentityFromTrustedJobs(jobs, cache))
 	profileEnricher := currentSourceProfileRun()
+	browser, cleanupBrowser := acceptedJobEnrichmentBrowser(jobs)
+	if cleanupBrowser != nil {
+		defer cleanupBrowser()
+	}
 	for i := range jobs {
 		wg.Add(1)
 		go func(idx int) {
@@ -143,7 +299,7 @@ func enrichJobsFromApplyPagesWithLLMStoreAndProgress(ctx context.Context, jobs [
 				stats.inc(&stats.localCacheHits)
 				ApplyCachedIdentity(&jobs[idx], record)
 			}
-			enrichJobFromApplyPageWithProfilesAndStats(ctx, &jobs[idx], llmEnrich, profileEnricher, stats)
+			enrichJobFromApplyPageWithProfilesStatsAndBrowser(ctx, &jobs[idx], llmEnrich, profileEnricher, stats, browser)
 			if cache.IsIdentityComplete(jobs[idx]) {
 				cache.Set(jobs[idx].Company, CompanyIdentityRecord{
 					Website:  jobs[idx].CompanyWebsite,
@@ -166,10 +322,26 @@ func enrichJobsFromApplyPagesWithLLMStoreAndProgress(ctx context.Context, jobs [
 		}(i)
 	}
 	wg.Wait()
-	logDebug("browser company search: disabled during accepted-job enrichment; leaving unresolved identity fields for source-specific repair")
-	stats.addCopiedFields(propagateSameCompanyIdentity(jobs))
+	beforePostProcessing := make([]jobIdentityPersistenceSnapshot, len(jobs))
+	for i := range jobs {
+		beforePostProcessing[i] = captureJobIdentityPersistenceSnapshot(jobs[i])
+	}
+	browserSearchChanged := enrichJobsFromBrowserCompanySearch(ctx, jobs, browser, llmEnrich, stats, progress)
+	copiedFields := propagateSameCompanyIdentity(jobs)
+	stats.addCopiedFields(copiedFields)
 	for i := range jobs {
 		backfillJobIdentityEvidence(&jobs[i], jobs[i].Source, jobs[i].ApplyURL)
+	}
+	if browserSearchChanged > 0 || copiedFields > 0 {
+		for i := range jobs {
+			if beforePostProcessing[i] == captureJobIdentityPersistenceSnapshot(jobs[i]) {
+				continue
+			}
+			persistCompanyIdentityToStore(ctx, jobs[i], identityStore, stats)
+			if onJobEnriched != nil {
+				onJobEnriched(jobs[i])
+			}
+		}
 	}
 	elapsed := time.Since(start).Round(time.Millisecond).String()
 	stats.log(elapsed)
@@ -177,6 +349,76 @@ func enrichJobsFromApplyPagesWithLLMStoreAndProgress(ctx context.Context, jobs [
 	logDebug("url visit registry summary: fetches=%d hits=%d html_entries=%d probe_entries=%d", fetches, hits, htmlEntries, probeEntries)
 	logJobIdentityBatchSummary("apply/source pages", jobs, elapsed)
 	return jobs
+}
+
+func enrichJobsFromBrowserCompanySearch(ctx context.Context, jobs []Job, browser *rod.Browser, llmEnrich jobIdentityPageEnrichFunc, stats *acceptedEnrichmentStats, progress func(string)) int {
+	targets := browserCompanySearchTargets(jobs)
+	if len(targets) == 0 {
+		logDebug("browser company search: skipped during accepted-job enrichment; no unresolved company websites")
+		return 0
+	}
+	if browser == nil {
+		logDebug("browser company search: skipped during accepted-job enrichment; browser unavailable targets=%d", len(targets))
+		return 0
+	}
+
+	logDebug("browser company search: start accepted-job enrichment targets=%d", len(targets))
+	reportFetchProgress(progress, "Searching company sites for %d unresolved companies...", len(targets))
+	changed := 0
+	for _, target := range targets {
+		if ctx.Err() != nil {
+			break
+		}
+		stats.inc(&stats.browserCompanySearchTargets)
+		profile := discoverCompanySiteProfile(ctx, browser, target.Company)
+		if profile == nil || strings.TrimSpace(profile.WebsiteURL) == "" {
+			stats.inc(&stats.browserCompanySearchFailed)
+			logDebug("browser company search: no company site found company=%q indexes=%d", target.Company, len(target.Indexes))
+			continue
+		}
+		stats.inc(&stats.browserCompanySearchSuccess)
+		logDebug("browser company search: found company=%q website=%q indexes=%d", target.Company, profile.WebsiteURL, len(target.Indexes))
+		for _, idx := range target.Indexes {
+			before := debugJobIdentitySnapshot(jobs[idx])
+			applyBrowserCompanySiteProfile(ctx, &jobs[idx], profile, llmEnrich)
+			if debugJobIdentitySnapshot(jobs[idx]) != before {
+				changed++
+			}
+		}
+	}
+	logDebug("browser company search: complete accepted-job enrichment targets=%d changed_jobs=%d", len(targets), changed)
+	return changed
+}
+
+type jobIdentityPersistenceSnapshot struct {
+	Company  string
+	Website  string
+	Summary  string
+	Industry string
+	Identity string
+	Metadata string
+}
+
+func captureJobIdentityPersistenceSnapshot(job Job) jobIdentityPersistenceSnapshot {
+	return jobIdentityPersistenceSnapshot{
+		Company:  strings.TrimSpace(job.Company),
+		Website:  strings.TrimSpace(job.CompanyWebsite),
+		Summary:  strings.TrimSpace(job.CompanySummary),
+		Industry: strings.TrimSpace(job.CompanyIndustry),
+		Identity: stableJobIdentityJSON(CloneJobIdentityMetadata(job.CompanyIdentity)),
+		Metadata: stableJobIdentityJSON(domain.CloneJobMetadata(job.Metadata)),
+	}
+}
+
+func stableJobIdentityJSON(value any) string {
+	if value == nil {
+		return ""
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 func hydrateCompanyIdentityFromStore(ctx context.Context, job *Job, identityStore PersistentCompanyIdentityStore, stats *acceptedEnrichmentStats) (CompanyIdentityRecord, bool) {
@@ -291,7 +533,7 @@ func enrichJobFromApplyPageForValidationWithProfiles(ctx context.Context, job *J
 	sanitizeExistingJobIdentity(job)
 	setJobCompanyIfMissing(job, companyNameFromSummary(job.CompanySummary))
 	enrichJobIndustryFromExistingSummary(job)
-	if jobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
+	if domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
 		if website := inferCompanyWebsiteFromApplyURL(*job); website != "" {
 			job.CompanyWebsite = website
 			setJobIdentityEvidence(job, "website", website, "apply_url_host", job.ApplyURL, "medium", false, "Website inferred from a first-party apply URL host.")

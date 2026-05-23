@@ -57,8 +57,8 @@ func (c *CompanyIdentityCache) Set(company string, record CompanyIdentityRecord)
 }
 
 func (c *CompanyIdentityCache) IsIdentityComplete(job Job) bool {
-	return !jobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) &&
-		!jobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company)
+	return !domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) &&
+		!domain.JobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company)
 }
 
 func companyIdentityCacheKey(company string) string {
@@ -89,12 +89,12 @@ func ApplyCachedIdentity(job *Job, record CompanyIdentityRecord) {
 	if job == nil {
 		return
 	}
-	if jobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) && record.Website != "" && trustedRecordEvidence(record.Identity, "website", record.Website) {
+	if domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) && record.Website != "" && trustedRecordEvidence(record.Identity, "website", record.Website) {
 		job.CompanyWebsite = record.Website
 		setCachedIdentityEvidence(job, "website", record.Website, copiedEvidence(record.Identity, "website"))
 	}
 
-	if jobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) && record.Summary != "" && trustedRecordEvidence(record.Identity, "summary", record.Summary) {
+	if domain.JobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) && record.Summary != "" && trustedRecordEvidence(record.Identity, "summary", record.Summary) {
 		job.CompanySummary = record.Summary
 		setCachedIdentityEvidence(job, "summary", record.Summary, copiedEvidence(record.Identity, "summary"))
 	}
@@ -193,13 +193,13 @@ func trustedIdentityRecordFromJob(job Job) (CompanyIdentityRecord, int, int, int
 	websiteRank := 0
 	summaryRank := 0
 	industryRank := 0
-	if !jobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) && trustedIdentityEvidence(job.CompanyIdentity, "website", job.CompanyWebsite) {
+	if !domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) && trustedIdentityEvidence(job.CompanyIdentity, "website", job.CompanyWebsite) {
 		record.Website = job.CompanyWebsite
 		w := *job.CompanyIdentity.Website
 		identity.Website = &w
 		websiteRank = identityEvidenceRank(&w)
 	}
-	if !jobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) && trustedIdentityEvidence(job.CompanyIdentity, "summary", job.CompanySummary) {
+	if !domain.JobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) && trustedIdentityEvidence(job.CompanyIdentity, "summary", job.CompanySummary) {
 		record.Summary = job.CompanySummary
 		s := *job.CompanyIdentity.Summary
 		identity.Summary = &s
@@ -300,12 +300,12 @@ func applySameCompanyIdentity(job *Job, record CompanyIdentityRecord) int {
 		return 0
 	}
 	copied := 0
-	if jobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) && record.Website != "" {
+	if domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) && record.Website != "" {
 		job.CompanyWebsite = record.Website
 		setCopiedSameCompanyEvidence(job, "website", record.Website, copiedEvidence(record.Identity, "website"))
 		copied++
 	}
-	if jobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) && record.Summary != "" {
+	if domain.JobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) && record.Summary != "" {
 		job.CompanySummary = record.Summary
 		setCopiedSameCompanyEvidence(job, "summary", record.Summary, copiedEvidence(record.Identity, "summary"))
 		copied++

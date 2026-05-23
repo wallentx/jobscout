@@ -94,40 +94,6 @@ func TestCompanyPublicProfileEvidenceFromTextExtractsGlassdoorReviewMetrics(t *t
 	}
 }
 
-func TestEnrichJobsFromPublicProfileIndustryUsesSearchSnippet(t *testing.T) {
-	searchServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`
-<html><body>
-  <a href="https://www.linkedin.com/company/acme/">Acme | LinkedIn</a>
-  <span>Industry Software Development Company size 51-200 employees Headquarters Austin, Texas</span>
-</body></html>`))
-	}))
-	defer searchServer.Close()
-
-	restorePublicProfileTestHooks()
-	publicProfileSearchURLFunc = func(query string) string {
-		return searchServer.URL + "/search?q=" + url.QueryEscape(query)
-	}
-	fetchPublicProfileHTML = fetchApplyPage
-	defer restorePublicProfileTestHooks()
-
-	jobs := []Job{{
-		Company:        "Acme",
-		CompanyWebsite: "https://www.acme.com",
-		ApplyURL:       "https://jobs.acme.com/staff-platform-engineer",
-		Status:         "Unopened",
-	}}
-
-	jobs = enrichJobsFromPublicProfileIndustryWithProgress(context.Background(), jobs, nil)
-
-	if jobs[0].CompanyIndustry != "Software Development" {
-		t.Fatalf("CompanyIndustry = %q; want Software Development", jobs[0].CompanyIndustry)
-	}
-	if jobs[0].CompanyIdentity == nil || jobs[0].CompanyIdentity.Industry == nil || jobs[0].CompanyIdentity.Industry.Source != "public_profile_linkedin" {
-		t.Fatalf("CompanyIdentity.Industry = %#v; want public_profile_linkedin evidence", jobs[0].CompanyIdentity)
-	}
-}
-
 func TestEnrichJobsFromPublicProfileIndustryFetchesProfilePage(t *testing.T) {
 	profileHTML := `
 <html><body>

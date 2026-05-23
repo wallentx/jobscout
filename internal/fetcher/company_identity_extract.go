@@ -12,7 +12,7 @@ import (
 )
 
 func enrichJobIndustryFromExistingSummary(job *Job) {
-	if job == nil || strings.TrimSpace(job.CompanyIndustry) != "" || jobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) {
+	if job == nil || strings.TrimSpace(job.CompanyIndustry) != "" || domain.JobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) {
 		return
 	}
 	industry := inferCompanyIndustry(job.CompanySummary)
@@ -89,7 +89,7 @@ func enrichJobFromCompanySiteHTML(job *Job, rawHTML string, pageURL string, sour
 	if job == nil || strings.TrimSpace(rawHTML) == "" {
 		return
 	}
-	if jobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) {
+	if domain.JobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) {
 		if summary := extractCompanyProfileSummary(rawHTML, job.Company); summary != "" {
 			job.CompanySummary = summary
 			setJobIdentityEvidence(job, "summary", summary, source, pageURL, "high", false, "Company summary extracted from company site.")
@@ -114,7 +114,7 @@ func enrichJobFromCompanySiteText(ctx context.Context, job *Job, text string, pa
 	if llmEnrich != nil {
 		applyLLMJobIdentityEnrichment(ctx, job, page, llmEnrich, "llm_"+source)
 	}
-	if jobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) && looksLikeCompanySummary(text, job.Company) {
+	if domain.JobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) && looksLikeCompanySummary(text, job.Company) {
 		summary := truncateAtSentence(text, 420)
 		job.CompanySummary = summary
 		setJobIdentityEvidence(job, "summary", summary, source, pageURL, "medium", false, "Company summary extracted from company site text.")
@@ -148,18 +148,18 @@ func enrichJobFromHTML(job *Job, rawHTML string, pageURL string) {
 	}
 	enrichJobFromStructuredJobPosting(job, rawHTML, pageURL)
 	enrichJobFromKnownJobBoardHTML(job, rawHTML, pageURL)
-	if jobCompensationMissing(job.Compensation) {
+	if domain.JobCompensationMissing(job.Compensation) {
 		if compensation := extractCompensationFromHTML(rawHTML); compensation != "" {
 			job.Compensation = compensation
 		}
 	}
-	if jobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
+	if domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
 		if website := extractCompanyWebsiteFromHTML(rawHTML, pageURL, job.Company); website != "" {
 			job.CompanyWebsite = website
 			setJobIdentityEvidence(job, "website", website, "apply_page", pageURL, "medium", false, "Website extracted from apply page HTML.")
 		}
 	}
-	if jobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) {
+	if domain.JobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) {
 		if summary := extractCompanySummaryFromHTML(rawHTML, job.Company); summary != "" {
 			job.CompanySummary = summary
 			setJobIdentityEvidence(job, "summary", summary, "apply_page", pageURL, "medium", false, "Company summary extracted from apply page HTML.")
@@ -188,15 +188,15 @@ func jobNeedsApplyPageEnrichment(job Job) bool {
 	}
 	return jobHasSourceCompanyProfile(job.ApplyURL) ||
 		jobCompanyMissingOrUnknown(job.Company) ||
-		jobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) ||
-		jobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) ||
+		domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) ||
+		domain.JobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) ||
 		jobCompanyIndustryNeedsEnrichment(job) ||
-		jobCompensationMissing(job.Compensation)
+		domain.JobCompensationMissing(job.Compensation)
 }
 
 func jobNeedsLLMIdentityEnrichment(job Job) bool {
-	return jobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) ||
-		jobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) ||
+	return domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) ||
+		domain.JobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) ||
 		jobCompanyIndustryNeedsEnrichment(job)
 }
 
@@ -204,8 +204,8 @@ func jobNeedsCompanyPageEnrichment(job Job) bool {
 	if isKnownNonJobApplyURL(job.ApplyURL) {
 		return false
 	}
-	return !jobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) &&
-		(jobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) || jobCompanyIndustryNeedsEnrichment(job))
+	return !domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) &&
+		(domain.JobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) || jobCompanyIndustryNeedsEnrichment(job))
 }
 
 func jobCompanyIndustryNeedsEnrichment(job Job) bool {
