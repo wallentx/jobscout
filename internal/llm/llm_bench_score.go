@@ -81,7 +81,7 @@ func scoreBenchmarkOutput(record *llmBenchmarkRunRecord, checks benchmarkChecks,
 
 	hallucinationMatches := benchmarkTextMatches(output, checks.HallucinationPatterns)
 	if len(hallucinationMatches) > 0 {
-		record.AccuracyScore = maxBenchmarkInt(0, record.AccuracyScore-(40*len(hallucinationMatches)))
+		record.AccuracyScore = max(0, record.AccuracyScore-(40*len(hallucinationMatches)))
 		record.Details["hallucination_patterns_matched"] = len(hallucinationMatches)
 		record.Details["hallucination_patterns"] = hallucinationMatches
 		record.ScoreCap = minPositiveBenchmarkCap(record.ScoreCap, 50)
@@ -341,13 +341,6 @@ func benchmarkGroundingScore(checks benchmarkChecks, output string) int {
 		return 100
 	}
 	return benchmarkTextCheckScore(output, checks.GroundingRules, nil)
-}
-
-func maxBenchmarkInt(a int, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func minPositiveBenchmarkCap(existing int, candidate int) int {

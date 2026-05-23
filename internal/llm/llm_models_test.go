@@ -1,6 +1,9 @@
 package llm
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 func TestIsOpenAITextModelKeepsChatCompatibleModels(t *testing.T) {
 	tests := []struct {
@@ -135,12 +138,12 @@ func TestSetupModelOptionsFiltersBlockedOpenAIModels(t *testing.T) {
 		"o3-mini",
 		"o4-mini",
 	} {
-		if stringSliceContains(got, model) {
+		if slices.Contains(got, model) {
 			t.Fatalf("setupModelOptions(openai, ...) included blocked model %q in %#v", model, got)
 		}
 	}
 	for _, model := range []string{"gpt-4.1", "gpt-4o", "o3", manualModelOption} {
-		if !stringSliceContains(got, model) {
+		if !slices.Contains(got, model) {
 			t.Fatalf("setupModelOptions(openai, ...) omitted usable model %q from %#v", model, got)
 		}
 	}

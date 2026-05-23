@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -598,7 +599,7 @@ func fetchGeminiModelInfos(ctx context.Context, cfg *AppConfig) ([]llmModelInfo,
 
 	infos := make([]llmModelInfo, 0, len(resp.Models))
 	for _, model := range resp.Models {
-		if !stringSliceContains(model.SupportedGenerationMethods, "generateContent") {
+		if !slices.Contains(model.SupportedGenerationMethods, "generateContent") {
 			continue
 		}
 		id := trimGeminiModelResourceName(model.Name)
@@ -874,15 +875,6 @@ func doModelListRequest(req *http.Request, target any) error {
 		return err
 	}
 	return nil
-}
-
-func stringSliceContains(items []string, target string) bool {
-	for _, item := range items {
-		if item == target {
-			return true
-		}
-	}
-	return false
 }
 
 func sortModels(models []string) {
