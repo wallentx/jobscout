@@ -57,6 +57,8 @@ jobs:
         with:
           path: .tools
           key: ${{ runner.os }}-${{ runner.arch }}-go-tools-${{ hashFiles('Makefile', 'go.mod') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-go-tools-
 
       - name: Run merge gate
         run: make check
