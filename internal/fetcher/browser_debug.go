@@ -1,7 +1,7 @@
 package fetcher
 
 import (
-	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -214,7 +214,7 @@ func debugBrowserPageArtifactPrefix(debugPath string, requestedURL string, statu
 	if parsed, err := url.Parse(requestedURL); err == nil && parsed.Hostname() != "" {
 		host = parsed.Hostname()
 	}
-	sum := sha1.Sum([]byte(requestedURL))
+	sum := sha256.Sum256([]byte(requestedURL))
 	hash := hex.EncodeToString(sum[:])[:10]
 	name := fmt.Sprintf(
 		"%s-%s-%s-%s",

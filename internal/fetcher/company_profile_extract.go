@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/wallentx/jobscout/internal/domain"
 )
 
 func extractSourceCompanyProfileURL(rawHTML string, pageURL string) string {
@@ -28,6 +30,10 @@ func extractSourceCompanyProfileURL(rawHTML string, pageURL string) string {
 			return resolved
 		case isBuiltInHost(host) && strings.EqualFold(parsed.Host, page.Host) && strings.HasPrefix(path, "/company/"):
 			return resolved
+		case isLinkedInHost(host) && strings.EqualFold(parsed.Host, page.Host) && strings.HasPrefix(path, "/company/"):
+			parsed.RawQuery = ""
+			parsed.Fragment = ""
+			return parsed.String()
 		}
 	}
 	return ""
@@ -61,6 +67,13 @@ func applyCompanyProfileMetadata(job *Job, rawHTML string, profileURL string) {
 	}
 	text := normalizeHTMLText(rawHTML)
 	evidence := companyPublicProfileEvidenceFromText("builtin", profileURL, "", text)
+	applyCompanyPublicProfileEvidence(job, evidence, "company_profile")
+}
+
+func applyCompanyPublicProfileEvidence(job *Job, evidence domain.CompanyPublicProfile, source string) {
+	if job == nil {
+		return
+	}
 	if !companyPublicProfileEvidenceUseful(evidence) && strings.TrimSpace(job.CompanyIndustry) == "" {
 		return
 	}
@@ -88,6 +101,10 @@ func applyCompanyProfileMetadata(job *Job, rawHTML string, profileURL string) {
 	}
 	if strings.TrimSpace(evidence.Industry) != "" {
 		job.EnsureSourceMetadata().Industries = appendUniqueString(job.EnsureSourceMetadata().Industries, evidence.Industry)
+		if jobCompanyIndustryNeedsEnrichment(*job) {
+			job.CompanyIndustry = evidence.Industry
+			setJobIdentityEvidence(job, "industry", evidence.Industry, source, evidence.URL, "medium", false, "Industry extracted from public company profile evidence.")
+		}
 	}
 }
 
@@ -116,6 +133,53 @@ func extractCompanyWebsiteFromHTML(rawHTML string, applyURL string, company stri
 		}
 	}
 	return ""
+}
+
+func companyWebsiteFromProfileLinks(links []pageLink, profileURL string, company string) string {
+	best := ""
+	bestScore := 0
+	for _, link := range links {
+		website := companyWebsiteFromExternalApplyURL(link.URL, profileURL, company)
+		if website == "" {
+			continue
+		}
+		score := scoreCompanyProfileWebsiteLink(link, website)
+		if score > bestScore {
+			bestScore = score
+			best = website
+		}
+	}
+	if bestScore <= 0 {
+		return ""
+	}
+	return best
+}
+
+func scoreCompanyProfileWebsiteLink(link pageLink, website string) int {
+	parsed, err := url.Parse(website)
+	if err != nil || parsed.Host == "" {
+		return 0
+	}
+	if source := publicProfileSource(link.URL); source != "" {
+		return 0
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if isIndeedHost(host) || isLinkedInHost(host) || isGoogleHost(host) || isBuiltInHost(host) {
+		return 0
+	}
+
+	score := 1
+	textLower := strings.ToLower(link.Text)
+	urlLower := strings.ToLower(link.URL)
+	for _, marker := range []string{"website", "company site", "home page", "visit", "official"} {
+		if strings.Contains(textLower, marker) {
+			score += 3
+		}
+	}
+	if strings.Contains(urlLower, "utm_source=indeed") || strings.Contains(urlLower, "linkedin") {
+		score++
+	}
+	return score
 }
 
 func extractStructuredCompanyWebsite(rawHTML string) string {
@@ -253,11 +317,16 @@ func cleanCompanyProfileSummary(summary string, company string) string {
 
 func extractLabeledHref(rawHTML string, applyURL string, labels []string) string {
 	for _, href := range extractHTMLHrefs(rawHTML) {
-		if !looksLikeCompanyWebsite(href, applyURL) {
+		candidate := decodeProfileExternalLink(resolveURL(applyURL, href))
+		if !looksLikeCompanyWebsite(candidate, applyURL) {
 			continue
 		}
 		needle := strings.ToLower(href)
 		idx := strings.Index(strings.ToLower(rawHTML), needle)
+		if idx < 0 {
+			needle = strings.ToLower(candidate)
+			idx = strings.Index(strings.ToLower(rawHTML), needle)
+		}
 		if idx < 0 {
 			continue
 		}
@@ -272,9 +341,40 @@ func extractLabeledHref(rawHTML string, applyURL string, labels []string) string
 		contextText := strings.ToLower(normalizeHTMLText(rawHTML[start:end]))
 		for _, label := range labels {
 			if strings.Contains(contextText, strings.ToLower(label)) {
-				return href
+				return candidate
 			}
 		}
 	}
 	return ""
+}
+
+func decodeProfileExternalLink(rawURL string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return ""
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Host == "" {
+		return rawURL
+	}
+	if isLinkedInHost(parsed.Hostname()) {
+		for _, key := range []string{"url", "target", "redirectUrl"} {
+			target := strings.TrimSpace(parsed.Query().Get(key))
+			if target == "" {
+				continue
+			}
+			decoded, err := url.QueryUnescape(target)
+			if err == nil {
+				target = decoded
+			}
+			targetParsed, err := url.Parse(target)
+			if err == nil && targetParsed.Scheme != "" && targetParsed.Host != "" {
+				return targetParsed.String()
+			}
+		}
+	}
+	if decoded := decodeSearchResultURL(rawURL); decoded != "" {
+		return decoded
+	}
+	return rawURL
 }

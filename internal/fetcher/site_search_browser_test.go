@@ -998,7 +998,7 @@ func reusableBrowserPoolStatsForTest(browser *rod.Browser) (int, int) {
 	}
 	pages := 0
 	available := len(pool.slots)
-	for range available {
+	for i := 0; i < available; i++ {
 		slot := <-pool.slots
 		if slot.page != nil {
 			pages++
