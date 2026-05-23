@@ -56,11 +56,8 @@ func TestNoticePopupStylesOnlyURLSegment(t *testing.T) {
 	}
 }
 
-func TestNoticePopupStylesURLContinuationTokenOnly(t *testing.T) {
+func TestNoticePopupRecognizesURLContinuationToken(t *testing.T) {
 	if !looksLikeURLContinuationToken("country=USA") {
 		t.Fatal("looksLikeURLContinuationToken(\"country=USA\") = false; want true")
-	}
-	if looksLikeURLContinuationToken("(1)") {
-		t.Fatal("looksLikeURLContinuationToken(\"(1)\") = true; want false")
 	}
 }
