@@ -56,7 +56,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .tools
-          key: ${{ runner.os }}-go-tools-${{ hashFiles('Makefile') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-go-tools-${{ hashFiles('Makefile', 'go.mod') }}
 
       - name: Run merge gate
         run: make check
