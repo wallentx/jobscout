@@ -192,6 +192,23 @@ func TestApplyCachedIdentity(t *testing.T) {
 	}
 }
 
+func TestRecordHasIdentityTreatsMetadataAsUseful(t *testing.T) {
+	record := CompanyIdentityRecord{
+		Metadata: &domain.JobMetadata{
+			Company: &domain.CompanyMetadata{
+				EmployeeRange: "501-1,000 employees",
+			},
+		},
+	}
+
+	if !recordHasIdentity(record) {
+		t.Fatal("recordHasIdentity() = false; want metadata-only record to be useful")
+	}
+	if recordHasIdentity(CompanyIdentityRecord{Metadata: &domain.JobMetadata{Company: &domain.CompanyMetadata{EmployeeRange: " "}}}) {
+		t.Fatal("recordHasIdentity() = true; want empty metadata ignored")
+	}
+}
+
 func TestCompanyIdentityCache_Concurrency(t *testing.T) {
 	cache := NewCompanyIdentityCache()
 	var wg sync.WaitGroup

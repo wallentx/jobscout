@@ -67,10 +67,29 @@ func googleNewsRSSQuery(query string) string {
 	if query == "" {
 		return query
 	}
-	if strings.ContainsAny(query, `" `) {
+	if googleNewsQueryHasExplicitSyntax(query) {
 		return query
 	}
 	return fmt.Sprintf(`"%s"`, query)
+}
+
+func googleNewsQueryHasExplicitSyntax(query string) bool {
+	if strings.Contains(query, `"`) {
+		return true
+	}
+	for _, field := range strings.Fields(query) {
+		trimmed := strings.Trim(field, "()")
+		switch strings.ToUpper(trimmed) {
+		case "AND", "OR", "NOT":
+			return true
+		}
+		if strings.HasPrefix(field, "-") ||
+			strings.Contains(field, ":") ||
+			strings.ContainsAny(field, "()") {
+			return true
+		}
+	}
+	return false
 }
 
 func fetchLayoffSignalsForContextWithRejected(identity CompanyHealthContext) ([]LayoffSignal, []CompanyHealthEvidence) {

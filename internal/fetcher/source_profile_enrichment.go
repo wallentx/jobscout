@@ -278,5 +278,6 @@ func recordHasIdentity(record CompanyIdentityRecord) bool {
 	return strings.TrimSpace(record.Website) != "" ||
 		strings.TrimSpace(record.Summary) != "" ||
 		strings.TrimSpace(record.Industry) != "" ||
-		record.Identity != nil
+		record.Identity != nil ||
+		domain.CloneJobMetadata(record.Metadata) != nil
 }

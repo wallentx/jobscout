@@ -287,6 +287,18 @@ func TestLayoffQueriesUseDomainAndIndustryContext(t *testing.T) {
 	}
 }
 
+func TestGoogleNewsRSSQueryQuotesBareMultiWordCompanyNames(t *testing.T) {
+	if got, want := googleNewsRSSQuery("Acme Cloud"), `"Acme Cloud"`; got != want {
+		t.Fatalf("googleNewsRSSQuery() = %q; want %q", got, want)
+	}
+	if got, want := googleNewsRSSQuery(`"Acme Cloud" acme.example layoffs`), `"Acme Cloud" acme.example layoffs`; got != want {
+		t.Fatalf("googleNewsRSSQuery() = %q; want explicit query unchanged", got)
+	}
+	if got, want := googleNewsRSSQuery("site:acme.example layoffs"), "site:acme.example layoffs"; got != want {
+		t.Fatalf("googleNewsRSSQuery() = %q; want operator query unchanged", got)
+	}
+}
+
 func TestGoogleNewsSentimentForContextSearchesAliasesWithContext(t *testing.T) {
 	identity := CompanyHealthContext{
 		Company:  "Acme",
