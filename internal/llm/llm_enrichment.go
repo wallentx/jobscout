@@ -19,6 +19,7 @@ import (
 
 const maxCompanyHealthRejectedEvidenceInPrompt = 12
 const maxCompanyHealthArticleTextChars = 6000
+const llmSearchSystemInstruction = "You are a JSON-only job search API. Return only a valid JSON array. Use empty strings for unknown required fields and do not invent missing facts."
 
 // LLMEvaluationResult holds the parsed JSON output from the LLM
 type LLMEvaluationResult struct {
@@ -183,10 +184,7 @@ func executeLLMSearch(ctx context.Context, llm llms.Model, prompt string) ([]Job
 
 func executeLLMSearchWithUsage(ctx context.Context, llm llms.Model, prompt string) ([]Job, LLMTokenUsage, error) {
 	fullPrompt := buildLLMSearchPrompt(prompt)
-
-	messages := []llms.MessageContent{
-		llms.TextParts(llms.ChatMessageTypeHuman, fullPrompt),
-	}
+	messages := buildLLMSearchMessages(fullPrompt)
 
 	logDebug("llm job search: generation start prompt_chars=%d", len(fullPrompt))
 	resp, err := llm.GenerateContent(ctx, messages, llmJSONCallOptions(0.2, 8192)...)
@@ -211,6 +209,13 @@ func executeLLMSearchWithUsage(ctx context.Context, llm llms.Model, prompt strin
 	return jobs, usage, nil
 }
 
+func buildLLMSearchMessages(prompt string) []llms.MessageContent {
+	return []llms.MessageContent{
+		llms.TextParts(llms.ChatMessageTypeSystem, llmSearchSystemInstruction),
+		llms.TextParts(llms.ChatMessageTypeHuman, prompt),
+	}
+}
+
 func buildLLMSearchPrompt(prompt string) string {
 	var fullPrompt strings.Builder
 	fullPrompt.WriteString(prompt)
@@ -220,6 +225,7 @@ func buildLLMSearchPrompt(prompt string) string {
 	fullPrompt.WriteString("If no real current direct application URLs can be verified from the available context, return an empty JSON array. ")
 	fullPrompt.WriteString("You must return your response ONLY as a valid JSON array of objects. ")
 	fullPrompt.WriteString("Each object must include these string keys: \"company\", \"title\", \"remote\", \"compensation\", \"apply_url\", and \"description\". ")
+	fullPrompt.WriteString("If any required string field is unavailable in the verified context, use an empty string for that field instead of guessing. ")
 	fullPrompt.WriteString("When available, include \"company_website\" for the actual company's website, not the job board or application URL, \"company_summary\" for a brief factual company summary, and \"company_industry\" for the company's industry. ")
 	fullPrompt.WriteString("For any list of reasons it matches, put them in a string array under the key \"why_matches\". ")
 	fullPrompt.WriteString("Do NOT wrap the JSON in markdown blocks, return ONLY the raw JSON array.")
@@ -838,7 +844,7 @@ func buildPrompt(job Job, criteria *CriteriaConfig) string {
 	promptBuilder.WriteString(`  "matches": boolean, // false only when explicit posted facts fail hard criteria` + "\n")
 	promptBuilder.WriteString(`  "compensation_extracted": string, // The clear compensation string, e.g. "$180k-$220k base"` + "\n")
 	promptBuilder.WriteString(`  "remote_eligibility": string, // E.g. "US-Remote", "Hybrid", "Onsite"` + "\n")
-	promptBuilder.WriteString(`  "why_it_matches": [string], // Array of bullet points explaining why it matches priority signals` + "\n")
+	promptBuilder.WriteString(`  "why_it_matches": [string], // Array of bullet points explaining matching signals and any missing facts that still need verification` + "\n")
 	promptBuilder.WriteString(`  "why_rejected": [string] // If matches is false, explain which explicit hard criteria failed` + "\n")
 	promptBuilder.WriteString("}\n")
 

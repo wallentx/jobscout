@@ -77,11 +77,33 @@ func TestBuildLLMSearchPromptRequiresVerifiedJobs(t *testing.T) {
 		"Use only real current job postings whose direct application URL is present in the prompt context or available through your search/tooling context.",
 		"Do not invent companies, roles, URLs, compensation, descriptions, company websites, or company summaries.",
 		"If no real current direct application URLs can be verified from the available context, return an empty JSON array.",
+		"If any required string field is unavailable in the verified context, use an empty string for that field instead of guessing.",
 		"return ONLY the raw JSON array",
 	} {
 		if !strings.Contains(prompt, expected) {
 			t.Fatalf("buildLLMSearchPrompt() missing %q in:\n%s", expected, prompt)
 		}
+	}
+}
+
+func TestBuildLLMSearchMessagesUsesJSONOnlySystemInstruction(t *testing.T) {
+	messages := buildLLMSearchMessages("Find matching jobs.")
+
+	if len(messages) != 2 {
+		t.Fatalf("len(messages) = %d, want 2", len(messages))
+	}
+	if messages[0].Role != llms.ChatMessageTypeSystem {
+		t.Fatalf("messages[0].Role = %v, want system", messages[0].Role)
+	}
+	if messages[1].Role != llms.ChatMessageTypeHuman {
+		t.Fatalf("messages[1].Role = %v, want human", messages[1].Role)
+	}
+	systemText, ok := messages[0].Parts[0].(llms.TextContent)
+	if !ok {
+		t.Fatalf("messages[0].Parts[0] = %T, want llms.TextContent", messages[0].Parts[0])
+	}
+	if !strings.Contains(systemText.Text, "JSON-only job search API") {
+		t.Fatalf("system instruction = %q, want JSON-only job search API", systemText.Text)
 	}
 }
 
