@@ -111,11 +111,10 @@ func (m model) View() string {
 		if m.commandResultMessage != "" {
 			resultBody := strings.ReplaceAll(m.commandResultMessage, "\n", " • ")
 			lines = append(lines, commandResultTitleStyle.Render(m.commandResultTitle)+helpValueStyle.Render(" ")+commandResultBodyStyle.Render(resultBody))
+		} else {
+			lines = append(lines, " ")
 		}
-		commandLine := commandStyle.Render(":") + " " + m.commandInputInlineView()
-		if ghost := m.operatorCommandGhostHint(); ghost != "" {
-			commandLine += commandHintStyle.Render(ghost)
-		}
+		commandLine := commandStyle.Render(":") + " " + m.commandInputInlineView(m.operatorCommandGhostHint(), commandHintStyle)
 		lines = append(lines, commandLine)
 		lines = append(lines, commandHintStyle.Render("Tab Select/Cycle • Space Confirm • Enter Run • Esc Cancel"))
 		if pool := m.operatorCommandPool(); len(pool) > 0 {
@@ -230,10 +229,22 @@ func (m model) View() string {
 	return viewWithOverlays
 }
 
-func (m model) commandInputInlineView() string {
+func (m model) commandInputInlineView(ghost string, ghostStyle lipgloss.Style) string {
 	input := m.commandInput
 	if valueWidth := lipgloss.Width(input.Value()); valueWidth > 0 {
 		input.Width = valueWidth
 	}
-	return input.View()
+	if ghost != "" && input.Position() < len([]rune(input.Value())) {
+		value := []rune(input.Value())
+		position := input.Position()
+		if position < 0 {
+			position = 0
+		}
+		return string(value[:position]) + ghostStyle.Render(ghost) + string(value[position:])
+	}
+	view := input.View()
+	if ghost != "" {
+		view += ghostStyle.Render(ghost)
+	}
+	return view
 }

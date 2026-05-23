@@ -194,6 +194,30 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.openCompanyHealthIdentityOverlay(identity, true, fmt.Sprintf("Loading health for %s...", company), nil, "")
 				return m, tea.Batch(loadCompanyHealthWithIdentity(identity, false), m.restartLoadingIndicator())
 			}
+			if result.FetchOptions != nil {
+				if m.fetchingJobs {
+					m.commandResultTitle = "Command Failed"
+					m.commandResultMessage = "A fetch is already running."
+					m.commandResultError = true
+					return m, nil
+				}
+				runOptions := commandFetchRunOptions(m.sessionLLMDisabled, *result.FetchOptions)
+				progressCh := make(chan string, 8)
+				m.fetchingJobs = true
+				m.fetchProgress = progressCh
+				m.isCommanding = false
+				m.commandInput.Blur()
+				m.commandResultTitle = ""
+				m.commandResultMessage = ""
+				m.commandResultError = false
+				m.activeFetch = activeFetchState{
+					expanded:     true,
+					animProgress: 1.0,
+					title:        "Fetching Jobs",
+					progress:     fetchStartMessageForOptions(runOptions),
+				}
+				return m, tea.Batch(fetchJobsWithOptionsCmd(runOptions, append([]Job(nil), m.allJobs...), progressCh), waitForFetchProgress(progressCh), m.restartLoadingIndicator())
+			}
 			m.commandResultTitle = result.Title
 			m.commandResultMessage = result.Message
 			m.commandResultError = false

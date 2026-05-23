@@ -20,14 +20,53 @@ const llmJobFilteringTimeout = 180 * time.Second
 
 var filterJobsWithLLM = llmpkg.FilterJobsWithLLM
 
+type fetchRunOptions struct {
+	DisableLLM              bool
+	SourceSelectionSet      bool
+	SourceSelection         []string
+	CandidateLimitPerSource *int
+	AcceptedLimit           *int
+}
+
+func defaultFetchRunOptions(disableLLM bool) fetchRunOptions {
+	return fetchRunOptions{
+		DisableLLM:              disableLLM,
+		SourceSelectionSet:      len(runtimeSourceSelection) > 0,
+		SourceSelection:         append([]string(nil), runtimeSourceSelection...),
+		CandidateLimitPerSource: cloneRuntimeIntPtr(runtimeCandidateLimitPerSource),
+		AcceptedLimit:           cloneRuntimeIntPtr(runtimeAcceptedLimit),
+	}
+}
+
+func commandFetchRunOptions(sessionDisableLLM bool, commandOptions operatorFetchOptions) fetchRunOptions {
+	runOptions := defaultFetchRunOptions(sessionDisableLLM || commandOptions.DisableLLM)
+	if commandOptions.SourceSelectionSet {
+		runOptions.SourceSelectionSet = true
+		runOptions.SourceSelection = append([]string(nil), commandOptions.SourceSelection...)
+	}
+	if commandOptions.CandidateLimitPerSource != nil {
+		runOptions.CandidateLimitPerSource = cloneRuntimeIntPtr(commandOptions.CandidateLimitPerSource)
+	}
+	if commandOptions.AcceptedLimit != nil {
+		runOptions.AcceptedLimit = cloneRuntimeIntPtr(commandOptions.AcceptedLimit)
+	}
+	return runOptions
+}
+
 func sessionFetchConfig(disableLLM bool, appCfg *AppConfig) *AppConfig {
+	return fetchConfigForRun(appCfg, defaultFetchRunOptions(disableLLM))
+}
+
+func fetchConfigForRun(appCfg *AppConfig, runOptions fetchRunOptions) *AppConfig {
 	if appCfg == nil {
 		return nil
 	}
 	cfgCopy := *appCfg
-	config.ApplyFetchSourceSelection(&cfgCopy, runtimeSourceSelection)
-	config.ApplyFetchLimitOverrides(&cfgCopy, runtimeCandidateLimitPerSource, runtimeAcceptedLimit)
-	if disableLLM {
+	if runOptions.SourceSelectionSet && len(runOptions.SourceSelection) > 0 {
+		config.ApplyFetchSourceSelection(&cfgCopy, runOptions.SourceSelection)
+	}
+	config.ApplyFetchLimitOverrides(&cfgCopy, runOptions.CandidateLimitPerSource, runOptions.AcceptedLimit)
+	if runOptions.DisableLLM {
 		cfgCopy.LLM.Enabled = false
 		cfgCopy.LLM.JobSearch = false
 		cfgCopy.LLM.JobFiltering = false
@@ -37,12 +76,16 @@ func sessionFetchConfig(disableLLM bool, appCfg *AppConfig) *AppConfig {
 }
 
 func fetchStartMessage(disableLLM bool) string {
+	return fetchStartMessageForOptions(defaultFetchRunOptions(disableLLM))
+}
+
+func fetchStartMessageForOptions(runOptions fetchRunOptions) string {
 	appCfg, err := config.LoadAppConfig(runtimeConfigPath)
 	if err != nil {
 		return "Fetching jobs with your current configuration..."
 	}
-	appCfg = sessionFetchConfig(disableLLM, appCfg)
-	if disableLLM {
+	appCfg = fetchConfigForRun(appCfg, runOptions)
+	if runOptions.DisableLLM {
 		if appCfg.Sources.Enabled {
 			return "Starting configured source search with LLM disabled for this session..."
 		}
@@ -222,6 +265,10 @@ func waitForFetchProgress(ch <-chan string) tea.Cmd {
 }
 
 func fetchJobsCmd(disableLLM bool, existingJobs []Job, progressCh chan<- string) tea.Cmd {
+	return fetchJobsWithOptionsCmd(defaultFetchRunOptions(disableLLM), existingJobs, progressCh)
+}
+
+func fetchJobsWithOptionsCmd(runOptions fetchRunOptions, existingJobs []Job, progressCh chan<- string) tea.Cmd {
 	return func() tea.Msg {
 		fetchStart := time.Now()
 		ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
@@ -232,7 +279,7 @@ func fetchJobsCmd(disableLLM bool, existingJobs []Job, progressCh chan<- string)
 		if err != nil {
 			return fetchJobsMsg{err: fmt.Errorf("failed to load config: %v", err)}
 		}
-		appCfg = sessionFetchConfig(disableLLM, appCfg)
+		appCfg = fetchConfigForRun(appCfg, runOptions)
 
 		criteriaCfg, err := config.LoadCriteriaConfig(runtimeConfigPath)
 		if err != nil {
