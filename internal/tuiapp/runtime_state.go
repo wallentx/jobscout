@@ -23,6 +23,8 @@ var runtimeSQLitePath = sqliteFilePath
 var runtimeDebugEnabled bool
 var runtimeDebugPath = "debug.log"
 var runtimeSourceSelection []string
+var runtimeCandidateLimitPerSource *int
+var runtimeAcceptedLimit *int
 var runtimeBuildVersion = "dev"
 
 var defaultRuntimeStores = appruntime.InMemoryStores()

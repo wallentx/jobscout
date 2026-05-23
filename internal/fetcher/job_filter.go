@@ -138,49 +138,10 @@ func filterJobReason(job *Job, criteria *CriteriaConfig) string {
 		return ""
 	}
 
-	titleLower := strings.ToLower(job.Title)
+	if reason := titleScopeFilterReason(job.Title, criteria); reason != "" {
+		return reason
+	}
 	descLower := strings.ToLower(job.Description)
-
-	// 1. Title Excludes (Fail fast)
-	if len(criteria.Filters.TitleExcludes) > 0 {
-		for _, exclude := range criteria.Filters.TitleExcludes {
-			if strings.Contains(titleLower, strings.ToLower(exclude)) {
-				return "title excludes"
-			}
-		}
-	}
-
-	// 2. Title Requires (Strict scope enforcement - MUST match as whole word)
-	if len(criteria.Filters.TitleRequires) > 0 {
-		match := false
-		for _, req := range criteria.Filters.TitleRequires {
-			pattern := `(?i)(^|[^a-zA-Z])` + regexp.QuoteMeta(req) + `([^a-zA-Z]|$)`
-			re, err := regexp.Compile(pattern)
-			if err == nil && re.MatchString(job.Title) {
-				match = true
-				break
-			}
-		}
-		if !match {
-			return "title requirements"
-		}
-	}
-
-	// 3. Title Includes (General role targeting - MUST match as whole word/boundary)
-	if len(criteria.Filters.TitleIncludes) > 0 {
-		match := false
-		for _, include := range criteria.Filters.TitleIncludes {
-			pattern := `(?i)(^|[^a-zA-Z])` + regexp.QuoteMeta(include) + `([^a-zA-Z]|$)`
-			re, err := regexp.Compile(pattern)
-			if err == nil && re.MatchString(job.Title) {
-				match = true
-				break
-			}
-		}
-		if !match {
-			return "title includes"
-		}
-	}
 
 	// 4. Industry Excludes (Scan description)
 	if len(criteria.Filters.IndustryExcludes) > 0 {
@@ -201,6 +162,57 @@ func filterJobReason(job *Job, criteria *CriteriaConfig) string {
 	// 6. Work Settings / Remote check (Basic heuristic)
 	if !jobMatchesWorkSettings(job, criteria.Filters.WorkSettings) {
 		return "work setting"
+	}
+
+	return ""
+}
+
+func titleScopeFilterReason(title string, criteria *CriteriaConfig) string {
+	if criteria == nil {
+		return ""
+	}
+
+	titleLower := strings.ToLower(title)
+
+	// 1. Title Excludes (Fail fast)
+	if len(criteria.Filters.TitleExcludes) > 0 {
+		for _, exclude := range criteria.Filters.TitleExcludes {
+			if strings.Contains(titleLower, strings.ToLower(exclude)) {
+				return "title excludes"
+			}
+		}
+	}
+
+	// 2. Title Requires (Strict scope enforcement - MUST match as whole word)
+	if len(criteria.Filters.TitleRequires) > 0 {
+		match := false
+		for _, req := range criteria.Filters.TitleRequires {
+			pattern := `(?i)(^|[^a-zA-Z])` + regexp.QuoteMeta(req) + `([^a-zA-Z]|$)`
+			re, err := regexp.Compile(pattern)
+			if err == nil && re.MatchString(title) {
+				match = true
+				break
+			}
+		}
+		if !match {
+			return "title requirements"
+		}
+	}
+
+	// 3. Title Includes (General role targeting - MUST match as whole word/boundary)
+	if len(criteria.Filters.TitleIncludes) > 0 {
+		match := false
+		for _, include := range criteria.Filters.TitleIncludes {
+			pattern := `(?i)(^|[^a-zA-Z])` + regexp.QuoteMeta(include) + `([^a-zA-Z]|$)`
+			re, err := regexp.Compile(pattern)
+			if err == nil && re.MatchString(title) {
+				match = true
+				break
+			}
+		}
+		if !match {
+			return "title includes"
+		}
 	}
 
 	return ""

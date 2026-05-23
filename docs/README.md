@@ -72,15 +72,27 @@ Rel(update, githubReleases, "Checks latest release")
    SQLite database path.
 2. The fetch pipeline resolves effective sources from config, selected role
    families, and work settings.
-3. Enabled source groups run with bounded concurrency.
-4. Fetched jobs are normalized into the same `Job` shape.
-5. Deterministic filters remove jobs that clearly do not match.
-6. Company identity enrichment fills company website, summary, and industry
+3. Source order is randomized so one large site does not always consume the
+   early fetch budget.
+4. Enabled source groups run with bounded concurrency and site candidate caps.
+5. Fetched jobs are normalized into the same `Job` shape.
+6. Deterministic filters remove jobs that clearly do not match.
+7. Company identity enrichment fills company website, summary, and industry
    when possible.
-7. Optional LLM filtering reviews only jobs that still need fit judgment.
-8. Validation rejects non-job URLs, weak results, duplicates, and already-saved
+8. Optional LLM filtering reviews only jobs that still need fit judgment.
+9. Validation rejects non-job URLs, weak results, duplicates, and already-saved
    jobs.
-9. Accepted jobs are shown in the fetch review flow before they are saved.
+10. Accepted jobs are shown in the fetch review flow before they are saved.
+
+Fetch limits can be adjusted in `config.yaml`:
+
+```yaml
+fetch:
+  candidate_limit_per_source: 15
+  accepted_limit: 0
+```
+
+Use `0` to disable either cap.
 
 ## Job Sources
 
@@ -102,15 +114,19 @@ settings.
 The built-in catalog is not a flat list that always runs.
 
 - Role families choose role-specific RSS feeds and specialty sources.
+- Built-in remote-only sources run only when remote work is selected. This
+  includes Remotive, We Work Remotely, Real Work From Anywhere, and the Built
+  In remote target.
 - `kube.careers` is used only when DevOps / SRE / Systems is selected.
 - If the user selects only remote work, only the Built In remote catalog target
   is used from the Built In catalog.
 - If the user selects hybrid or on-site work, `jobscout` picks the closest Built
-  In regional site from the candidate location. If no region matches, it falls
-  back to the general Built In tech jobs target.
+  In regional site from the candidate location. The general Built In tech jobs
+  target is used only when no regional target matches.
 - If remote is selected along with hybrid or on-site work, the Built In remote
   target can run alongside the closest regional target.
-- User-configured site targets still run when site search is enabled.
+- User-configured site targets still run when site search is enabled, except
+  known remote-only targets are skipped when remote work is not selected.
 
 ### Built-In RSS Catalog
 
@@ -126,7 +142,6 @@ The built-in catalog is not a flat list that always runs.
 - Indeed Jobs
 - LinkedIn Jobs
 - Y Combinator Jobs
-- Himalayas Remote Jobs
 - Kube Careers
 - Built In Remote Tech Jobs
 - Built In Tech Jobs
@@ -148,7 +163,6 @@ The built-in catalog is not a flat list that always runs.
 - Indeed
 - LinkedIn
 - Y Combinator
-- Himalayas
 - Built In Remote
 
 ### Default Experimental `llm_web` Targets

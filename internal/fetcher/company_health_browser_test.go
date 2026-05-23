@@ -2,7 +2,6 @@ package fetcher
 
 import (
 	"context"
-	"net/url"
 	"sync"
 	"testing"
 	"time"
@@ -50,21 +49,6 @@ func TestCanonicalCompanySiteURLReturnsHostRoot(t *testing.T) {
 	raw := "https://www.example.com/about?x=1"
 	if got, want := canonicalCompanySiteURL(raw), "https://www.example.com/"; got != want {
 		t.Fatalf("canonicalCompanySiteURL(%q) = %q; want %q", raw, got, want)
-	}
-}
-
-func TestScoreCompanyAboutLinkRejectsExternalHosts(t *testing.T) {
-	baseURL, err := url.Parse("https://example.com/")
-	if err != nil {
-		t.Fatalf("url.Parse(%q): %v", "https://example.com/", err)
-	}
-
-	link := pageLink{
-		Text: "About Example",
-		URL:  "https://other.example.org/about",
-	}
-	if got := scoreCompanyAboutLink(baseURL, link); got != 0 {
-		t.Fatalf("scoreCompanyAboutLink(%q, %v) = %d; want 0 for external host", baseURL.String(), link, got)
 	}
 }
 

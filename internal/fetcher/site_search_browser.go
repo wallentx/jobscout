@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
+	"golang.org/x/net/publicsuffix"
 )
 
 const (
@@ -33,10 +34,11 @@ const (
 )
 
 type siteSearchCandidate struct {
-	Title   string
-	Company string
-	URL     string
-	Score   int
+	Title       string
+	Company     string
+	URL         string
+	Description string
+	Score       int
 }
 
 var siteSearchNetworkErrorPattern = regexp.MustCompile(`net::[A-Z_]+`)
@@ -143,17 +145,22 @@ func FindSiteSearchBrowserBinary() string {
 	return findSiteSearchBrowserBinary()
 }
 
-func fetchGenericSiteSearch(ctx context.Context, browser *rod.Browser, target string, targetURL string, sourceName string, criteria *CriteriaConfig) ([]Job, map[string][]Job, error) {
+func fetchGenericSiteSearch(ctx context.Context, browser *rod.Browser, target string, targetURL string, sourceName string, criteria *CriteriaConfig, detailBlocked *siteSearchBlocklist, candidateLimiter *siteCandidateLimiter) ([]Job, map[string][]Job, string, error) {
 	candidates, err := probeSiteSearchCandidates(ctx, browser, targetURL, criteria)
 	if err != nil {
 		logDebug("site search %s: browser candidate probe failed: %v", target, err)
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 	logDebug("site search %s: browser candidate probe returned %d candidates", target, len(candidates))
 
 	jobs := make([]Job, 0, len(candidates))
 	filtered := make(map[string][]Job)
 	seen := make(map[string]bool)
+	notice := ""
+	if kept, skipped := candidateLimiter.take(target, candidates); skipped > 0 {
+		logDebug("site search %s: candidate limit kept=%d skipped=%d", target, len(kept), skipped)
+		candidates = kept
+	}
 
 	for _, candidate := range candidates {
 		title := candidate.Title
@@ -185,13 +192,20 @@ func fetchGenericSiteSearch(ctx context.Context, browser *rod.Browser, target st
 			ApplyURL:     candidate.URL,
 			Source:       sourceName,
 			Status:       "Unopened",
-			Remote:       inferWorkSetting(candidate.Title+" "+candidate.URL, criteria),
+			Remote:       inferWorkSetting(candidate.Title+" "+candidate.Description+" "+candidate.URL, criteria),
 			Compensation: "Not listed",
-			Description:  candidate.URL,
+			Description:  firstNonEmptyString(candidate.Description, candidate.URL),
 		}
 		job.SetDateAdded(time.Now().Unix())
 		enrichJobFromDescription(&job)
-		enrichSiteSearchJobIdentityBeforeFilter(ctx, &job)
+		if reason := titleScopeFilterReason(job.Title, criteria); reason != "" {
+			logDebug("site search %s: filtered candidate %s - %s before detail enrichment: %s", target, job.Company, job.Title, reason)
+			filtered[reason] = append(filtered[reason], job)
+			continue
+		}
+		if enrichmentNotice := enrichSiteSearchJobIdentityBeforeFilter(ctx, browser, &job, detailBlocked); enrichmentNotice != "" && notice == "" {
+			notice = enrichmentNotice
+		}
 		logDebug("site search %s: candidate score=%d company=%q title=%q url=%s", target, candidate.Score, job.Company, job.Title, job.ApplyURL)
 
 		if siteSearchCompanyMissingOrInvalid(job.Company) {
@@ -209,12 +223,15 @@ func fetchGenericSiteSearch(ctx context.Context, browser *rod.Browser, target st
 	}
 
 	logDebug("site search %s: accepted %d; filtered %d after generic candidate filtering", target, len(jobs), countFilteredJobs(filtered))
-	return jobs, filtered, nil
+	return jobs, filtered, notice, nil
 }
 
-func enrichSiteSearchJobIdentityBeforeFilter(ctx context.Context, job *Job) {
+func enrichSiteSearchJobIdentityBeforeFilter(ctx context.Context, browser *rod.Browser, job *Job, detailBlocked *siteSearchBlocklist) string {
 	if job == nil || !siteSearchJobNeedsPreFilterDetail(*job) {
-		return
+		return ""
+	}
+	if isIndeedURL(job.ApplyURL) {
+		return enrichIndeedJobIdentityBeforeFilter(ctx, browser, job, detailBlocked)
 	}
 	rawHTML, finalURL, err := fetchApplyPage(ctx, job.ApplyURL)
 	if err != nil || strings.TrimSpace(rawHTML) == "" {
@@ -223,7 +240,7 @@ func enrichSiteSearchJobIdentityBeforeFilter(ctx context.Context, job *Job) {
 		} else {
 			logDebug("site search pre-filter identity %s: empty detail page", job.ApplyURL)
 		}
-		return
+		return ""
 	}
 	if strings.TrimSpace(finalURL) != "" {
 		job.ApplyURL = finalURL
@@ -240,6 +257,7 @@ func enrichSiteSearchJobIdentityBeforeFilter(ctx context.Context, job *Job) {
 		beforeWebsite,
 		job.CompanyWebsite,
 	)
+	return ""
 }
 
 func siteSearchJobNeedsPreFilterIdentity(job Job) bool {
@@ -253,15 +271,167 @@ func siteSearchJobNeedsPreFilterDetail(job Job) bool {
 	if isKnownNonJobApplyURL(job.ApplyURL) {
 		return false
 	}
-	if isIndeedURL(job.ApplyURL) {
-		return false
-	}
 	return siteSearchJobNeedsPreFilterIdentity(job) ||
 		jobDescriptionMissingOrURL(job.Description) ||
-		jobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) ||
-		jobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) ||
+		domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) ||
+		domain.JobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company) ||
 		jobCompanyIndustryNeedsEnrichment(job) ||
-		jobCompensationMissing(job.Compensation)
+		domain.JobCompensationMissing(job.Compensation)
+}
+
+func enrichIndeedJobIdentityBeforeFilter(ctx context.Context, browser *rod.Browser, job *Job, detailBlocked *siteSearchBlocklist) string {
+	if browser == nil {
+		logDebug("site search pre-filter identity %s: skipped Indeed detail enrichment: browser unavailable", job.ApplyURL)
+		return ""
+	}
+	if reason := detailBlocked.reasonFor(job.ApplyURL); reason != "" {
+		logDebug("site search pre-filter identity %s: skipped Indeed detail enrichment because detail probes are blocked: %s", job.ApplyURL, reason)
+		return ""
+	}
+	pageText, links, err := extractBrowserPageContent(ctx, browser, job.ApplyURL)
+	if err != nil || strings.TrimSpace(pageText) == "" {
+		if err != nil {
+			logDebug("site search pre-filter identity %s: Indeed browser fetch failed: %v", job.ApplyURL, err)
+		} else {
+			logDebug("site search pre-filter identity %s: Indeed browser fetch empty", job.ApplyURL)
+		}
+		return ""
+	}
+	if isSiteSearchVerificationPage("", pageText) {
+		reason := "Indeed blocked detail-page access; using listing snippets only"
+		if line := verificationDebugLine(pageText); line != "" {
+			reason += ": " + line
+		}
+		if detailBlocked.block(job.ApplyURL, reason) {
+			logDebug("site search pre-filter identity %s: blocked remaining Indeed detail probes after verification page: %s", job.ApplyURL, reason)
+			return "Indeed blocked detail-page access; using listing snippets only"
+		}
+		logDebug("site search pre-filter identity %s: Indeed detail blocked by verification page: %s", job.ApplyURL, reason)
+		return ""
+	}
+
+	beforeCompany := job.Company
+	beforeWebsite := job.CompanyWebsite
+	if source := job.EnsureSourceMetadata(); strings.TrimSpace(source.PostingURL) == "" {
+		source.PostingURL = strings.TrimSpace(job.ApplyURL)
+	}
+	enrichJobFromIndeedDetailText(job, pageText, job.ApplyURL)
+	enrichJobFromIndeedDetailLinks(job, links)
+	sanitizeExistingJobIdentity(job)
+	logDebug(
+		"site search pre-filter identity %s: Indeed detail company %q -> %q website %q -> %q links=%d",
+		job.ApplyURL,
+		beforeCompany,
+		job.Company,
+		beforeWebsite,
+		job.CompanyWebsite,
+		len(links),
+	)
+	return ""
+}
+
+func enrichJobFromIndeedDetailText(job *Job, pageText string, pageURL string) {
+	if job == nil {
+		return
+	}
+	if isSiteSearchVerificationPage("", pageText) {
+		return
+	}
+	if jobDescriptionMissingOrURL(job.Description) && strings.TrimSpace(pageText) != "" {
+		job.Description = truncateAtSentence(pageText, 1200)
+	}
+	if evidence := companyPublicProfileEvidenceFromText("indeed", pageURL, job.Company, pageText); companyPublicProfileEvidenceUseful(evidence) {
+		applyCompanyPublicProfileEvidence(job, evidence, "indeed_detail")
+	}
+}
+
+func enrichJobFromIndeedDetailLinks(job *Job, links []pageLink) {
+	if job == nil {
+		return
+	}
+	if profileURL := indeedCompanyProfileURLFromLinks(links); profileURL != "" {
+		job.EnsureSourceMetadata().CompanyProfileURL = profileURL
+	}
+	if externalURL := indeedExternalApplyURLFromLinks(links, job.Company); externalURL != "" {
+		source := job.EnsureSourceMetadata()
+		source.ExternalApplyURL = externalURL
+		if domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) {
+			if website := companyWebsiteFromExternalApplyURL(externalURL, job.ApplyURL, job.Company); website != "" {
+				job.CompanyWebsite = website
+				setJobIdentityEvidence(job, "website", website, "indeed_apply_link", externalURL, "high", false, "Website inferred from Indeed company-site apply link.")
+			}
+		}
+	}
+}
+
+func indeedCompanyProfileURLFromLinks(links []pageLink) string {
+	for _, link := range links {
+		if publicProfileSource(link.URL) == "indeed" {
+			return link.URL
+		}
+	}
+	return ""
+}
+
+func indeedExternalApplyURLFromLinks(links []pageLink, company string) string {
+	best := ""
+	bestScore := 0
+	for _, link := range links {
+		score := scoreIndeedExternalApplyLink(link, company)
+		if score > bestScore {
+			bestScore = score
+			best = link.URL
+		}
+	}
+	return best
+}
+
+func companyWebsiteFromExternalApplyURL(externalURL string, applyURL string, company string) string {
+	parsed, err := url.Parse(strings.TrimSpace(externalURL))
+	if err != nil || parsed.Host == "" {
+		return ""
+	}
+	scheme := parsed.Scheme
+	if scheme == "" {
+		scheme = "https"
+	}
+	host := parsed.Hostname()
+	if rootHost, err := publicsuffix.EffectiveTLDPlusOne(host); err == nil && rootHost != "" {
+		host = rootHost
+	}
+	website := (&url.URL{Scheme: scheme, Host: host, Path: "/"}).String()
+	if !looksLikeCompanyWebsite(website, applyURL) || !candidateWebsiteMatchesCompany(website, company) {
+		return ""
+	}
+	return website
+}
+
+func scoreIndeedExternalApplyLink(link pageLink, company string) int {
+	parsed, err := url.Parse(strings.TrimSpace(link.URL))
+	if err != nil || parsed.Host == "" {
+		return 0
+	}
+	host := strings.ToLower(strings.TrimPrefix(parsed.Hostname(), "www."))
+	if isIndeedDomain(host) || isGoogleHost(host) {
+		return 0
+	}
+	candidate := canonicalCompanySiteURL(link.URL)
+	if candidate == "" || !looksLikeCompanyWebsite(candidate, "") {
+		return 0
+	}
+	score := 1
+	textLower := strings.ToLower(link.Text)
+	urlLower := strings.ToLower(link.URL)
+	if strings.Contains(textLower, "apply") || strings.Contains(textLower, "company site") || strings.Contains(urlLower, "worker_signup") || strings.Contains(urlLower, "signup") {
+		score += 6
+	}
+	if candidateWebsiteMatchesCompany(candidate, company) {
+		score += 4
+	}
+	if strings.Contains(urlLower, "utm_source=indeed") || strings.Contains(urlLower, "indeed") {
+		score += 2
+	}
+	return score
 }
 
 func jobDescriptionMissingOrURL(description string) bool {
@@ -353,7 +523,7 @@ func builtInDetailResultForSource(result builtInDetailResult, sourceName string)
 	return result
 }
 
-func fetchBuiltInSiteSearch(ctx context.Context, targetURL string, sourceName string, criteria *CriteriaConfig, detailCache *builtInDetailCache, profileEnricher *sourceProfileEnricher, existing *existingJobIndex) ([]Job, map[string][]Job, bool, error) {
+func fetchBuiltInSiteSearch(ctx context.Context, targetURL string, sourceName string, sourceKey string, criteria *CriteriaConfig, detailCache *builtInDetailCache, profileEnricher *sourceProfileEnricher, existing *existingJobIndex, candidateLimiter *siteCandidateLimiter) ([]Job, map[string][]Job, bool, error) {
 	parsed, err := url.Parse(strings.TrimSpace(targetURL))
 	if err != nil || parsed.Host == "" || !isBuiltInHost(parsed.Hostname()) {
 		return nil, nil, false, nil
@@ -367,14 +537,26 @@ func fetchBuiltInSiteSearch(ctx context.Context, targetURL string, sourceName st
 		}
 		return nil, nil, true, err
 	}
-	return parseBuiltInSiteSearchHTML(ctx, rawHTML, finalURL, sourceName, criteria, detailCache, profileEnricher, existing)
+	return parseBuiltInSiteSearchHTML(ctx, rawHTML, finalURL, sourceName, sourceKey, criteria, detailCache, profileEnricher, existing, candidateLimiter)
 }
 
-func parseBuiltInSiteSearchHTML(ctx context.Context, rawHTML string, finalURL string, sourceName string, criteria *CriteriaConfig, detailCache *builtInDetailCache, profileEnricher *sourceProfileEnricher, existing *existingJobIndex) ([]Job, map[string][]Job, bool, error) {
+func parseBuiltInSiteSearchHTML(ctx context.Context, rawHTML string, finalURL string, sourceName string, sourceKey string, criteria *CriteriaConfig, detailCache *builtInDetailCache, profileEnricher *sourceProfileEnricher, existing *existingJobIndex, candidateLimiter *siteCandidateLimiter) ([]Job, map[string][]Job, bool, error) {
 	hrefs := extractHTMLHrefs(rawHTML)
 	listingJobs, cardCount := extractBuiltInListingJobs(rawHTML, finalURL, sourceName, criteria)
 	if cardCount > 0 {
+		var skippedByLimit []builtInListingJob
+		if keptCount := candidateLimiter.takeCount(sourceKey, len(listingJobs)); keptCount < len(listingJobs) {
+			skippedByLimit = append(skippedByLimit, listingJobs[keptCount:]...)
+			listingJobs = listingJobs[:keptCount]
+			logDebug("site search built-in %s: candidate limit kept=%d skipped=%d", finalURL, keptCount, len(skippedByLimit))
+		}
 		acceptedListingJobs, cardFiltered := filterBuiltInListingJobsWithProfiles(listingJobs, criteria)
+		if len(skippedByLimit) > 0 {
+			if cardFiltered == nil {
+				cardFiltered = make(map[string][]Job)
+			}
+			cardFiltered["candidate limit reached"] = append(cardFiltered["candidate limit reached"], builtInListingJobsToJobs(skippedByLimit)...)
+		}
 		var skippedExisting []Job
 		acceptedListingJobs, skippedExisting = skipExistingBuiltInListingJobs(acceptedListingJobs, existing)
 		if len(skippedExisting) > 0 {
@@ -397,6 +579,10 @@ func parseBuiltInSiteSearchHTML(ctx context.Context, rawHTML string, finalURL st
 	}
 	if len(links) > 50 {
 		links = links[:50]
+	}
+	if keptCount := candidateLimiter.takeCount(sourceKey, len(links)); keptCount < len(links) {
+		logDebug("site search built-in %s: candidate limit kept=%d skipped=%d", finalURL, keptCount, len(links)-keptCount)
+		links = links[:keptCount]
 	}
 	logDebug("site search built-in %s: found %d job detail links", finalURL, len(links))
 
@@ -503,6 +689,9 @@ func fetchBuiltInJobDetail(ctx context.Context, detailURL string, sourceName str
 		Compensation: "Not listed",
 	}
 	enrichJobFromHTML(&job, detailHTML, finalURL)
+	if profileURL := extractSourceCompanyProfileURL(detailHTML, finalURL); profileURL != "" {
+		job.EnsureSourceMetadata().CompanyProfileURL = profileURL
+	}
 	if jobCompanyMissingOrUnknown(job.Company) || strings.TrimSpace(job.Title) == "" {
 		logDebug("site search built-in detail %s: missing company/title after parsing", finalURL)
 		return builtInDetailResult{}
@@ -896,12 +1085,44 @@ func isIndeedHost(host string) bool {
 	return host == "indeed.com"
 }
 
+func isIndeedDomain(host string) bool {
+	host = strings.ToLower(strings.TrimPrefix(strings.TrimSpace(host), "www."))
+	return host == "indeed.com" || strings.HasSuffix(host, ".indeed.com")
+}
+
 func isIndeedURL(rawURL string) bool {
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil || parsed.Host == "" {
 		return false
 	}
 	return isIndeedHost(parsed.Hostname())
+}
+
+func isIndeedPageadClickURL(rawURL string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || parsed.Host == "" || !isIndeedHost(parsed.Hostname()) {
+		return false
+	}
+	return strings.EqualFold(strings.TrimRight(parsed.EscapedPath(), "/"), "/pagead/clk")
+}
+
+func canonicalIndeedJobURL(rawURL string) string {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || parsed.Host == "" || !isIndeedHost(parsed.Hostname()) {
+		return ""
+	}
+	path := strings.ToLower(strings.TrimRight(parsed.EscapedPath(), "/"))
+	switch path {
+	case "/viewjob":
+		if jobKey := strings.TrimSpace(parsed.Query().Get("jk")); jobKey != "" {
+			return "https://www.indeed.com/viewjob?jk=" + url.QueryEscape(jobKey)
+		}
+	case "/rc/clk", "/pagead/clk":
+		if jobKey := strings.TrimSpace(parsed.Query().Get("jk")); jobKey != "" {
+			return "https://www.indeed.com/viewjob?jk=" + url.QueryEscape(jobKey)
+		}
+	}
+	return ""
 }
 
 func isLinkedInHost(host string) bool {
@@ -944,8 +1165,6 @@ func isSiteSearchDirectJobCandidate(baseHost string, title string, resolved *url
 		return false
 	case host == "ycombinator.com":
 		return isYCombinatorJobURL(rawURL)
-	case host == "himalayas.app":
-		return isHimalayasJobURL(rawURL)
 	case isBuiltInHost(host):
 		return isBuiltInJobCandidate(title, resolved)
 	case isSharedATSDirectoryHost(host):
@@ -953,6 +1172,46 @@ func isSiteSearchDirectJobCandidate(baseHost string, title string, resolved *url
 	default:
 		return true
 	}
+}
+
+func siteSearchCandidateApplyURL(baseHost string, resolved *url.URL, canonicalRaw string) (string, bool) {
+	if resolved == nil {
+		return "", false
+	}
+	rawURL := resolved.String()
+	if canonical := safeCanonicalSiteSearchCandidateURL(rawURL, canonicalRaw); canonical != "" {
+		return canonical, true
+	}
+	if canonical := canonicalIndeedJobURL(rawURL); canonical != "" {
+		return canonical, true
+	}
+	if isIndeedHost(baseHost) && isIndeedPageadClickURL(rawURL) {
+		return "", false
+	}
+	return rawURL, true
+}
+
+func safeCanonicalSiteSearchCandidateURL(rawURL string, canonicalRaw string) string {
+	canonicalRaw = strings.TrimSpace(canonicalRaw)
+	if canonicalRaw == "" {
+		return ""
+	}
+	base, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return ""
+	}
+	canonical, err := base.Parse(canonicalRaw)
+	if err != nil || canonical.Host == "" || canonical.Scheme == "" {
+		return ""
+	}
+	if canonical.Scheme != "http" && canonical.Scheme != "https" {
+		return ""
+	}
+	canonicalURL := canonical.String()
+	if usesReservedPlaceholderDomain(canonicalURL) || isKnownNonJobApplyURL(canonicalURL) || isIndeedPageadClickURL(canonicalURL) {
+		return ""
+	}
+	return canonicalURL
 }
 
 func unwrapGoogleSearchResultURL(resolved *url.URL) *url.URL {
@@ -976,16 +1235,6 @@ func unwrapGoogleSearchResultURL(resolved *url.URL) *url.URL {
 	return unwrapped
 }
 
-func isHimalayasJobURL(rawURL string) bool {
-	parsed, err := url.Parse(strings.TrimSpace(rawURL))
-	if err != nil {
-		return false
-	}
-	host := strings.ToLower(strings.TrimPrefix(parsed.Hostname(), "www."))
-	path := strings.ToLower(parsed.EscapedPath())
-	return host == "himalayas.app" && strings.HasPrefix(path, "/companies/") && strings.Contains(path, "/jobs/")
-}
-
 func isSharedATSDirectoryHost(host string) bool {
 	host = strings.ToLower(strings.TrimSpace(host))
 	switch host {
@@ -1001,8 +1250,6 @@ func inferCompanyFromSiteSearchURL(rawURL string) string {
 	switch {
 	case isYCombinatorJobURL(rawURL):
 		return ycCompanyNameFromURL(rawURL)
-	case isHimalayasJobURL(rawURL):
-		return companyNameFromPathSegment(rawURL, "companies")
 	case isLinkedInJobURL(rawURL):
 		return linkedInCompanyNameFromJobURL(rawURL)
 	case isGreenhouseJobURL(rawURL):
@@ -1210,20 +1457,6 @@ func linkedInCompanyNameFromJobURL(rawURL string) string {
 	return titleCaseSlug(companySlug)
 }
 
-func companyNameFromPathSegment(rawURL string, marker string) string {
-	parsed, err := url.Parse(strings.TrimSpace(rawURL))
-	if err != nil {
-		return ""
-	}
-	parts := strings.Split(strings.Trim(parsed.EscapedPath(), "/"), "/")
-	for i, part := range parts {
-		if part == marker && i+1 < len(parts) {
-			return titleCaseSlug(parts[i+1])
-		}
-	}
-	return ""
-}
-
 func companyNameFromGreenhouseURL(rawURL string) string {
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil {
@@ -1248,24 +1481,21 @@ func probeSiteSearchCandidates(ctx context.Context, browser *rod.Browser, target
 			}
 		}
 
-		page := browser.Timeout(timeout).MustPage(targetURL)
-		defer page.MustClose()
+		withReusableBrowserPage(ctx, browser, timeout, targetURL, func(page *rod.Page) {
+			waitBrowserPageReady(page, siteSearchSettleDelay)
 
-		page.MustWaitLoad()
-		time.Sleep(siteSearchSettleDelay)
-
-		info := page.MustInfo()
-		baseURL, err := url.Parse(info.URL)
-		if err != nil {
-			baseURL, err = url.Parse(targetURL)
+			info := page.MustInfo()
+			baseURL, err := url.Parse(info.URL)
 			if err != nil {
-				panic(err)
+				baseURL, err = url.Parse(targetURL)
+				if err != nil {
+					panic(err)
+				}
 			}
-		}
 
-		// Execute a single JS evaluation to extract all anchors and their contextual
-		// parent text to avoid accumulating hundreds of CDP element references.
-		res, err := page.Eval(`() => {
+			// Execute a single JS evaluation to extract all anchors and their contextual
+			// parent text to avoid accumulating hundreds of CDP element references.
+			res, err := page.Eval(`() => {
 			const maxAnchors = 500;
 			const maxTitleLength = 300;
 			const maxContextLength = 700;
@@ -1295,12 +1525,64 @@ func probeSiteSearchCandidates(ctx context.Context, browser *rod.Browser, target
 				}
 				return text;
 			};
-			let results = [];
-			let elements = document.querySelectorAll("a[href]");
-			for (let i = 0; i < elements.length && results.length < maxAnchors; i++) {
-				let el = elements[i];
-				let title = truncateInline(el.innerText || el.textContent || "", maxTitleLength);
-				let href = el.getAttribute("href") || "";
+				let results = [];
+				const isLinkedIn = /(^|\.)linkedin\.com$/i.test(window.location.hostname || "");
+				const isIndeed = /(^|\.)indeed\.com$/i.test(window.location.hostname || "");
+				const normalizeURL = (value) => {
+					try {
+						if (!value) return "";
+						return new URL(value, window.location.href).href;
+					} catch (_) {
+						return "";
+					}
+				};
+				const indeedURLKey = (value) => {
+					try {
+						let parsed = new URL(value, window.location.href);
+						if (!/(^|\.)indeed\.com$/i.test(parsed.hostname || "")) return "";
+						parsed.searchParams.delete("jsa");
+						return parsed.pathname + "?" + parsed.searchParams.toString();
+					} catch (_) {
+						return "";
+					}
+				};
+				const indeedCanonicalByClick = new Map();
+				const indeedCanonicalByKey = new Map();
+				const addIndeedCanonical = (clickURL, canonicalURL) => {
+					let canonical = normalizeURL(canonicalURL);
+					if (!canonical) return;
+					let clickKey = indeedURLKey(clickURL);
+					if (clickKey) indeedCanonicalByClick.set(clickKey, canonical);
+				};
+				const addIndeedJob = (job) => {
+					if (!job) return;
+					let key = (job.key || "").trim();
+					let canonical = normalizeURL(job.url || (key ? "/viewjob?jk=" + encodeURIComponent(key) : ""));
+					if (!canonical) return;
+					if (key) indeedCanonicalByKey.set(key, canonical);
+					let clickURL = job.tracking && job.tracking.jobClick && job.tracking.jobClick.url;
+					addIndeedCanonical(clickURL, canonical);
+				};
+				if (isIndeed) {
+					try {
+						let initial = window._initialData || {};
+						let results = (((initial.hostQueryExecutionResult || {}).data || {}).jobData || {}).results || [];
+						for (let result of results) addIndeedJob(result && result.job);
+						let autoKey = ((initial.autoOpenJobAttributes || {}).jobKey || "").trim();
+						let autoLink = (initial.autoOpenJobAttributes || {}).link || "";
+						if (autoKey && indeedCanonicalByKey.has(autoKey)) {
+							addIndeedCanonical(autoLink, indeedCanonicalByKey.get(autoKey));
+						} else if (autoKey) {
+							addIndeedCanonical(autoLink, "/viewjob?jk=" + encodeURIComponent(autoKey));
+						}
+					} catch (_) {
+					}
+				}
+				let elements = document.querySelectorAll("a[href]");
+				for (let i = 0; i < elements.length && results.length < maxAnchors; i++) {
+					let el = elements[i];
+					let title = truncateInline(el.innerText || el.textContent || "", maxTitleLength);
+					let href = el.getAttribute("href") || "";
 				let contexts = [];
 				let seenContexts = new Set();
 				let addContext = (node) => {
@@ -1310,22 +1592,30 @@ func probeSiteSearchCandidates(ctx context.Context, browser *rod.Browser, target
 						contexts.push(text);
 					}
 				};
-				let card = el.closest('[data-jk], [data-testid*="job"], .job_seen_beacon, .cardOutline, .result, article, li');
+				let cardSelector = isLinkedIn
+					? ".job-search-card, .base-search-card, .base-card"
+					: '[data-jk], [data-testid*="job"], .job_seen_beacon, .cardOutline, .result, article, li';
+				let card = el.closest(cardSelector);
+				let hasCardContext = false;
 				if (card && card !== document.body && card !== document.documentElement) {
 					addContext(card);
+					hasCardContext = true;
 				}
-				let curr = el.parentElement;
-				for (let j = 0; j < 6; j++) {
-					if (!curr) break;
-					addContext(curr);
-					curr = curr.parentElement;
+				if (!isLinkedIn || !hasCardContext) {
+					let curr = el.parentElement;
+					for (let j = 0; j < 6; j++) {
+						if (!curr) break;
+						addContext(curr);
+						curr = curr.parentElement;
+					}
+					}
+					results.push({
+						title: title,
+						href: href,
+						canonicalHref: isIndeed ? (indeedCanonicalByClick.get(indeedURLKey(href)) || "") : "",
+						contexts: contexts
+					});
 				}
-				results.push({
-					title: title,
-					href: href,
-					contexts: contexts
-				});
-			}
 			const bodyText = (document.body && document.body.innerText || "")
 				.replace(/[ \t\r\f\v]+/g, " ")
 				.replace(/\n{3,}/g, "\n\n")
@@ -1335,111 +1625,119 @@ func probeSiteSearchCandidates(ctx context.Context, browser *rod.Browser, target
 				bodyText: bodyText.slice(0, 2000),
 				anchors: results
 			};
-		}`)
-		if err != nil {
-			panic(err)
-		}
-
-		pageTitle := res.Value.Get("title").Str()
-		bodyText := res.Value.Get("bodyText").Str()
-		anchors := res.Value.Get("anchors").Arr()
-		if isSiteSearchVerificationPage(pageTitle, bodyText) {
-			probeErr = fmt.Errorf("%w: %s", errSiteSearchVerificationRequired, siteSearchVerificationSummary(pageTitle, bodyText))
-			logDebug("site search probe %s: final_url=%s verification required title=%q body=%q", targetURL, baseURL.String(), pageTitle, verificationDebugLine(bodyText))
-			return
-		}
-
-		raw := make([]siteSearchCandidate, 0, len(anchors))
-		emptyLinks := 0
-		builtInNonJobLinks := 0
-		nonJobLinks := 0
-		lowScoreLinks := 0
-		badIdentityLinks := 0
-
-		for _, item := range anchors {
-			title := normalizeWhitespace(item.Get("title").Str())
-			href := strings.TrimSpace(item.Get("href").Str())
-
-			if title == "" || href == "" {
-				emptyLinks++
-				continue
-			}
-
-			resolved, err := baseURL.Parse(href)
+			}`)
 			if err != nil {
-				continue
-			}
-			if isGoogleHost(baseURL.Hostname()) {
-				resolved = unwrapGoogleSearchResultURL(resolved)
-			}
-			if isBuiltInHost(baseURL.Hostname()) && !isBuiltInJobCandidate(title, resolved) {
-				builtInNonJobLinks++
-				continue
-			}
-			if !isSiteSearchDirectJobCandidate(baseURL.Hostname(), title, resolved) {
-				nonJobLinks++
-				continue
+				panic(err)
 			}
 
-			score := scoreSiteSearchCandidate(title, resolved.String(), criteria)
-			if score <= 0 {
-				lowScoreLinks++
-				continue
+			pageTitle := res.Value.Get("title").Str()
+			bodyText := res.Value.Get("bodyText").Str()
+			anchors := res.Value.Get("anchors").Arr()
+			if isSiteSearchVerificationPage(pageTitle, bodyText) {
+				probeErr = fmt.Errorf("%w: %s", errSiteSearchVerificationRequired, siteSearchVerificationSummary(pageTitle, bodyText))
+				logDebug("site search probe %s: final_url=%s verification required title=%q body=%q", targetURL, baseURL.String(), pageTitle, verificationDebugLine(bodyText))
+				return
 			}
 
-			var contexts []string
-			for _, c := range item.Get("contexts").Arr() {
-				contexts = append(contexts, c.Str())
-			}
+			raw := make([]siteSearchCandidate, 0, len(anchors))
+			emptyLinks := 0
+			builtInNonJobLinks := 0
+			nonJobLinks := 0
+			lowScoreLinks := 0
+			badIdentityLinks := 0
 
-			company := ""
-			if c := inferCompanyFromSiteSearchURL(resolved.String()); c != "" {
-				company = c
-			} else {
-				for _, text := range contexts {
-					if c := inferCompanyFromCandidateContext(baseURL.Hostname(), title, text); c != "" {
-						company = c
-						break
+			for _, item := range anchors {
+				title := normalizeWhitespace(item.Get("title").Str())
+				href := strings.TrimSpace(item.Get("href").Str())
+				canonicalHref := strings.TrimSpace(item.Get("canonicalHref").Str())
+
+				if title == "" || href == "" {
+					emptyLinks++
+					continue
+				}
+
+				resolved, err := baseURL.Parse(href)
+				if err != nil {
+					continue
+				}
+				if isGoogleHost(baseURL.Hostname()) {
+					resolved = unwrapGoogleSearchResultURL(resolved)
+				}
+				if isBuiltInHost(baseURL.Hostname()) && !isBuiltInJobCandidate(title, resolved) {
+					builtInNonJobLinks++
+					continue
+				}
+				if !isSiteSearchDirectJobCandidate(baseURL.Hostname(), title, resolved) {
+					nonJobLinks++
+					continue
+				}
+				applyURL, ok := siteSearchCandidateApplyURL(baseURL.Hostname(), resolved, canonicalHref)
+				if !ok {
+					nonJobLinks++
+					continue
+				}
+
+				score := scoreSiteSearchCandidate(title, applyURL, criteria)
+				if score <= 0 {
+					lowScoreLinks++
+					continue
+				}
+
+				var contexts []string
+				for _, c := range item.Get("contexts").Arr() {
+					contexts = append(contexts, c.Str())
+				}
+
+				company := ""
+				if c := inferCompanyFromSiteSearchURL(resolved.String()); c != "" {
+					company = c
+				} else {
+					for _, text := range contexts {
+						if c := inferCompanyFromCandidateContext(baseURL.Hostname(), title, text); c != "" {
+							company = c
+							break
+						}
 					}
 				}
-			}
 
-			if siteSearchCandidateMissingRequiredIdentity(baseURL.Hostname(), company, resolved.String()) {
-				badIdentityLinks++
-				continue
-			}
+				if siteSearchCandidateMissingRequiredIdentity(baseURL.Hostname(), company, applyURL) {
+					badIdentityLinks++
+					continue
+				}
 
-			raw = append(raw, siteSearchCandidate{
-				Title:   title,
-				Company: company,
-				URL:     resolved.String(),
-				Score:   score,
+				raw = append(raw, siteSearchCandidate{
+					Title:       title,
+					Company:     company,
+					URL:         applyURL,
+					Description: siteSearchCandidateDescription(title, company, contexts),
+					Score:       score,
+				})
+			}
+			logDebug(
+				"site search probe %s: final_url=%s anchors=%d raw_candidates=%d skipped_empty=%d skipped_builtin_non_job=%d skipped_non_job=%d skipped_low_score=%d skipped_bad_identity=%d",
+				targetURL,
+				baseURL.String(),
+				len(anchors),
+				len(raw),
+				emptyLinks,
+				builtInNonJobLinks,
+				nonJobLinks,
+				lowScoreLinks,
+				badIdentityLinks,
+			)
+
+			candidates = dedupeSiteSearchCandidates(raw)
+			sort.SliceStable(candidates, func(i, j int) bool {
+				if candidates[i].Score == candidates[j].Score {
+					return candidates[i].Title < candidates[j].Title
+				}
+				return candidates[i].Score > candidates[j].Score
 			})
-		}
-		logDebug(
-			"site search probe %s: final_url=%s anchors=%d raw_candidates=%d skipped_empty=%d skipped_builtin_non_job=%d skipped_non_job=%d skipped_low_score=%d skipped_bad_identity=%d",
-			targetURL,
-			baseURL.String(),
-			len(anchors),
-			len(raw),
-			emptyLinks,
-			builtInNonJobLinks,
-			nonJobLinks,
-			lowScoreLinks,
-			badIdentityLinks,
-		)
 
-		candidates = dedupeSiteSearchCandidates(raw)
-		sort.SliceStable(candidates, func(i, j int) bool {
-			if candidates[i].Score == candidates[j].Score {
-				return candidates[i].Title < candidates[j].Title
+			if len(candidates) > 50 {
+				candidates = candidates[:50]
 			}
-			return candidates[i].Score > candidates[j].Score
 		})
-
-		if len(candidates) > 50 {
-			candidates = candidates[:50]
-		}
 	})
 	if err != nil {
 		return nil, simplifySiteSearchError(err)
@@ -1535,12 +1833,60 @@ func siteSearchCandidateRequiresCompanyAtProbe(baseHost string, rawURL string) b
 	return isIndeedHost(host) || isLinkedInHost(host)
 }
 
+func siteSearchCandidateDescription(title string, company string, contexts []string) string {
+	best := ""
+	bestScore := 0
+	seen := make(map[string]bool, len(contexts))
+	for _, context := range contexts {
+		context = normalizeWhitespace(context)
+		if context == "" || seen[context] {
+			continue
+		}
+		seen[context] = true
+		if strings.EqualFold(context, title) {
+			continue
+		}
+		if siteSearchCandidateContextTooBroad(context) {
+			continue
+		}
+
+		lower := strings.ToLower(context)
+		score := 1
+		if title != "" && strings.Contains(lower, strings.ToLower(title)) {
+			score += 2
+		}
+		if company != "" && !siteSearchCompanyMissingOrInvalid(company) && strings.Contains(lower, strings.ToLower(company)) {
+			score += 2
+		}
+		signals := detectWorkSettingSignals(context)
+		if signals.remote || signals.hybrid || signals.onsite {
+			score++
+		}
+		if score > bestScore || (score == bestScore && (best == "" || len(context) < len(best))) {
+			best = context
+			bestScore = score
+		}
+	}
+	return truncateAtSentence(best, 1200)
+}
+
+func siteSearchCandidateContextTooBroad(context string) bool {
+	lower := strings.ToLower(context)
+	return strings.Contains(lower, "get notified about new") ||
+		strings.Contains(lower, "sign in to create job alert") ||
+		strings.Contains(lower, "linkedin ©") ||
+		strings.Contains(lower, "privacy policy") && strings.Contains(lower, "user agreement")
+}
+
 func simplifySiteSearchError(err error) error {
 	if err == nil {
 		return nil
 	}
 
 	message := strings.TrimSpace(err.Error())
+	if errors.Is(err, context.DeadlineExceeded) || strings.Contains(message, "context.deadlineExceededError") || strings.Contains(message, "context deadline exceeded") {
+		return fmt.Errorf("browser page timed out")
+	}
 	if match := siteSearchNetworkErrorPattern.FindString(message); match != "" {
 		return fmt.Errorf("navigation failed: %s", match)
 	}

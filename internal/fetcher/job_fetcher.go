@@ -47,6 +47,7 @@ func fetchAllJobs(ctx context.Context, appCfg *AppConfig, criteriaCfg *CriteriaC
 	if err := refreshLinkedInCriteriaHints(ctx, criteriaCfg); err != nil {
 		logDebug("linkedin criteria hint refresh failed: %v", err)
 	}
+	policy := fetchPolicyFromConfig(appCfg)
 	urlVisits := beginURLVisitRun()
 	sourceProfiles := beginSourceProfileRun()
 	defer func() {
@@ -54,6 +55,7 @@ func fetchAllJobs(ctx context.Context, appCfg *AppConfig, criteriaCfg *CriteriaC
 		logDebug("url visit registry summary: fetches=%d hits=%d html_entries=%d probe_entries=%d", fetches, hits, htmlEntries, probeEntries)
 	}()
 	effectiveSources := resolveEffectiveSources(appCfg, criteriaCfg)
+	randomizeResolvedSources(&effectiveSources)
 	logDebug(
 		"fetch start: llm_enabled=%t llm_job_search=%t llm_job_filtering=%t llm_company_health=%t sources_enabled=%t rss_enabled=%t rss_feeds=%d api_sources=%d site_enabled=%t site_targets=%d llm_web_enabled=%t llm_web_targets=%d",
 		appCfg.LLM.Enabled,
@@ -74,6 +76,11 @@ func fetchAllJobs(ctx context.Context, appCfg *AppConfig, criteriaCfg *CriteriaC
 	logDebug("source resolution: api=%s", debugAPISources(effectiveSources.APISources))
 	logDebug("source resolution: site_targets=%s", debugStringList(effectiveSources.SiteTargets))
 	logDebug("source resolution: llm_web_targets=%s", debugStringList(effectiveSources.LLMWebTargets))
+	logDebug(
+		"fetch policy: candidate_limit_per_source=%d accepted_limit=%d randomize_sources=true",
+		policy.CandidateLimitPerSource,
+		policy.AcceptedLimit,
+	)
 
 	var mu sync.Mutex
 
@@ -104,6 +111,8 @@ func fetchAllJobs(ctx context.Context, appCfg *AppConfig, criteriaCfg *CriteriaC
 						mu.Unlock()
 					} else {
 						var dropped map[string][]string
+						markLLMJobsForValidation(jobs)
+						jobs = enrichLLMJobsBeforeValidation(ctx, appCfg, jobs, progress)
 						jobs, dropped = validateFetchedJobs(ctx, jobs)
 						mu.Lock()
 						summary.Rejected = mergeRejectedBySearch(summary.Rejected, fetchSearchLLM, dropped)
@@ -405,17 +414,19 @@ func fetchAllJobs(ctx context.Context, appCfg *AppConfig, criteriaCfg *CriteriaC
 			builtInDetails := newBuiltInDetailCache()
 			builtInProfiles := sourceProfiles
 			blockedSiteSearches := newSiteSearchBlocklist()
+			blockedSiteDetails := newSiteSearchBlocklist()
+			candidateLimiter := newSiteCandidateLimiter(policy.CandidateLimitPerSource)
 			runBounded(ctx, len(tasks), maxConcurrentSiteSearchFetch, func(i int) {
 				task := tasks[i]
 				reportFetchProgress(progress, "Searching site target: %s", strings.TrimSpace(task.site))
-				results[i] = fetchSiteSearchTask(ctx, task, criteriaCfg, ensureSiteBrowser, browserSem, builtInDetails, builtInProfiles, existingIndex, blockedSiteSearches)
+				results[i] = fetchSiteSearchTask(ctx, task, criteriaCfg, ensureSiteBrowser, browserSem, builtInDetails, builtInProfiles, existingIndex, blockedSiteSearches, blockedSiteDetails, candidateLimiter)
 			})
 
 			for i, result := range results {
 				if result.err != nil {
 					if result.notice != "" {
 						mu.Lock()
-						summary.Notices = append(summary.Notices, result.notice)
+						appendFetchNotice(&summary, result.notice)
 						mu.Unlock()
 					}
 					siteErrors++
@@ -427,6 +438,7 @@ func fetchAllJobs(ctx context.Context, appCfg *AppConfig, criteriaCfg *CriteriaC
 				mu.Lock()
 				summary.Filtered = mergeFiltered(summary.Filtered, result.filtered)
 				summary.Rejected = mergeRejectedBySearch(summary.Rejected, fetchSearchSite, result.dropped)
+				appendFetchNotice(&summary, result.notice)
 				siteCount += len(result.jobs)
 				siteFiltered += countFilteredJobs(result.filtered)
 				siteRejected += countRejectedJobs(result.dropped)
@@ -473,6 +485,8 @@ func fetchAllJobs(ctx context.Context, appCfg *AppConfig, criteriaCfg *CriteriaC
 		logDebug("fetch finalization: deduped %d duplicate fetched jobs before review/LLM filtering", len(duplicates))
 	}
 
+	allFetched = capAcceptedFetchedJobs(allFetched, policy.AcceptedLimit, &summary)
+
 	return allFetched, summary, nil
 }
 
@@ -497,6 +511,19 @@ func markLLMWebJobsForValidation(jobs []Job) {
 	}
 }
 
+func markLLMJobsForValidation(jobs []Job) {
+	for i := range jobs {
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(jobs[i].Source)), strings.ToLower(fetchSearchLLM)+":") {
+			continue
+		}
+		source := strings.TrimSpace(jobs[i].Source)
+		if source == "" {
+			source = "llm_job_search"
+		}
+		jobs[i].Source = formatSearchSource(fetchSearchLLM, source)
+	}
+}
+
 func filterLLMWebJobsBeforeEnrichment(jobs []Job, criteria *CriteriaConfig) ([]Job, map[string][]Job) {
 	if len(jobs) == 0 {
 		return jobs, nil
@@ -518,7 +545,15 @@ func filterLLMWebJobsBeforeEnrichment(jobs []Job, criteria *CriteriaConfig) ([]J
 	return kept, filtered
 }
 
+func enrichLLMJobsBeforeValidation(ctx context.Context, appCfg *AppConfig, jobs []Job, progress func(string)) []Job {
+	return enrichLLMGeneratedJobsBeforeValidation(ctx, appCfg, jobs, progress, "llm job search")
+}
+
 func enrichLLMWebJobsBeforeValidation(ctx context.Context, appCfg *AppConfig, jobs []Job, progress func(string)) []Job {
+	return enrichLLMGeneratedJobsBeforeValidation(ctx, appCfg, jobs, progress, "llm web search")
+}
+
+func enrichLLMGeneratedJobsBeforeValidation(ctx context.Context, appCfg *AppConfig, jobs []Job, progress func(string), label string) []Job {
 	if len(jobs) == 0 {
 		return jobs
 	}
@@ -526,7 +561,7 @@ func enrichLLMWebJobsBeforeValidation(ctx context.Context, appCfg *AppConfig, jo
 	indexes := make([]int, 0, len(jobs))
 	candidates := make([]Job, 0, len(jobs))
 	for i, job := range jobs {
-		if !llmWebJobNeedsPreValidationIdentity(job) {
+		if !llmGeneratedJobNeedsPreValidationIdentity(job) {
 			continue
 		}
 		indexes = append(indexes, i)
@@ -537,7 +572,7 @@ func enrichLLMWebJobsBeforeValidation(ctx context.Context, appCfg *AppConfig, jo
 	}
 
 	start := time.Now()
-	logDebug("llm web search: repairing identity for %d/%d jobs before validation", len(candidates), len(jobs))
+	logDebug("%s: repairing identity for %d/%d jobs before validation", label, len(candidates), len(jobs))
 	enriched := enrichJobsFromApplyPagesForValidation(ctx, candidates, progress)
 	repaired := 0
 	fallbackIndexes := make([]int, 0, len(enriched))
@@ -551,7 +586,8 @@ func enrichLLMWebJobsBeforeValidation(ctx context.Context, appCfg *AppConfig, jo
 		fallbackCandidates = append(fallbackCandidates, job)
 	}
 	logDebug(
-		"llm web search: fast identity repair checked %d jobs; repaired=%d fallback=%d duration=%s",
+		"%s: fast identity repair checked %d jobs; repaired=%d fallback=%d duration=%s",
+		label,
 		len(enriched),
 		repaired,
 		len(fallbackCandidates),
@@ -560,12 +596,12 @@ func enrichLLMWebJobsBeforeValidation(ctx context.Context, appCfg *AppConfig, jo
 
 	if len(fallbackCandidates) > 0 {
 		fallbackStart := time.Now()
-		logDebug("llm web search: running full identity enrichment fallback for %d jobs", len(fallbackCandidates))
+		logDebug("%s: running full identity enrichment fallback for %d jobs", label, len(fallbackCandidates))
 		fallbackEnriched := EnrichJobsFromApplyPagesWithConfigAndProgress(ctx, fallbackCandidates, appCfg, progress, nil)
 		for i, idx := range fallbackIndexes {
 			enriched[idx] = fallbackEnriched[i]
 		}
-		logDebug("llm web search: full identity enrichment fallback finished in %s", time.Since(fallbackStart).Round(time.Millisecond))
+		logDebug("%s: full identity enrichment fallback finished in %s", label, time.Since(fallbackStart).Round(time.Millisecond))
 	}
 
 	for i, idx := range indexes {
@@ -574,7 +610,7 @@ func enrichLLMWebJobsBeforeValidation(ctx context.Context, appCfg *AppConfig, jo
 	return jobs
 }
 
-func llmWebJobNeedsPreValidationIdentity(job Job) bool {
+func llmGeneratedJobNeedsPreValidationIdentity(job Job) bool {
 	if !isLLMGeneratedJob(job) {
 		return false
 	}
@@ -671,18 +707,23 @@ func normalizedSiteSearchHost(rawURL string) string {
 	return strings.TrimPrefix(strings.ToLower(parsed.Hostname()), "www.")
 }
 
-func fetchSiteSearchTask(ctx context.Context, task siteSearchTask, criteria *CriteriaConfig, ensureBrowser func() (*rod.Browser, error), browserSem chan struct{}, builtInDetails *builtInDetailCache, builtInProfiles *sourceProfileEnricher, existing *existingJobIndex, blocked *siteSearchBlocklist) sourceFetchResult {
+func fetchSiteSearchTask(ctx context.Context, task siteSearchTask, criteria *CriteriaConfig, ensureBrowser func() (*rod.Browser, error), browserSem chan struct{}, builtInDetails *builtInDetailCache, builtInProfiles *sourceProfileEnricher, existing *existingJobIndex, blocked *siteSearchBlocklist, detailBlocked *siteSearchBlocklist, candidateLimiter *siteCandidateLimiter) sourceFetchResult {
 	var jobs []Job
 	var filtered map[string][]Job
 	var err error
+	var detailNotice string
 	handled := false
 	logDebug("site search %s query %d/%d: target URL %s", task.site, task.queryIndex+1, task.queryCount, task.targetURL)
 	if reason := blocked.reasonFor(task.targetURL); reason != "" {
 		logDebug("site search %s query %d/%d: skipped because host was blocked earlier in this fetch: %s", task.site, task.queryIndex+1, task.queryCount, reason)
 		return sourceFetchResult{}
 	}
+	if candidateLimiter.exhausted(task.site) {
+		logDebug("site search %s query %d/%d: skipped because candidate limit is exhausted", task.site, task.queryIndex+1, task.queryCount)
+		return sourceFetchResult{}
+	}
 	logDebug("site search %s query %d/%d: trying static handler", task.site, task.queryIndex+1, task.queryCount)
-	jobs, filtered, handled, err = fetchBuiltInSiteSearch(ctx, task.targetURL, task.sourceName, criteria, builtInDetails, builtInProfiles, existing)
+	jobs, filtered, handled, err = fetchBuiltInSiteSearch(ctx, task.targetURL, task.sourceName, task.site, criteria, builtInDetails, builtInProfiles, existing, candidateLimiter)
 	if handled {
 		logDebug("site search %s query %d/%d: static handler completed with %d accepted and %d filtered", task.site, task.queryIndex+1, task.queryCount, len(jobs), countFilteredJobs(filtered))
 	} else if err != nil {
@@ -691,6 +732,10 @@ func fetchSiteSearchTask(ctx context.Context, task siteSearchTask, criteria *Cri
 		logDebug("site search %s query %d/%d: static handler did not handle target", task.site, task.queryIndex+1, task.queryCount)
 	}
 	if !handled && err == nil {
+		if candidateLimiter.exhausted(task.site) {
+			logDebug("site search %s query %d/%d: skipped browser probe because candidate limit is exhausted", task.site, task.queryIndex+1, task.queryCount)
+			return sourceFetchResult{}
+		}
 		select {
 		case browserSem <- struct{}{}:
 			defer func() {
@@ -700,6 +745,10 @@ func fetchSiteSearchTask(ctx context.Context, task siteSearchTask, criteria *Cri
 			err = ctx.Err()
 		}
 		if err == nil {
+			if candidateLimiter.exhausted(task.site) {
+				logDebug("site search %s query %d/%d: skipped browser probe because candidate limit was exhausted while waiting", task.site, task.queryIndex+1, task.queryCount)
+				return sourceFetchResult{}
+			}
 			if reason := blocked.reasonFor(task.targetURL); reason != "" {
 				logDebug("site search %s query %d/%d: skipped browser probe because host was blocked while waiting: %s", task.site, task.queryIndex+1, task.queryCount, reason)
 				return sourceFetchResult{}
@@ -707,12 +756,15 @@ func fetchSiteSearchTask(ctx context.Context, task siteSearchTask, criteria *Cri
 			var browser *rod.Browser
 			browser, err = ensureBrowser()
 			if err == nil {
-				jobs, filtered, err = fetchGenericSiteSearch(ctx, browser, task.site, task.targetURL, task.sourceName, criteria)
+				jobs, filtered, detailNotice, err = fetchGenericSiteSearch(ctx, browser, task.site, task.targetURL, task.sourceName, criteria, detailBlocked, candidateLimiter)
+				if detailNotice != "" {
+					logDebug("site search %s query %d/%d: %s", task.site, task.queryIndex+1, task.queryCount, detailNotice)
+				}
 				if errors.Is(err, errSiteSearchVerificationRequired) {
 					if blocked.block(task.targetURL, err.Error()) {
 						logDebug("site search %s query %d/%d: blocked remaining searches for host after verification page: %v", task.site, task.queryIndex+1, task.queryCount, err)
 					}
-					return sourceFetchResult{}
+					return sourceFetchResult{err: err, notice: fmt.Sprintf("Search page blocked for %s: %v", task.site, err)}
 				}
 			}
 		}
@@ -732,7 +784,25 @@ func fetchSiteSearchTask(ctx context.Context, task siteSearchTask, criteria *Cri
 		filtered["already saved"] = append(filtered["already saved"], skippedExisting...)
 		logDebug("site search %s query %d/%d: skipped %d already saved jobs after validation", task.site, task.queryIndex+1, task.queryCount, len(skippedExisting))
 	}
-	return newSourceFetchResult(validated, filtered, dropped)
+	result := newSourceFetchResult(validated, filtered, dropped)
+	result.notice = detailNotice
+	return result
+}
+
+func appendFetchNotice(summary *FetchSummary, notice string) {
+	if summary == nil {
+		return
+	}
+	notice = strings.TrimSpace(notice)
+	if notice == "" {
+		return
+	}
+	for _, existing := range summary.Notices {
+		if existing == notice {
+			return
+		}
+	}
+	summary.Notices = append(summary.Notices, notice)
 }
 
 func runBounded(ctx context.Context, total int, limit int, work func(int)) {

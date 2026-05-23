@@ -286,14 +286,6 @@ func sourceCatalog() []SourceSpec {
 			RoleFamilies: allRoles,
 		},
 		{
-			ID:           "site-himalayas",
-			Label:        "Himalayas Remote Jobs",
-			Target:       "https://himalayas.app/jobs",
-			Kind:         SourceKindSite,
-			Group:        SourceGroupSiteAggregator,
-			RoleFamilies: allRoles,
-		},
-		{
 			ID:           "site-kube-careers",
 			Label:        "Kube Careers",
 			Target:       "kube.careers",
@@ -499,6 +491,10 @@ func resolveEffectiveSources(appCfg *AppConfig, criteria *CriteriaConfig) Resolv
 			if target == "" || seenSite[target] {
 				continue
 			}
+			if shouldSkipSiteTargetForWorkSettings(target, criteria) {
+				logDebug("source resolution: skipped site target %s because remote work is not selected", target)
+				continue
+			}
 			if shouldSkipSiteTargetForRoles(target, roleFamilies) {
 				logDebug("source resolution: skipped site target %s because DevOps / SRE / Systems is not selected", target)
 				continue
@@ -525,6 +521,10 @@ func resolveEffectiveSources(appCfg *AppConfig, criteria *CriteriaConfig) Resolv
 	resolved := resolveCatalogSources(roleFamilies)
 
 	for _, source := range resolved {
+		if shouldSkipCatalogSourceForWorkSettings(source, criteria) {
+			logDebug("source resolution: skipped catalog source %s because remote work is not selected", source.Label)
+			continue
+		}
 		switch source.Kind {
 		case SourceKindRSS:
 			if !appCfg.Sources.RSS.Enabled {
@@ -611,6 +611,62 @@ func effectiveRoleFamilies(appCfg *AppConfig, criteria *CriteriaConfig) []RoleFa
 
 func shouldSkipSiteTargetForRoles(target string, roleFamilies []RoleFamilyID) bool {
 	return isKubeCareersTarget(target) && !roleFamilySelected(roleFamilies, RoleDevOpsSRESystems)
+}
+
+func shouldSkipCatalogSourceForWorkSettings(source SourceSpec, criteria *CriteriaConfig) bool {
+	if criteria == nil || workSettingsAllowRemoteOnly(criteria.Filters.WorkSettings) {
+		return false
+	}
+	return isRemoteOnlyCatalogSource(source)
+}
+
+func shouldSkipSiteTargetForWorkSettings(target string, criteria *CriteriaConfig) bool {
+	if criteria == nil || workSettingsAllowRemoteOnly(criteria.Filters.WorkSettings) {
+		return false
+	}
+	return isKnownRemoteOnlySiteTarget(target)
+}
+
+func workSettingsAllowRemoteOnly(settings WorkSettingsConfig) bool {
+	return !workSettingsConfigured(settings) || settings.Remote
+}
+
+func isRemoteOnlyCatalogSource(source SourceSpec) bool {
+	switch source.Group {
+	case SourceGroupRSSRemotive, SourceGroupRSSWeWorkRemotely, SourceGroupRSSRealWorkFromAnywhere, SourceGroupSiteBuiltInRemote:
+		return true
+	default:
+		return false
+	}
+}
+
+func isKnownRemoteOnlySiteTarget(target string) bool {
+	host, path := siteTargetHostPath(target)
+	switch host {
+	case "builtin.com":
+		return path == "/jobs/remote" || strings.HasPrefix(path, "/jobs/remote/")
+	case "weworkremotely.com", "realworkfromanywhere.com":
+		return true
+	case "remotive.com":
+		return strings.Contains(path, "/remote-jobs")
+	default:
+		return false
+	}
+}
+
+func siteTargetHostPath(target string) (string, string) {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return "", ""
+	}
+	if !strings.Contains(target, "://") {
+		target = "https://" + strings.TrimPrefix(target, "//")
+	}
+	u, err := url.Parse(target)
+	if err != nil {
+		return "", ""
+	}
+	return strings.TrimPrefix(strings.ToLower(u.Hostname()), "www."), strings.ToLower(u.EscapedPath())
 }
 
 func roleFamilySelected(roleFamilies []RoleFamilyID, want RoleFamilyID) bool {

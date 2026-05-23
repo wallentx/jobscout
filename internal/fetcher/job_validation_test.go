@@ -48,3 +48,15 @@ func TestIsKnownNonJobApplyURLAllowsBuiltInDirectJobDetails(t *testing.T) {
 		})
 	}
 }
+
+func TestUnusableJobReasonRejectsIndeedPageadClickURL(t *testing.T) {
+	job := Job{
+		Company:  "Example",
+		Title:    "Software Engineer",
+		ApplyURL: "https://www.indeed.com/pagead/clk?mo=r&ad=abc&p=0",
+	}
+
+	if got := unusableJobReason(job); got != "Indeed click tracking URL" {
+		t.Fatalf("unusableJobReason() = %q; want Indeed click tracking URL", got)
+	}
+}

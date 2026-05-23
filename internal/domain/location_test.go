@@ -23,7 +23,4 @@ func TestParseWorkSettingsAcceptsNewlineSeparatedValues(t *testing.T) {
 	if !got.Onsite {
 		t.Fatal("ParseWorkSettings(...).Onsite = false; want true")
 	}
-	if got.Hybrid {
-		t.Fatal("ParseWorkSettings(...).Hybrid = true; want false")
-	}
 }

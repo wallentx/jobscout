@@ -26,6 +26,7 @@ func sessionFetchConfig(disableLLM bool, appCfg *AppConfig) *AppConfig {
 	}
 	cfgCopy := *appCfg
 	config.ApplyFetchSourceSelection(&cfgCopy, runtimeSourceSelection)
+	config.ApplyFetchLimitOverrides(&cfgCopy, runtimeCandidateLimitPerSource, runtimeAcceptedLimit)
 	if disableLLM {
 		cfgCopy.LLM.Enabled = false
 		cfgCopy.LLM.JobSearch = false
@@ -151,6 +152,7 @@ func previewFetchCmd(appCfg AppConfig, criteriaCfg *CriteriaConfig) tea.Cmd {
 		defer cancel()
 
 		config.ApplyFetchSourceSelection(&appCfg, runtimeSourceSelection)
+		config.ApplyFetchLimitOverrides(&appCfg, runtimeCandidateLimitPerSource, runtimeAcceptedLimit)
 		newJobs, summary, err := fetchAllJobs(ctx, &appCfg, criteriaCfg, nil, nil)
 		if err != nil {
 			return setupPreviewMsg{err: err}

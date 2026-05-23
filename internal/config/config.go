@@ -37,6 +37,11 @@ type LLMWebSearchConfig struct {
 	Targets []string `yaml:"targets"`
 }
 
+type FetchConfig struct {
+	CandidateLimitPerSource int `yaml:"candidate_limit_per_source,omitempty"`
+	AcceptedLimit           int `yaml:"accepted_limit,omitempty"`
+}
+
 type SourcesConfig struct {
 	Enabled         bool               `yaml:"enabled"`
 	BuiltinsEnabled bool               `yaml:"builtins_enabled,omitempty"`
@@ -84,6 +89,7 @@ type LLMConfig struct {
 }
 
 type AppConfig struct {
+	Fetch    FetchConfig    `yaml:"fetch,omitempty"`
 	Sources  SourcesConfig  `yaml:"sources"`
 	Criteria CriteriaConfig `yaml:"criteria,omitempty"`
 	LLM      LLMConfig      `yaml:"llm"`
@@ -123,6 +129,8 @@ const (
 func defaultAppConfig() AppConfig {
 	var cfg AppConfig
 
+	cfg.Fetch.CandidateLimitPerSource = 15
+	cfg.Fetch.AcceptedLimit = 0
 	cfg.Sources.Enabled = true
 	cfg.Sources.BuiltinsEnabled = true
 	cfg.Sources.RSS.Enabled = true
@@ -133,7 +141,6 @@ func defaultAppConfig() AppConfig {
 		"https://www.indeed.com/jobs",
 		"https://www.linkedin.com/jobs/search",
 		"https://www.ycombinator.com/jobs",
-		"https://himalayas.app/jobs",
 		"https://builtin.com/jobs/remote",
 	}
 	cfg.Sources.LLMWeb.Enabled = false
@@ -358,6 +365,7 @@ func loadAppConfig(path string) (*AppConfig, error) {
 		})
 	}
 	disableExperimentalFetchSources(&cfg)
+	normalizeFetchConfig(&cfg)
 	if criteria, ok, err := loadCriteriaSectionFromConfigData(data); err != nil {
 		return nil, err
 	} else if ok {
@@ -369,6 +377,31 @@ func loadAppConfig(path string) (*AppConfig, error) {
 
 func LoadAppConfig(path string) (*AppConfig, error) {
 	return loadAppConfig(path)
+}
+
+func normalizeFetchConfig(cfg *AppConfig) {
+	if cfg == nil {
+		return
+	}
+	if cfg.Fetch.CandidateLimitPerSource < 0 {
+		cfg.Fetch.CandidateLimitPerSource = 0
+	}
+	if cfg.Fetch.AcceptedLimit < 0 {
+		cfg.Fetch.AcceptedLimit = 0
+	}
+}
+
+func ApplyFetchLimitOverrides(cfg *AppConfig, candidateLimitPerSource *int, acceptedLimit *int) {
+	if cfg == nil {
+		return
+	}
+	if candidateLimitPerSource != nil {
+		cfg.Fetch.CandidateLimitPerSource = *candidateLimitPerSource
+	}
+	if acceptedLimit != nil {
+		cfg.Fetch.AcceptedLimit = *acceptedLimit
+	}
+	normalizeFetchConfig(cfg)
 }
 
 // Experimental fetch sources are opt-in through --sources; keep their definitions

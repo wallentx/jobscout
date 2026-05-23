@@ -170,9 +170,9 @@ func enrichJobFromHTML(job *Job, rawHTML string, pageURL string) {
 	} else {
 		setJobCompanyIfMissing(job, companyNameFromSummary(job.CompanySummary))
 	}
-	if explicitIndustry := extractExplicitCompanyIndustryFromHTML(rawHTML); explicitIndustry != "" && jobCompanyIndustryNeedsEnrichment(*job) {
+	if explicitIndustry, reason := extractApplyPageCompanyIndustryFromHTML(rawHTML, pageURL, job.Company); explicitIndustry != "" && jobCompanyIndustryNeedsEnrichment(*job) {
 		job.CompanyIndustry = explicitIndustry
-		setJobIdentityEvidence(job, "industry", explicitIndustry, "apply_page", pageURL, "medium", false, "Industry came from an explicit page label.")
+		setJobIdentityEvidence(job, "industry", explicitIndustry, "apply_page", pageURL, "medium", false, reason)
 	} else if summaryIndustry := inferCompanyIndustry(job.CompanySummary); summaryIndustry != "" && jobCompanyIndustryNeedsEnrichment(*job) {
 		job.CompanyIndustry = summaryIndustry
 		setJobIdentityEvidence(job, "industry", summaryIndustry, "company_summary_inference", pageURL, "low", true, "Industry inferred from company summary text.")
@@ -220,6 +220,77 @@ func jobHasSourceCompanyProfile(applyURL string) bool {
 	}
 	host := strings.ToLower(parsed.Host)
 	return strings.Contains(host, "weworkremotely.com") || strings.Contains(host, "realworkfromanywhere.com")
+}
+
+func extractApplyPageCompanyIndustryFromHTML(rawHTML string, pageURL string, company string) (string, string) {
+	if industry := extractExplicitCompanyIndustryFromHTML(rawHTML); industry != "" {
+		return industry, "Industry came from an explicit page label."
+	}
+	if isLinkedInJobURL(pageURL) {
+		if industry := extractLinkedInJobAboutCompanyIndustry(rawHTML, company); industry != "" {
+			return industry, "Industry extracted from LinkedIn About the company section."
+		}
+	}
+	return "", ""
+}
+
+func extractLinkedInJobAboutCompanyIndustry(rawHTML string, company string) string {
+	aboutText := extractLinkedInJobAboutCompanyText(rawHTML)
+	if aboutText == "" {
+		return ""
+	}
+	if industry := extractPublicProfileIndustryFromText(aboutText); industry != "" {
+		return industry
+	}
+
+	employeeMarker := `(?:[0-9][0-9,.k+\s]*(?:(?:-|–|—|to)\s*[0-9][0-9,.k+\s]*)?\s*employees?|Company size|Headquarters)`
+	patterns := make([]*regexp.Regexp, 0, 3)
+	if normalizedCompany := NormalizeWhitespace(company); normalizedCompany != "" {
+		patterns = append(patterns, regexp.MustCompile(`(?i)\b`+regexp.QuoteMeta(normalizedCompany)+`\b\s+(?:[0-9][0-9,]*\s+followers\s+)?([A-Za-z][A-Za-z0-9 &,/+\-]{2,80}?)\s+`+employeeMarker))
+	}
+	patterns = append(patterns,
+		regexp.MustCompile(`(?i)\bfollowers\s+([A-Za-z][A-Za-z0-9 &,/+\-]{2,80}?)\s+`+employeeMarker),
+	)
+
+	for _, pattern := range patterns {
+		match := pattern.FindStringSubmatch(aboutText)
+		if len(match) < 2 {
+			continue
+		}
+		industry := cleanPublicProfileIndustry(match[1])
+		if looksLikeCompanyIndustry(industry) {
+			return industry
+		}
+	}
+	return ""
+}
+
+func extractLinkedInJobAboutCompanyText(rawHTML string) string {
+	text := normalizeHTMLText(rawHTML)
+	if text == "" {
+		return ""
+	}
+	lower := strings.ToLower(text)
+	index := strings.Index(lower, "about the company")
+	if index < 0 {
+		return ""
+	}
+	text = strings.TrimSpace(text[index:])
+	lower = strings.ToLower(text)
+	for _, stop := range []string{
+		" similar jobs",
+		" see all jobs",
+		" show more jobs",
+		" job function",
+		" seniority level",
+		" employment type",
+	} {
+		if stopIndex := strings.Index(lower, stop); stopIndex > 0 {
+			text = strings.TrimSpace(text[:stopIndex])
+			break
+		}
+	}
+	return text
 }
 
 func inferCompanyWebsiteFromApplyURL(job Job) string {
@@ -423,7 +494,10 @@ func looksLikeCompanyIndustry(industry string) bool {
 	}
 	lower := strings.ToLower(industry)
 	switch strings.Trim(lower, " .,;:") {
-	case "alt", "before", "building a path to compliance 3", "carousel", "icon-30x30", "link", "member trust", "wide":
+	case "alt", "before", "building a path to compliance 3", "carousel", "icon-30x30", "job", "jobs", "job search", "link", "member trust", "search", "wide":
+		return false
+	}
+	if regexp.MustCompile(`\bsearch\b`).MatchString(lower) {
 		return false
 	}
 	for _, token := range []string{
@@ -443,7 +517,6 @@ func looksLikeCompanyIndustry(industry string) bool {
 		"standard security",
 		"remote united states",
 		"salary",
-		"search",
 		"west coast",
 	} {
 		if strings.Contains(lower, token) {

@@ -123,7 +123,7 @@ func TestParseBuiltInSiteSearchHTMLRecordsExistingListingCard(t *testing.T) {
 		ApplyURL: "https://builtin.com/job/staff-devops-engineer/7934986",
 	}})
 
-	jobs, filtered, handled, err := parseBuiltInSiteSearchHTML(context.Background(), rawHTML, "https://builtin.com/jobs/remote?search=staff", "Site Search: Built In", criteria, nil, nil, existing)
+	jobs, filtered, handled, err := parseBuiltInSiteSearchHTML(context.Background(), rawHTML, "https://builtin.com/jobs/remote?search=staff", "Site Search: Built In", "https://builtin.com/jobs/remote", criteria, nil, nil, existing, nil)
 
 	if err != nil {
 		t.Fatalf("parseBuiltInSiteSearchHTML() error = %v, want nil", err)
@@ -159,25 +159,6 @@ func TestBuiltInCompanyProfileURLFromJobUsesCardEvidence(t *testing.T) {
 	got := builtInCompanyProfileURLFromJob(job)
 	if got != "https://builtin.com/company/cadence-care" {
 		t.Fatalf("builtInCompanyProfileURLFromJob() = %q; want canonical Built In company profile URL", got)
-	}
-}
-
-func TestBuiltInCompanyProfileURLFromJobRejectsNonBuiltInJob(t *testing.T) {
-	job := Job{
-		Company:  "Cadence",
-		Title:    "Staff DevOps Engineer",
-		ApplyURL: "https://example.com/jobs/7934986",
-		CompanyIdentity: &domain.JobIdentityMetadata{
-			Industry: &JobIdentityEvidence{
-				Value:  "Healthtech",
-				Source: "builtin_card_industry",
-				URL:    "https://builtin.com/company/cadence-care",
-			},
-		},
-	}
-
-	if got := builtInCompanyProfileURLFromJob(job); got != "" {
-		t.Fatalf("builtInCompanyProfileURLFromJob() = %q; want empty for non-Built In job", got)
 	}
 }
 

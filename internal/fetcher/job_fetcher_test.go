@@ -182,7 +182,7 @@ func TestValidateFetchedJobsRejectsLLMJobsWithoutCompanyIdentity(t *testing.T) {
 			Title:          "Platform Engineer",
 			ApplyURL:       okServer.URL,
 			Source:         "LLM: llm_job_search",
-			CompanyWebsite: "https://acme.example",
+			CompanyWebsite: "https://acme.com",
 			CompanySummary: "Acme builds deployment tooling for software teams.",
 		},
 		{
@@ -202,6 +202,25 @@ func TestValidateFetchedJobsRejectsLLMJobsWithoutCompanyIdentity(t *testing.T) {
 	}
 	if got := len(warnings["missing company identity"]); got != 2 {
 		t.Fatalf("missing company identity warnings = %d, want 2: %#v", got, warnings)
+	}
+}
+
+func TestValidateFetchedJobsRejectsPlaceholderURLs(t *testing.T) {
+	jobs := []Job{{
+		Company:        "Acme",
+		Title:          "Platform Engineer",
+		ApplyURL:       "https://jobs.acme.example/jobs/platform-engineer",
+		CompanyWebsite: "https://acme.example",
+		CompanySummary: "Acme builds deployment tooling for software teams.",
+	}}
+
+	filtered, warnings := validateFetchedJobs(context.Background(), jobs)
+
+	if len(filtered) != 0 {
+		t.Fatalf("validateFetchedJobs() kept %#v, want none", filtered)
+	}
+	if got := len(warnings["placeholder URL"]); got != 1 {
+		t.Fatalf("placeholder URL warnings = %d, want 1: %#v", got, warnings)
 	}
 }
 
@@ -427,7 +446,7 @@ func TestFetchAllJobsLLMWebUsesDedicatedRunner(t *testing.T) {
 			Company:        "Acme",
 			Title:          "Software Engineer",
 			ApplyURL:       applyServer.URL,
-			CompanyWebsite: "https://acme.example.com",
+			CompanyWebsite: "https://acme.com",
 			CompanySummary: "Acme builds developer productivity software for engineering teams that ship cloud applications.",
 			Source:         "provider web search",
 		}}, nil
@@ -546,6 +565,86 @@ func TestFetchAllJobsLLMWebRepairsIdentityBeforeValidation(t *testing.T) {
 	}
 	if status := summary.Searches[FetchSearchLLMWeb]; !strings.HasPrefix(status, "executed; found 1 results") {
 		t.Fatalf("summary.Searches[%q] = %q; want executed status", FetchSearchLLMWeb, status)
+	}
+}
+
+func TestFetchAllJobsLLMSearchRepairsIdentityBeforeValidation(t *testing.T) {
+	applyGETRequests := 0
+	applyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		if r.Method != http.MethodGet {
+			return
+		}
+		applyGETRequests++
+		_, _ = w.Write([]byte(`
+<html>
+  <body>
+    <h1>Software Engineer</h1>
+    <p>Acme builds developer productivity software for engineering teams shipping cloud applications.</p>
+    <p>Industry: Developer Tools</p>
+    <a href="https://www.acme.com">Company website</a>
+  </body>
+</html>`))
+	}))
+	defer applyServer.Close()
+
+	prevInit := fetchAllJobsInitConfiguredLLM
+	prevSearch := fetchAllJobsExecuteLLMSearch
+	prevReadFile := fetchAllJobsReadFile
+	initTasks := []string(nil)
+	fetchAllJobsInitConfiguredLLM = func(ctx context.Context, appCfg *AppConfig, task string) (llms.Model, func(), error) {
+		initTasks = append(initTasks, task)
+		return fakeLLMModel{}, func() {}, nil
+	}
+	fetchAllJobsExecuteLLMSearch = func(ctx context.Context, llm llms.Model, prompt string) ([]Job, error) {
+		return []Job{{
+			Company:  "Acme",
+			Title:    "Software Engineer",
+			ApplyURL: applyServer.URL,
+		}}, nil
+	}
+	fetchAllJobsReadFile = func(path string) ([]byte, error) {
+		return []byte("prompt"), nil
+	}
+	t.Cleanup(func() {
+		fetchAllJobsInitConfiguredLLM = prevInit
+		fetchAllJobsExecuteLLMSearch = prevSearch
+		fetchAllJobsReadFile = prevReadFile
+	})
+
+	appCfg := defaultAppConfig()
+	appCfg.LLM.Enabled = true
+	appCfg.LLM.JobSearch = true
+	appCfg.LLM.JobFiltering = false
+	appCfg.Sources.Enabled = false
+	appCfg.Sources.RSS.Enabled = false
+	appCfg.Sources.APIs = nil
+	appCfg.Sources.SiteSearch.Enabled = false
+	appCfg.Sources.SiteSearch.Sites = nil
+	appCfg.Sources.LLMWeb.Enabled = false
+	criteria := defaultCriteriaConfig()
+
+	jobs, summary, err := fetchAllJobs(context.Background(), &appCfg, &criteria, nil)
+	if err != nil {
+		t.Fatalf("fetchAllJobs() error = %v", err)
+	}
+	if got, want := len(jobs), 1; got != want {
+		t.Fatalf("fetchAllJobs() jobs len = %d, want %d; rejected=%#v", got, want, summary.Rejected)
+	}
+	if applyGETRequests == 0 {
+		t.Fatal("fetchAllJobs() did not fetch the apply page for llm_job_search identity repair")
+	}
+	if len(initTasks) != 1 || initTasks[0] != llmTaskJobSearch {
+		t.Fatalf("fetchAllJobs() initialized LLM tasks %#v, want only %q", initTasks, llmTaskJobSearch)
+	}
+	if got, want := jobs[0].CompanyWebsite, "https://www.acme.com"; got != want {
+		t.Fatalf("jobs[0].CompanyWebsite = %q, want %q", got, want)
+	}
+	if !strings.Contains(jobs[0].CompanySummary, "developer productivity software") {
+		t.Fatalf("jobs[0].CompanySummary = %q, want apply-page company summary", jobs[0].CompanySummary)
+	}
+	if got, want := jobs[0].CompanyIndustry, "Developer Tools"; got != want {
+		t.Fatalf("jobs[0].CompanyIndustry = %q, want %q", got, want)
 	}
 }
 
@@ -1387,6 +1486,12 @@ func TestExtractSourceCompanyProfileURL(t *testing.T) {
 			want:    "https://builtin.com/company/gusto",
 		},
 		{
+			name:    "linkedin",
+			pageURL: "https://www.linkedin.com/jobs/view/software-engineer-at-acme-123",
+			html:    `<a href="https://www.linkedin.com/company/acme/?trk=public_jobs_topcard-org-name">Acme</a>`,
+			want:    "https://www.linkedin.com/company/acme/",
+		},
+		{
 			name:    "ignore unrelated host",
 			pageURL: "https://example.com/jobs/123",
 			html:    `<a href="/company/example">View company</a>`,
@@ -1401,6 +1506,44 @@ func TestExtractSourceCompanyProfileURL(t *testing.T) {
 				t.Fatalf("extractSourceCompanyProfileURL(%q) = %q; want %q", tt.pageURL, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestCompanyWebsiteFromProfileLinksUsesCompanyWebsiteLink(t *testing.T) {
+	links := []pageLink{{
+		Text: "Company website",
+		URL:  "https://app.dataannotation.tech/worker_signup?worker_src=I&utm_source=indeed",
+	}}
+
+	got := companyWebsiteFromProfileLinks(links, "https://www.indeed.com/cmp/DataAnnotation", "DataAnnotation")
+	want := "https://dataannotation.tech/"
+	if got != want {
+		t.Fatalf("companyWebsiteFromProfileLinks(...) = %q; want %q", got, want)
+	}
+}
+
+func TestEnrichJobFromCompanyProfileHTMLExtractsLinkedInWebsite(t *testing.T) {
+	job := Job{Company: "Kabilah"}
+	rawHTML := `
+<html><body>
+  <a href="https://static.licdn.com/sc/h/app.css">LinkedIn asset</a>
+  <section>
+    <h2>About us</h2>
+    <p>Every nurse needs a workflow sidekick.</p>
+    <div>Website</div>
+    <a href="https://www.linkedin.com/redir/redirect?url=https%3A%2F%2Fwww.kabilah.com%2F&amp;urlhash=abc">https://www.kabilah.com/</a>
+    <div>Industry</div>
+    <div>Hospitals and Health Care</div>
+  </section>
+</body></html>`
+
+	enrichJobFromCompanyProfileHTML(&job, rawHTML, "https://www.linkedin.com/company/kabilah")
+
+	if job.CompanyWebsite != "https://www.kabilah.com" {
+		t.Fatalf("CompanyWebsite = %q; want https://www.kabilah.com", job.CompanyWebsite)
+	}
+	if job.CompanyIdentity == nil || job.CompanyIdentity.Website == nil || job.CompanyIdentity.Website.Source != "company_profile" {
+		t.Fatalf("CompanyIdentity.Website = %#v; want company profile website evidence", job.CompanyIdentity)
 	}
 }
 
@@ -1921,6 +2064,32 @@ func TestEnrichJobFromCompanyWebsitePagesUsesAboutPage(t *testing.T) {
 	}
 }
 
+func TestEnrichJobFromHTMLExtractsLinkedInAboutCompanyIndustry(t *testing.T) {
+	job := Job{
+		Company: "Allen Institute",
+		Title:   "Software Engineer II",
+	}
+	rawHTML := `
+<html><body>
+  <section>
+    <h2>About the company</h2>
+    <a href="https://www.linkedin.com/company/allen-institute/">Allen Institute</a>
+    <div>51,000 followers</div>
+    <div>Research Services</div>
+    <div>501-1,000 employees</div>
+  </section>
+</body></html>`
+
+	enrichJobFromHTML(&job, rawHTML, "https://www.linkedin.com/jobs/view/4397181050/")
+
+	if job.CompanyIndustry != "Research Services" {
+		t.Fatalf("CompanyIndustry = %q; want Research Services", job.CompanyIndustry)
+	}
+	if job.CompanyIdentity == nil || job.CompanyIdentity.Industry == nil || job.CompanyIdentity.Industry.Source != "apply_page" {
+		t.Fatalf("CompanyIdentity = %#v; want apply-page industry evidence", job.CompanyIdentity)
+	}
+}
+
 func TestEnrichJobFromCompanyWebsitePagesSuppliesAboutPageToLLM(t *testing.T) {
 	companyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -2017,24 +2186,6 @@ func TestPopulateCompanySiteProfileIdentity(t *testing.T) {
 	}
 }
 
-func TestEnrichJobsFromApplyPagesDoesNotUseBrowserCompanySearchFallback(t *testing.T) {
-	job := Job{
-		Company:  "Acme",
-		Title:    "Staff Platform Engineer",
-		ApplyURL: "https://www.indeed.com/viewjob?jk=abc123",
-		Source:   "Site Search: https://www.indeed.com/jobs",
-	}
-
-	enriched := enrichJobsFromApplyPagesWithLLMAndProgress(context.Background(), []Job{job}, nil, nil, nil)
-
-	if len(enriched) != 1 {
-		t.Fatalf("enrichJobsFromApplyPagesWithLLMAndProgress(...) len = %d; want 1", len(enriched))
-	}
-	if enriched[0].CompanyWebsite != "" || enriched[0].CompanySummary != "" || enriched[0].CompanyIndustry != "" {
-		t.Fatalf("enriched job identity = website %q summary %q industry %q; want browser fallback not to fill fields", enriched[0].CompanyWebsite, enriched[0].CompanySummary, enriched[0].CompanyIndustry)
-	}
-}
-
 func TestBrowserCompanySearchTargetsDedupesCompanies(t *testing.T) {
 	jobs := []Job{
 		{Company: "Acme Inc.", Title: "Platform Engineer"},
@@ -2074,7 +2225,13 @@ func TestFetchAllJobsCombinesLLMAndRSSSources(t *testing.T) {
 	}
 	fetchAllJobsExecuteLLMSearch = func(ctx context.Context, llm llms.Model, prompt string) ([]Job, error) {
 		return []Job{
-			{Company: "LLMCo", Title: "LLM Role", ApplyURL: applyServer.URL},
+			{
+				Company:        "LLMCo",
+				Title:          "LLM Role",
+				ApplyURL:       applyServer.URL,
+				CompanyWebsite: "https://llmco.com",
+				CompanySummary: "LLMCo builds infrastructure tooling for software engineering teams.",
+			},
 		}, nil
 	}
 	fetchAllJobsEnrichJobIdentity = func(ctx context.Context, llm llms.Model, job Job, page JobIdentityPage) (*JobIdentityEnrichment, LLMTokenUsage, error) {

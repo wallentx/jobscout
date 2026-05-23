@@ -72,6 +72,17 @@ func TestSaveAppConfigUsesPrivatePermissions(t *testing.T) {
 	}
 }
 
+func TestDefaultFetchPolicyLimitsSiteCandidateEvaluation(t *testing.T) {
+	cfg := defaultAppConfig()
+
+	if cfg.Fetch.CandidateLimitPerSource != 15 {
+		t.Fatalf("default fetch candidate_limit_per_source = %d; want 15", cfg.Fetch.CandidateLimitPerSource)
+	}
+	if cfg.Fetch.AcceptedLimit != 0 {
+		t.Fatalf("default fetch accepted_limit = %d; want 0 for unlimited", cfg.Fetch.AcceptedLimit)
+	}
+}
+
 func TestModelOptionsForProviderIncludesCurrentOpenAITextModels(t *testing.T) {
 	options := ModelOptionsForProvider("openai")
 	for _, model := range []string{"gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-5-mini", "gpt-5-nano", "gpt-5.3-chat", "gpt-5.2-chat", "gpt-4o", "gpt-4o-mini", "o3"} {
@@ -179,10 +190,9 @@ func TestDefaultSiteSearchSitesAreSearchableTargets(t *testing.T) {
 		"https://www.indeed.com/jobs",
 		"https://www.linkedin.com/jobs/search",
 		"https://www.ycombinator.com/jobs",
-		"https://himalayas.app/jobs",
 		"https://builtin.com/jobs/remote",
 	} {
-		if !containsString(cfg.Sources.SiteSearch.Sites, want) {
+		if !slices.Contains(cfg.Sources.SiteSearch.Sites, want) {
 			t.Fatalf("defaultAppConfig().Sources.SiteSearch.Sites = %#v; want %q", cfg.Sources.SiteSearch.Sites, want)
 		}
 	}
@@ -200,7 +210,7 @@ func TestDefaultSiteSearchSitesAreSearchableTargets(t *testing.T) {
 		"site:careers-*.icims.com",
 		"site:*.bamboohr.com/jobs",
 	} {
-		if !containsString(cfg.Sources.LLMWeb.Targets, want) {
+		if !slices.Contains(cfg.Sources.LLMWeb.Targets, want) {
 			t.Fatalf("defaultAppConfig().Sources.LLMWeb.Targets = %#v; want %q", cfg.Sources.LLMWeb.Targets, want)
 		}
 	}
@@ -423,7 +433,7 @@ func TestEvaluateCapabilitiesFlagsDisabledLLMWithFeatureToggles(t *testing.T) {
 		t.Fatal("evaluateCapabilitiesForConfig(...).LLMFeaturesSelected = false; want true")
 	}
 	want := "LLM feature toggles are enabled but llm.enabled is false"
-	if !containsString(caps.SetupIssues, want) {
+	if !slices.Contains(caps.SetupIssues, want) {
 		t.Fatalf("evaluateCapabilitiesForConfig(...).SetupIssues = %#v; want %q", caps.SetupIssues, want)
 	}
 }
@@ -482,13 +492,4 @@ func TestEvaluateRuntimeCapabilitiesUsesConfiguredRuntimePath(t *testing.T) {
 	if !caps.SearchProfileReady {
 		t.Fatal("EvaluateRuntimeCapabilities().SearchProfileReady = false; want true")
 	}
-}
-
-func containsString(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
 }

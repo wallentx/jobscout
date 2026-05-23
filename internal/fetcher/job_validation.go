@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/wallentx/jobscout/internal/domain"
 )
 
 func validateFetchedJobs(ctx context.Context, jobs []Job) ([]Job, map[string][]string) {
@@ -51,8 +53,13 @@ func unusableJobReason(job Job) string {
 	if reason := unusableJobURLReason(job); reason != "" {
 		return reason
 	}
-	if isLLMGeneratedJob(job) && !jobHasRequiredCompanyIdentity(job) {
-		return "missing company identity"
+	if usesReservedPlaceholderDomain(job.CompanyWebsite) {
+		return "placeholder URL"
+	}
+	if isLLMGeneratedJob(job) {
+		if !jobHasRequiredCompanyIdentity(job) {
+			return "missing company identity"
+		}
 	}
 	return ""
 }
@@ -61,6 +68,12 @@ func unusableJobURLReason(job Job) string {
 	applyURL := strings.TrimSpace(job.ApplyURL)
 	if applyURL == "" {
 		return "empty URL"
+	}
+	if usesReservedPlaceholderDomain(applyURL) {
+		return "placeholder URL"
+	}
+	if isIndeedPageadClickURL(applyURL) {
+		return "Indeed click tracking URL"
 	}
 	if isKnownNonJobApplyURL(applyURL) {
 		return "not a direct job URL"
@@ -83,10 +96,36 @@ func isLLMGeneratedJob(job Job) bool {
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(job.Source)), "llm")
 }
 
+func usesReservedPlaceholderDomain(rawURL string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	host := strings.ToLower(strings.TrimPrefix(parsed.Hostname(), "www."))
+	switch {
+	case host == "example.com" || strings.HasSuffix(host, ".example.com"):
+		return true
+	case host == "example.org" || strings.HasSuffix(host, ".example.org"):
+		return true
+	case host == "example.net" || strings.HasSuffix(host, ".example.net"):
+		return true
+	case host == "localhost" || strings.HasSuffix(host, ".localhost"):
+		return true
+	case host == "test" || strings.HasSuffix(host, ".test"):
+		return true
+	case host == "invalid" || strings.HasSuffix(host, ".invalid"):
+		return true
+	case host == "example" || strings.HasSuffix(host, ".example"):
+		return true
+	default:
+		return false
+	}
+}
+
 func jobHasRequiredCompanyIdentity(job Job) bool {
 	return !jobCompanyMissingOrUnknown(job.Company) &&
-		!jobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) &&
-		!jobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company)
+		!domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) &&
+		!domain.JobCompanySummaryMissingOrInvalid(job.CompanySummary, job.Company)
 }
 
 func isKnownNonJobApplyURL(rawURL string) bool {

@@ -172,6 +172,52 @@ func TestResolveEffectiveSourcesUsesRoleFamiliesWhenPresent(t *testing.T) {
 	}
 }
 
+func TestResolveEffectiveSourcesUsesOnsiteWorkSettingsForSources(t *testing.T) {
+	appCfg := defaultAppConfig()
+	criteria := defaultCriteriaConfig()
+	criteria.RoleFamilies = []RoleFamilyID{RoleBackendEngineering}
+	criteria.Candidate.City = "Austin"
+	criteria.Candidate.State = "TX"
+	criteria.Candidate.CountryCode = "US"
+	criteria.Filters.WorkSettings.Onsite = true
+
+	resolved := resolveEffectiveSources(&appCfg, &criteria)
+
+	if len(resolved.RSSFeeds) != 0 {
+		t.Fatalf("resolveEffectiveSources().RSSFeeds = %#v; want no remote-only catalog RSS feeds", resolved.RSSFeeds)
+	}
+	if !siteTargetsContain(resolved.SiteTargets, "https://www.builtinaustin.com") {
+		t.Fatalf("resolveEffectiveSources().SiteTargets = %#v; want regional Built In target", resolved.SiteTargets)
+	}
+	for _, blocked := range []string{"https://builtin.com/jobs/remote", "https://builtin.com/jobs"} {
+		if siteTargetsContain(resolved.SiteTargets, blocked) {
+			t.Fatalf("resolveEffectiveSources().SiteTargets = %#v; did not want %s for on-site-only criteria", resolved.SiteTargets, blocked)
+		}
+	}
+}
+
+func TestResolveEffectiveSourcesKeepsRemoteSourcesWhenRemoteSelected(t *testing.T) {
+	appCfg := defaultAppConfig()
+	criteria := defaultCriteriaConfig()
+	criteria.RoleFamilies = []RoleFamilyID{RoleBackendEngineering}
+	criteria.Candidate.City = "Austin"
+	criteria.Candidate.State = "TX"
+	criteria.Candidate.CountryCode = "US"
+	criteria.Filters.WorkSettings.Remote = true
+	criteria.Filters.WorkSettings.Onsite = true
+
+	resolved := resolveEffectiveSources(&appCfg, &criteria)
+
+	if len(resolved.RSSFeeds) != 3 {
+		t.Fatalf("resolveEffectiveSources().RSSFeeds len = %d; want 3 remote catalog RSS feeds", len(resolved.RSSFeeds))
+	}
+	for _, want := range []string{"https://builtin.com/jobs/remote", "https://www.builtinaustin.com"} {
+		if !siteTargetsContain(resolved.SiteTargets, want) {
+			t.Fatalf("resolveEffectiveSources().SiteTargets = %#v; want %s when remote is selected", resolved.SiteTargets, want)
+		}
+	}
+}
+
 func TestResolveEffectiveSourcesFallsBackToConfigWhenNoRoleFamilies(t *testing.T) {
 	appCfg := defaultAppConfig()
 	criteria := defaultCriteriaConfig()

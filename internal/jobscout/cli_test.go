@@ -85,6 +85,8 @@ func TestPrintHelpDocumentsCommandLineOptions(t *testing.T) {
 	for _, want := range []string{
 		"--sources=<list>",
 		"rss, site, llm, llm_web, all",
+		"--candidate-limit <n>",
+		"--accepted-limit <n>",
 		"--config=<path>",
 		"--bench-llm [options]",
 		"--list",
