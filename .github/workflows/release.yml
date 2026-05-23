@@ -164,8 +164,6 @@ jobs:
         with:
           path: .tools
           key: ${{ runner.os }}-go-tools-${{ hashFiles('Makefile') }}
-          restore-keys: |
-            ${{ runner.os }}-go-tools-
 
       - name: Run release gate
         env:
