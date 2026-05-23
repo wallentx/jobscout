@@ -2,6 +2,7 @@ package fetcher
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync"
 	"time"
@@ -98,7 +99,6 @@ func enrichAcceptedIndeedJobWithBrowser(ctx context.Context, browser *rod.Browse
 	}
 	if browser == nil {
 		stats.inc(&stats.applyFetchFailed)
-		stats.inc(&stats.applyFetchBlocked)
 		logDebug("identity enrichment apply/source pages: skipped Indeed browser fetch apply_url=%q browser unavailable", job.ApplyURL)
 		return
 	}
@@ -322,6 +322,10 @@ func enrichJobsFromApplyPagesWithLLMStoreAndProgress(ctx context.Context, jobs [
 		}(i)
 	}
 	wg.Wait()
+	beforePostProcessing := make([]jobIdentityPersistenceSnapshot, len(jobs))
+	for i := range jobs {
+		beforePostProcessing[i] = captureJobIdentityPersistenceSnapshot(jobs[i])
+	}
 	browserSearchChanged := enrichJobsFromBrowserCompanySearch(ctx, jobs, browser, llmEnrich, stats, progress)
 	copiedFields := propagateSameCompanyIdentity(jobs)
 	stats.addCopiedFields(copiedFields)
@@ -330,6 +334,9 @@ func enrichJobsFromApplyPagesWithLLMStoreAndProgress(ctx context.Context, jobs [
 	}
 	if browserSearchChanged > 0 || copiedFields > 0 {
 		for i := range jobs {
+			if beforePostProcessing[i] == captureJobIdentityPersistenceSnapshot(jobs[i]) {
+				continue
+			}
 			persistCompanyIdentityToStore(ctx, jobs[i], identityStore, stats)
 			if onJobEnriched != nil {
 				onJobEnriched(jobs[i])
@@ -381,6 +388,37 @@ func enrichJobsFromBrowserCompanySearch(ctx context.Context, jobs []Job, browser
 	}
 	logDebug("browser company search: complete accepted-job enrichment targets=%d changed_jobs=%d", len(targets), changed)
 	return changed
+}
+
+type jobIdentityPersistenceSnapshot struct {
+	Company  string
+	Website  string
+	Summary  string
+	Industry string
+	Identity string
+	Metadata string
+}
+
+func captureJobIdentityPersistenceSnapshot(job Job) jobIdentityPersistenceSnapshot {
+	return jobIdentityPersistenceSnapshot{
+		Company:  strings.TrimSpace(job.Company),
+		Website:  strings.TrimSpace(job.CompanyWebsite),
+		Summary:  strings.TrimSpace(job.CompanySummary),
+		Industry: strings.TrimSpace(job.CompanyIndustry),
+		Identity: stableJobIdentityJSON(CloneJobIdentityMetadata(job.CompanyIdentity)),
+		Metadata: stableJobIdentityJSON(domain.CloneJobMetadata(job.Metadata)),
+	}
+}
+
+func stableJobIdentityJSON(value any) string {
+	if value == nil {
+		return ""
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 func hydrateCompanyIdentityFromStore(ctx context.Context, job *Job, identityStore PersistentCompanyIdentityStore, stats *acceptedEnrichmentStats) (CompanyIdentityRecord, bool) {
