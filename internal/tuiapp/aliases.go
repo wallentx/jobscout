@@ -26,6 +26,7 @@ type HealthCacheEntry = storage.HealthCacheEntry
 type JobStore = storage.JobStore
 type HealthStore = storage.HealthStore
 type CompanyIdentityStore = storage.CompanyIdentityStore
+type CandidateStore = storage.CandidateStore
 type LLMAuthConfig = config.LLMAuthConfig
 type LLMConfig = config.LLMConfig
 type LLMProviderConfig = config.LLMProviderConfig

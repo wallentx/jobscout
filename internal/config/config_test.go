@@ -81,6 +81,9 @@ func TestDefaultFetchPolicyLimitsSiteCandidateEvaluation(t *testing.T) {
 	if cfg.Fetch.AcceptedLimit != 0 {
 		t.Fatalf("default fetch accepted_limit = %d; want 0 for unlimited", cfg.Fetch.AcceptedLimit)
 	}
+	if cfg.Fetch.CandidateCacheDays != 30 {
+		t.Fatalf("default fetch candidate_cache_days = %d; want 30", cfg.Fetch.CandidateCacheDays)
+	}
 }
 
 func TestModelOptionsForProviderIncludesCurrentOpenAITextModels(t *testing.T) {

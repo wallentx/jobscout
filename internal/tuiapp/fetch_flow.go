@@ -221,7 +221,7 @@ func applyOptionalLLMJobFilteringWithFreshTimeout(appCfg *AppConfig, criteriaCfg
 func fetchAllJobs(ctx context.Context, appCfg *AppConfig, criteriaCfg *CriteriaConfig, existingJobs []Job, progress func(string)) ([]Job, FetchSummary, error) {
 	fetcher.ConfigureLLM(llmpkg.InitConfiguredLLMForTask, llmpkg.ExecuteLLMSearch, llmpkg.EnrichJobIdentityWithLLMUsage)
 	fetcher.ConfigureLLMWebSearch(llmpkg.ExecuteLLMWebSearch)
-	return fetcher.FetchAllJobsSkippingExisting(ctx, appCfg, criteriaCfg, existingJobs, progress)
+	return fetcher.FetchAllJobsSkippingExistingWithCandidateCache(ctx, appCfg, criteriaCfg, existingJobs, progress, runtimeCandidateStore)
 }
 
 func setupPreviewNotice(existingCount int, previewCount int, added int) string {
@@ -308,6 +308,7 @@ func fetchJobsWithOptionsCmd(runOptions fetchRunOptions, existingJobs []Job, pro
 			time.Since(sourceFetchStart).Round(time.Millisecond),
 		)
 
+		newJobs = fetcher.ApplyCachedLLMFilterDecisions(ctx, runtimeCandidateStore, appCfg, criteriaCfg, newJobs, &summary)
 		if llmJobFilteringShouldRun(appCfg, newJobs) {
 			select {
 			case progressCh <- "Running LLM job filtering before review...":
@@ -323,6 +324,7 @@ func fetchJobsWithOptionsCmd(runOptions fetchRunOptions, existingJobs []Job, pro
 		recordLLMJobFilteringBypassReasons(appCfg, criteriaCfg, &summary, beforeLLMFilter)
 		llmFilterStart := time.Now()
 		newJobs, notices := applyOptionalLLMJobFilteringWithFreshTimeout(appCfg, criteriaCfg, newJobs)
+		fetcher.RecordLLMFilterCandidateDecisions(context.Background(), runtimeCandidateStore, appCfg, criteriaCfg, beforeLLMFilter, newJobs, notices)
 		recordLLMJobFilteringOutcome(appCfg, &summary, beforeLLMFilter, newJobs, notices)
 		summary.Notices = append(summary.Notices, notices...)
 		logDebug(

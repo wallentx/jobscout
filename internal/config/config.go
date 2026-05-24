@@ -40,6 +40,7 @@ type LLMWebSearchConfig struct {
 type FetchConfig struct {
 	CandidateLimitPerSource int `yaml:"candidate_limit_per_source,omitempty"`
 	AcceptedLimit           int `yaml:"accepted_limit,omitempty"`
+	CandidateCacheDays      int `yaml:"candidate_cache_days,omitempty"`
 }
 
 type SourcesConfig struct {
@@ -131,6 +132,7 @@ func defaultAppConfig() AppConfig {
 
 	cfg.Fetch.CandidateLimitPerSource = 15
 	cfg.Fetch.AcceptedLimit = 0
+	cfg.Fetch.CandidateCacheDays = 30
 	cfg.Sources.Enabled = true
 	cfg.Sources.BuiltinsEnabled = true
 	cfg.Sources.RSS.Enabled = true

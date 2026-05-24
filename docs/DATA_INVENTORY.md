@@ -67,6 +67,36 @@ Stored by `internal/domain/company_identity.go` and the
 | `name_aliases` | identity lookup, health searches | Loaded from lookup table. |
 | `domain_aliases` | identity lookup | Loaded from lookup table. |
 
+### Job Candidates
+
+Stored by `internal/domain/job_candidate.go` and the `job_candidates` tables.
+These rows are not shown on the board unless the fetch flow accepts them.
+
+| Field | Used For | Notes |
+| --- | --- | --- |
+| `candidate_key` | candidate lookup, decision lookup, dedupe | Stable source identity from URL or company/title. |
+| `source`, `source_key` | debug/source reporting | Human-readable source and source identity. |
+| `apply_url`, `canonical_apply_url` | source reuse, posting checks | Keeps the discovered posting URL separate from normalized lookup. |
+| `company`, `title` | lookup/debug | Mirrors the normalized job shape. |
+| `job_json` | source-data reuse | Stores normalized candidate data so later fetches can reuse known fields. |
+| `active` | posting lifecycle | Allows later active checks to mark stale candidates without erasing evidence. |
+| `first_seen`, `last_seen` | pruning/freshness | Candidate cache retention is configurable. |
+
+### Candidate Decisions
+
+Stored by `internal/domain/job_candidate.go` and the
+`job_candidate_decisions` table.
+
+| Field | Used For | Notes |
+| --- | --- | --- |
+| `candidate_key` | candidate lookup | References the candidate row. |
+| `criteria_hash` | cache invalidation | Criteria edits naturally produce different decisions. |
+| `stage`, `decision_version` | matching invalidation | Separates deterministic filters from LLM filtering and lets rules change safely. |
+| `llm_provider`, `llm_model` | LLM decision invalidation | LLM decisions are reused only for the same provider/model path. |
+| `decision`, `reason` | fetch skipping/reporting | Rejected candidates can be skipped before repeating fit work. |
+| `job_json` | audit/debug context | Captures the job shape that produced the decision. |
+| `decided_at`, `expires_at` | freshness | Expiry is available for future decision TTLs. |
+
 ### Company Health
 
 Stored as `health_cache.payload_json`, so it can already retain rich structured
@@ -224,12 +254,15 @@ The current model has three different flexibility levels:
   evidence.
 - `company_identities.identity_evidence_json` is flexible, but most code treats
   it like fixed website/summary/industry evidence.
-- `jobs.company_identity_json` is typed as fixed website/summary/industry
-  evidence, and the top-level `jobs` table has no general metadata column.
+- `job_candidates.job_json` preserves normalized source facts for candidates
+  that may never become visible jobs.
+- `jobs.metadata_json` and `jobs.company_identity_json` preserve structured job
+  and identity metadata for accepted jobs.
 
 This means source adapters can often discover useful facts with nowhere clean to
-put them. Before expanding adapters heavily, the data model should decide where
-opportunistic facts live.
+put them. Candidate and job metadata give adapters a better place to store
+opportunistic facts, but source-specific fields should still be added only when
+they are useful to render, filter, search, score, or debug.
 
 Candidate buckets:
 
@@ -273,4 +306,3 @@ Add a clean place for opportunistic facts before adding many more one-off
 columns. The model should make it easy for any adapter to attach structured
 facts with evidence while still preserving the simple job table fields used by
 the current UI.
-

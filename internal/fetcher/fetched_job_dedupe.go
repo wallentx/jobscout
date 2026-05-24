@@ -83,6 +83,9 @@ func fetchedJobDedupeKey(job Job) string {
 	if key := builtInJobDedupeKey(job.ApplyURL); key != "" {
 		return key
 	}
+	if key := linkedInJobDedupeKey(job.ApplyURL); key != "" {
+		return key
+	}
 	if key := canonicalApplyURLDedupeKeyForJob(job); key != "" {
 		return key
 	}
@@ -105,6 +108,21 @@ func builtInJobDedupeKey(rawURL string) string {
 	return "builtin:" + id
 }
 
+func linkedInJobDedupeKey(rawURL string) string {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || parsed.Host == "" || !isLinkedInHost(parsed.Hostname()) {
+		return ""
+	}
+	parts := strings.Split(strings.Trim(parsed.EscapedPath(), "/"), "/")
+	if len(parts) < 3 || !strings.EqualFold(parts[0], "jobs") || !strings.EqualFold(parts[1], "view") {
+		return ""
+	}
+	if id := trailingNumericSuffix(parts[2]); id != "" {
+		return "linkedin:" + id
+	}
+	return ""
+}
+
 func canonicalApplyURLDedupeKeyForJob(job Job) string {
 	rawURL := job.ApplyURL
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
@@ -122,6 +140,25 @@ func canonicalApplyURLDedupeKeyForJob(job Job) string {
 		return ""
 	}
 	return "url:" + parsed.String()
+}
+
+func trailingNumericSuffix(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	end := len(value)
+	start := end
+	for start > 0 && value[start-1] >= '0' && value[start-1] <= '9' {
+		start--
+	}
+	if start == end {
+		return ""
+	}
+	if start > 0 && value[start-1] != '-' && value[start-1] != '/' {
+		return ""
+	}
+	return value[start:end]
 }
 
 func canonicalApplyURLLooksJobSpecific(parsed *url.URL, job Job) bool {

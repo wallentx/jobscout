@@ -97,7 +97,8 @@ func (m model) handlePostingValidationCompleteMsg(msg postingValidationCompleteM
 	}
 
 	selectedKey := m.selectedJobKey()
-	expired := m.expireInactivePostings(msg.results)
+	expiredJobs := m.expireInactivePostings(msg.results)
+	expired := len(expiredJobs)
 
 	m.backgroundTask.active = false
 	m.backgroundTask.expanded = false
@@ -109,6 +110,7 @@ func (m model) handlePostingValidationCompleteMsg(msg postingValidationCompleteM
 			m.showNotice("Posting Check Save Failed", err.Error(), false)
 			return m, nil
 		}
+		fetcher.RecordInactiveJobCandidates(context.Background(), runtimeCandidateStore, expiredJobs)
 	}
 
 	m.applyFilterAndSort()
@@ -123,9 +125,9 @@ func (m model) handlePostingValidationCompleteMsg(msg postingValidationCompleteM
 	return m, nil
 }
 
-func (m *model) expireInactivePostings(results []postingValidationResult) int {
+func (m *model) expireInactivePostings(results []postingValidationResult) []Job {
 	if len(results) == 0 {
-		return 0
+		return nil
 	}
 
 	inactive := make(map[string]string, len(results))
@@ -136,10 +138,10 @@ func (m *model) expireInactivePostings(results []postingValidationResult) int {
 		inactive[result.key] = result.reason
 	}
 	if len(inactive) == 0 {
-		return 0
+		return nil
 	}
 
-	expired := 0
+	expired := make([]Job, 0, len(inactive))
 	for i := range m.allJobs {
 		job := m.allJobs[i]
 		if !postingValidationStatus(job.Status) {
@@ -150,7 +152,7 @@ func (m *model) expireInactivePostings(results []postingValidationResult) int {
 			continue
 		}
 		m.allJobs[i].Status = "Expired"
-		expired++
+		expired = append(expired, m.allJobs[i])
 		if reason != "" {
 			logDebug("posting validation expired company=%q title=%q apply_url=%q reason=%q", job.Company, job.Title, job.ApplyURL, reason)
 		}

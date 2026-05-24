@@ -91,9 +91,12 @@ Fetch limits can be adjusted in `config.yaml`:
 fetch:
   candidate_limit_per_source: 15
   accepted_limit: 0
+  candidate_cache_days: 30
 ```
 
-Use `0` to disable either cap.
+Use `0` to disable the candidate or accepted-result caps. Set
+`candidate_cache_days` to a positive number to override the 30-day retention for
+fetched candidate data and fit decisions.
 
 ## Job Sources
 

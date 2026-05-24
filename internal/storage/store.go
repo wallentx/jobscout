@@ -26,6 +26,16 @@ type CompanyIdentityStore interface {
 	GetCompanyIdentity(ctx context.Context, companyName string, websiteOrDomain string) (*domain.CompanyIdentity, error)
 }
 
+type CandidateStore interface {
+	UpsertJobCandidate(ctx context.Context, candidate domain.JobCandidate) error
+	UpsertJobCandidates(ctx context.Context, candidates []domain.JobCandidate) error
+	GetJobCandidate(ctx context.Context, candidateKey string) (*domain.JobCandidate, error)
+	UpsertJobCandidateDecision(ctx context.Context, decision domain.JobCandidateDecision) error
+	UpsertJobCandidateDecisions(ctx context.Context, decisions []domain.JobCandidateDecision) error
+	GetJobCandidateDecision(ctx context.Context, key domain.JobCandidateDecisionKey) (*domain.JobCandidateDecision, error)
+	PruneJobCandidateCache(ctx context.Context, olderThan time.Time) (int, error)
+}
+
 type NoopCompanyIdentityStore struct{}
 
 func (NoopCompanyIdentityStore) UpsertCompanyIdentity(ctx context.Context, identity domain.CompanyIdentity) error {

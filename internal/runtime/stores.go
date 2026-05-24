@@ -12,6 +12,7 @@ type Stores struct {
 	Jobs            storage.JobStore
 	Health          storage.HealthStore
 	CompanyIdentity storage.CompanyIdentityStore
+	Candidates      storage.CandidateStore
 }
 
 func DeleteSQLiteDatabase(paths Paths) ([]string, error) {
@@ -48,6 +49,7 @@ func OpenStores(paths Paths) (Stores, func(), error) {
 			Jobs:            sqliteStore,
 			Health:          sqliteStore,
 			CompanyIdentity: sqliteStore,
+			Candidates:      sqliteStore,
 		}, func() {
 			_ = sqliteStore.Close()
 		}, nil
