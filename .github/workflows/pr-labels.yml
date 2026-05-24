@@ -72,10 +72,65 @@ jobs:
           configuration-path: .github/labeler.yml
           pr-number: ${{ github.event_name == 'workflow_dispatch' && steps.pr-numbers.outputs.value || github.event.pull_request.number }}
 
-  classify-release-label:
-    name: classify release label
+  release-label-status:
+    name: check release label
     needs: labeler
     if: github.repository == 'wallentx/jobscout' && github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+
+    outputs:
+      has_release_label: ${{ steps.release-label.outputs.has_release_label }}
+      release_labels: ${{ steps.release-label.outputs.release_labels }}
+
+    steps:
+      - name: Actions Toolbox
+        uses: wallentx/gh-actions/composite/actions-toolbox@main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          checkout: false
+
+      - name: Check release-note labels
+        id: release-label
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          : "${GH_PR:?Actions Toolbox did not set GH_PR}"
+
+          release_labels="$(
+            gh pr view "$GH_PR" --repo "$GITHUB_REPOSITORY" --json labels \
+              --jq '.labels[].name' |
+              awk '/^(added|changed|fixed|dependencies)$/ { print }'
+          )"
+
+          if [ -n "$release_labels" ]; then
+            echo "Release-note label already present:"
+            printf '%s\n' "$release_labels"
+            echo "has_release_label=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No release-note label present"
+            echo "has_release_label=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          {
+            echo "release_labels<<EOF"
+            printf '%s\n' "$release_labels"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+  classify-release-label:
+    name: classify release label
+    needs:
+      - labeler
+      - release-label-status
+    if: github.repository == 'wallentx/jobscout' && github.event_name == 'pull_request_target' && needs.release-label-status.outputs.has_release_label != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -138,24 +193,35 @@ jobs:
               --deny-tool=read \
               --deny-tool=url \
               --deny-tool=memory \
-            | tr -d '\r' \
-            | awk 'NF { print; exit }'
+            | tr -d '\r'
           )"
+
+          first_label_line="$(
+            printf '%s\n' "$raw_label" \
+              | awk 'NF { print; exit }'
+          )"
+
+          label_tokens="$(
+            printf '%s\n' "$first_label_line" \
+              | tr '[:upper:]' '[:lower:]' \
+              | tr -cs '[:alnum:]_-' '\n' \
+              | awk '/^(added|changed|fixed|dependencies)$/ { print }'
+          )"
+
+          label_count="$(
+            printf '%s\n' "$label_tokens" \
+              | awk 'NF { count++ } END { print count + 0 }'
+          )"
+
+          if [ "$label_count" -ne 1 ]; then
+            echo "Copilot returned invalid label: ${raw_label:-<empty>}" >&2
+            exit 1
+          fi
 
           label="$(
-            printf '%s' "$raw_label" \
-              | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' \
-              | tr '[:upper:]' '[:lower:]'
+            printf '%s\n' "$label_tokens" \
+              | awk 'NF { print; exit }'
           )"
-
-          case "$label" in
-            added|changed|fixed|dependencies)
-              ;;
-            *)
-              echo "Copilot returned invalid label: ${raw_label:-<empty>}" >&2
-              exit 1
-              ;;
-          esac
 
           echo "label=$label" >> "$GITHUB_OUTPUT"
 
