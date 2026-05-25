@@ -8,7 +8,12 @@ import (
 	"github.com/tmc/langchaingo/llms"
 )
 
-const llmTaskJobSearch = "llm_job_search"
+const (
+	LLMTaskJobSearch     = "llm_job_search"
+	LLMTaskWebSearch     = "llm_web_search"
+	LLMTaskJobEnrichment = "llm_job_enrichment"
+)
+
 const llmTaskJobIdentity = "job_identity"
 
 type InitLLMFunc func(ctx context.Context, appCfg *AppConfig, task string) (llms.Model, func(), error)
@@ -78,7 +83,7 @@ func (fallbackLLMService) ExecuteWebSearch(ctx context.Context, appCfg *AppConfi
 	if fetchAllJobsInitConfiguredLLM == nil || fetchAllJobsExecuteLLMSearch == nil {
 		return nil, fmt.Errorf("LLM web search hook not configured")
 	}
-	llm, restoreAuth, err := fetchAllJobsInitConfiguredLLM(ctx, appCfg, llmTaskJobSearch)
+	llm, restoreAuth, err := fetchAllJobsInitConfiguredLLM(ctx, appCfg, LLMTaskJobSearch)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize: %w", err)
 	}
@@ -94,13 +99,13 @@ func (fallbackLLMService) EnrichJobIdentity(ctx context.Context, llm llms.Model,
 }
 
 func (fallbackLLMService) IsAvailable(ctx context.Context, task string) bool {
-	if task == "llm_web_search" {
+	if task == LLMTaskWebSearch {
 		return fetchAllJobsExecuteLLMWebSearch != nil || (fetchAllJobsInitConfiguredLLM != nil && fetchAllJobsExecuteLLMSearch != nil)
 	}
-	if task == "llm_job_search" {
+	if task == LLMTaskJobSearch {
 		return fetchAllJobsInitConfiguredLLM != nil && fetchAllJobsExecuteLLMSearch != nil
 	}
-	if task == "llm_job_enrichment" {
+	if task == LLMTaskJobEnrichment {
 		return fetchAllJobsInitConfiguredLLM != nil && fetchAllJobsEnrichJobIdentity != nil
 	}
 	return false

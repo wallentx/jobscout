@@ -94,13 +94,13 @@ func fetchAllJobsWithCandidateCache(ctx context.Context, appCfg *AppConfig, crit
 	// 1. Fetch via LLM job search when enabled.
 	if appCfg.LLM.Enabled && appCfg.LLM.JobSearch {
 		llmSvc := getLLMService(ctx)
-		if !llmSvc.IsAvailable(ctx, "llm_job_search") {
+		if !llmSvc.IsAvailable(ctx, LLMTaskJobSearch) {
 			mu.Lock()
 			setFetchSearchStatus(&summary, fetchSearchLLM, "disabled: LLM job search runner unavailable")
 			mu.Unlock()
 		} else {
 			reportFetchProgress(progress, "Preparing LLM job search...")
-			llm, restoreAuth, initErr := llmSvc.InitConfiguredLLM(ctx, appCfg, llmTaskJobSearch)
+			llm, restoreAuth, initErr := llmSvc.InitConfiguredLLM(ctx, appCfg, LLMTaskJobSearch)
 			if initErr == nil {
 				defer restoreAuth()
 				promptBytes, err := fetchAllJobsReadFile(runtimeSearchPromptPath)
@@ -156,7 +156,7 @@ func fetchAllJobsWithCandidateCache(ctx context.Context, appCfg *AppConfig, crit
 		switch {
 		case !appCfg.LLM.Enabled:
 			setFetchSearchStatus(&summary, fetchSearchLLMWeb, "disabled: LLM is disabled in config")
-		case !getLLMService(ctx).IsAvailable(ctx, "llm_web_search"):
+		case !getLLMService(ctx).IsAvailable(ctx, LLMTaskWebSearch):
 			setFetchSearchStatus(&summary, fetchSearchLLMWeb, "disabled: LLM search runner unavailable")
 		case len(effectiveSources.LLMWebTargets) == 0:
 			setFetchSearchStatus(&summary, fetchSearchLLMWeb, "enabled, but no llm_web targets were configured or resolved")

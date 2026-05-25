@@ -2,6 +2,43 @@ package fetcher
 
 import "testing"
 
+func TestExtractAndCheckSalary(t *testing.T) {
+	tests := []struct {
+		text    string
+		minBase int
+		want    bool
+	}{
+		{
+			text:    "Competitive / DOE",
+			minBase: 120000,
+			want:    true,
+		},
+		{
+			text:    "$90K - $150K",
+			minBase: 120000,
+			want:    true,
+		},
+		{
+			text:    "$80K - $95K",
+			minBase: 120000,
+			want:    false,
+		},
+		{
+			text:    "$118,000 - $231,000 USD/year",
+			minBase: 120000,
+			want:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.text, func(t *testing.T) {
+			if got := extractAndCheckSalary(tt.text, tt.minBase); got != tt.want {
+				t.Fatalf("extractAndCheckSalary(%q, %d) = %t; want %t", tt.text, tt.minBase, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestJobMatchesWorkSettings(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -8,7 +8,7 @@ import (
 
 func newJobIdentityLLMEnricher(ctx context.Context, appCfg *AppConfig) (jobIdentityPageEnrichFunc, func(), string) {
 	llmSvc := getLLMService(ctx)
-	if appCfg == nil || !appCfg.LLM.Enabled || !llmSvc.IsAvailable(ctx, "llm_job_enrichment") {
+	if appCfg == nil || !appCfg.LLM.Enabled || !llmSvc.IsAvailable(ctx, LLMTaskJobEnrichment) {
 		return nil, nil, ""
 	}
 	llm, restoreAuth, err := llmSvc.InitConfiguredLLM(ctx, appCfg, llmTaskJobIdentity)

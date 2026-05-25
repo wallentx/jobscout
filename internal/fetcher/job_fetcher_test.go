@@ -378,8 +378,8 @@ func TestFetchAllJobsLLMWebParseErrorIsSkipped(t *testing.T) {
 	prevSearch := fetchAllJobsExecuteLLMSearch
 	prevWebSearch := fetchAllJobsExecuteLLMWebSearch
 	fetchAllJobsInitConfiguredLLM = func(ctx context.Context, appCfg *AppConfig, task string) (llms.Model, func(), error) {
-		if task != llmTaskJobSearch {
-			t.Fatalf("fetchAllJobsInitConfiguredLLM task = %q, want %q", task, llmTaskJobSearch)
+		if task != LLMTaskJobSearch {
+			t.Fatalf("fetchAllJobsInitConfiguredLLM task = %q, want %q", task, LLMTaskJobSearch)
 		}
 		return fakeLLMModel{}, func() {}, nil
 	}
@@ -634,8 +634,8 @@ func TestFetchAllJobsLLMSearchRepairsIdentityBeforeValidation(t *testing.T) {
 	if applyGETRequests == 0 {
 		t.Fatal("fetchAllJobs() did not fetch the apply page for llm_job_search identity repair")
 	}
-	if len(initTasks) != 1 || initTasks[0] != llmTaskJobSearch {
-		t.Fatalf("fetchAllJobs() initialized LLM tasks %#v, want only %q", initTasks, llmTaskJobSearch)
+	if len(initTasks) != 1 || initTasks[0] != LLMTaskJobSearch {
+		t.Fatalf("fetchAllJobs() initialized LLM tasks %#v, want only %q", initTasks, LLMTaskJobSearch)
 	}
 	if got, want := jobs[0].CompanyWebsite, "https://www.acme.com"; got != want {
 		t.Fatalf("jobs[0].CompanyWebsite = %q, want %q", got, want)
@@ -2249,8 +2249,8 @@ func TestFetchAllJobsCombinesLLMAndRSSSources(t *testing.T) {
 	prevIdentity := fetchAllJobsEnrichJobIdentity
 	prevReadFile := fetchAllJobsReadFile
 	fetchAllJobsInitConfiguredLLM = func(ctx context.Context, appCfg *AppConfig, task string) (llms.Model, func(), error) {
-		if task != llmTaskJobSearch && task != llmTaskJobIdentity {
-			t.Fatalf("fetchAllJobsInitConfiguredLLM task = %q, want %q or %q", task, llmTaskJobSearch, llmTaskJobIdentity)
+		if task != LLMTaskJobSearch && task != llmTaskJobIdentity {
+			t.Fatalf("fetchAllJobsInitConfiguredLLM task = %q, want %q or %q", task, LLMTaskJobSearch, llmTaskJobIdentity)
 		}
 		return fakeLLMModel{}, func() {}, nil
 	}
