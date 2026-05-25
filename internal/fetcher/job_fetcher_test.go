@@ -1547,6 +1547,37 @@ func TestEnrichJobFromCompanyProfileHTMLExtractsLinkedInWebsite(t *testing.T) {
 	}
 }
 
+func TestEnrichJobFromCompanyProfileHTMLIgnoresLinkedInAssetWebsite(t *testing.T) {
+	job := Job{Company: "Procore Technologies"}
+	rawHTML := `
+<html>
+<head>
+  <meta property="og:type" content="website">
+  <link rel="icon" href="https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca">
+</head>
+<body>
+  <section>
+    <h2>About us</h2>
+    <p>Procore Technologies builds construction management software.</p>
+    <dl>
+      <dt>Website</dt>
+      <dd><a href="https://www.procore.com">https://www.procore.com</a></dd>
+      <dt>Industry</dt>
+      <dd>Software Development</dd>
+      <dt>Company size</dt>
+      <dd>1,001-5,000 employees</dd>
+    </dl>
+  </section>
+</body>
+</html>`
+
+	enrichJobFromCompanyProfileHTML(&job, rawHTML, "https://www.linkedin.com/company/procore-technologies")
+
+	if job.CompanyWebsite != "https://www.procore.com" {
+		t.Fatalf("CompanyWebsite = %q; want https://www.procore.com", job.CompanyWebsite)
+	}
+}
+
 func TestEnrichJobFromCompanyProfileHTMLRealWorkFromAnywhere(t *testing.T) {
 	job := Job{
 		Company:         "Circle",

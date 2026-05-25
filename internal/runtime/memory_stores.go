@@ -181,10 +181,145 @@ func normalizeMemoryDomain(raw string) string {
 	return strings.TrimPrefix(parsed.Hostname(), "www.")
 }
 
+type memoryCandidateStore struct {
+	mu         sync.Mutex
+	candidates map[string]domain.JobCandidate
+	decisions  map[domain.JobCandidateDecisionKey]domain.JobCandidateDecision
+}
+
+func (s *memoryCandidateStore) UpsertJobCandidate(ctx context.Context, candidate domain.JobCandidate) error {
+	return s.UpsertJobCandidates(ctx, []domain.JobCandidate{candidate})
+}
+
+func (s *memoryCandidateStore) UpsertJobCandidates(ctx context.Context, candidates []domain.JobCandidate) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.candidates == nil {
+		s.candidates = make(map[string]domain.JobCandidate)
+	}
+	for _, candidate := range candidates {
+		key := strings.TrimSpace(candidate.Key)
+		if key == "" {
+			continue
+		}
+		now := time.Now()
+		if candidate.FirstSeen.IsZero() {
+			if existing, ok := s.candidates[key]; ok && !existing.FirstSeen.IsZero() {
+				candidate.FirstSeen = existing.FirstSeen
+			} else {
+				candidate.FirstSeen = now
+			}
+		}
+		if candidate.LastSeen.IsZero() {
+			candidate.LastSeen = now
+		}
+		candidate.Key = key
+		candidate.Job.Metadata = domain.NormalizeJobMetadata(candidate.Job.Metadata)
+		s.candidates[key] = candidate
+	}
+	return nil
+}
+
+func (s *memoryCandidateStore) GetJobCandidate(ctx context.Context, candidateKey string) (*domain.JobCandidate, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	candidate, ok := s.candidates[strings.TrimSpace(candidateKey)]
+	if !ok {
+		return nil, nil
+	}
+	candidate.Job.Metadata = domain.NormalizeJobMetadata(domain.CloneJobMetadata(candidate.Job.Metadata))
+	return &candidate, nil
+}
+
+func (s *memoryCandidateStore) UpsertJobCandidateDecision(ctx context.Context, decision domain.JobCandidateDecision) error {
+	return s.UpsertJobCandidateDecisions(ctx, []domain.JobCandidateDecision{decision})
+}
+
+func (s *memoryCandidateStore) UpsertJobCandidateDecisions(ctx context.Context, decisions []domain.JobCandidateDecision) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.decisions == nil {
+		s.decisions = make(map[domain.JobCandidateDecisionKey]domain.JobCandidateDecision)
+	}
+	for _, decision := range decisions {
+		key := normalizeMemoryCandidateDecisionKey(decision.JobCandidateDecisionKey)
+		if key.CandidateKey == "" || key.CriteriaHash == "" || key.Stage == "" || key.DecisionVersion == "" {
+			continue
+		}
+		if strings.TrimSpace(decision.Decision) == "" {
+			continue
+		}
+		if decision.DecidedAt.IsZero() {
+			decision.DecidedAt = time.Now()
+		}
+		decision.JobCandidateDecisionKey = key
+		decision.Job.Metadata = domain.NormalizeJobMetadata(decision.Job.Metadata)
+		s.decisions[key] = decision
+	}
+	return nil
+}
+
+func (s *memoryCandidateStore) GetJobCandidateDecision(ctx context.Context, key domain.JobCandidateDecisionKey) (*domain.JobCandidateDecision, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key = normalizeMemoryCandidateDecisionKey(key)
+	decision, ok := s.decisions[key]
+	if !ok {
+		return nil, nil
+	}
+	if !decision.ExpiresAt.IsZero() && decision.ExpiresAt.Before(time.Now()) {
+		return nil, nil
+	}
+	decision.Job.Metadata = domain.NormalizeJobMetadata(domain.CloneJobMetadata(decision.Job.Metadata))
+	return &decision, nil
+}
+
+func (s *memoryCandidateStore) PruneJobCandidateCache(ctx context.Context, olderThan time.Time) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if olderThan.IsZero() {
+		return 0, nil
+	}
+	removed := 0
+	for key, candidate := range s.candidates {
+		if candidate.LastSeen.Before(olderThan) {
+			delete(s.candidates, key)
+			removed++
+		}
+	}
+	for key := range s.decisions {
+		if _, ok := s.candidates[key.CandidateKey]; !ok {
+			delete(s.decisions, key)
+		}
+	}
+	return removed, nil
+}
+
+func normalizeMemoryCandidateDecisionKey(key domain.JobCandidateDecisionKey) domain.JobCandidateDecisionKey {
+	return domain.JobCandidateDecisionKey{
+		CandidateKey:    strings.TrimSpace(key.CandidateKey),
+		CriteriaHash:    strings.TrimSpace(key.CriteriaHash),
+		Stage:           strings.TrimSpace(key.Stage),
+		DecisionVersion: strings.TrimSpace(key.DecisionVersion),
+		LLMProvider:     strings.ToLower(strings.TrimSpace(key.LLMProvider)),
+		LLMModel:        strings.TrimSpace(key.LLMModel),
+	}
+}
+
 func InMemoryStores() Stores {
+	candidateStore := &memoryCandidateStore{
+		candidates: make(map[string]domain.JobCandidate),
+		decisions:  make(map[domain.JobCandidateDecisionKey]domain.JobCandidateDecision),
+	}
 	return Stores{
 		Jobs:            &memoryJobStore{},
 		Health:          &memoryHealthStore{cache: make(storage.HealthCache)},
 		CompanyIdentity: &memoryCompanyIdentityStore{identities: make(map[string]domain.CompanyIdentity)},
+		Candidates:      candidateStore,
 	}
 }

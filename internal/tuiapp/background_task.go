@@ -329,6 +329,7 @@ func enrichAcceptedFetchCmd(taskID int, disableLLM bool, jobs []Job, progressCh 
 				jobCh <- job
 			}
 		})
+		fetcher.RecordAcceptedJobCandidates(ctx, runtimeCandidateStore, enriched)
 
 		return acceptedFetchEnrichedMsg{
 			taskID: taskID,

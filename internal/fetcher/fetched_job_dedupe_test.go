@@ -59,6 +59,35 @@ func TestDedupeFetchedJobsUsesCanonicalApplyURL(t *testing.T) {
 	}
 }
 
+func TestDedupeFetchedJobsUsesLinkedInJobIDIgnoringTrackingQuery(t *testing.T) {
+	jobs := []Job{
+		{
+			Company:  "Innergy",
+			Title:    "Principal DevOps Engineer",
+			ApplyURL: "https://www.linkedin.com/jobs/view/principal-devops-engineer-at-innergy-4413760287?position=11&pageNum=0&refId=first&trackingId=first",
+		},
+		{
+			Company:         "Innergy",
+			Title:           "Principal DevOps Engineer",
+			ApplyURL:        "https://www.linkedin.com/jobs/view/principal-devops-engineer-at-innergy-4413760287?position=36&pageNum=0&refId=second&trackingId=second",
+			CompanyWebsite:  "https://www.innergy.com",
+			CompanyIndustry: "Energy",
+		},
+	}
+
+	deduped, duplicates := dedupeFetchedJobs(jobs)
+
+	if len(deduped) != 1 {
+		t.Fatalf("dedupeFetchedJobs(...) deduped len = %d; want 1", len(deduped))
+	}
+	if len(duplicates) != 1 {
+		t.Fatalf("dedupeFetchedJobs(...) duplicates len = %d; want 1", len(duplicates))
+	}
+	if deduped[0].CompanyWebsite != "https://www.innergy.com" {
+		t.Fatalf("deduped[0].CompanyWebsite = %q; want merged duplicate website", deduped[0].CompanyWebsite)
+	}
+}
+
 func TestDedupeFetchedJobsUsesCanonicalApplyURLAcrossIdentityDrift(t *testing.T) {
 	jobs := []Job{
 		{

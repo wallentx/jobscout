@@ -123,7 +123,7 @@ func TestParseBuiltInSiteSearchHTMLRecordsExistingListingCard(t *testing.T) {
 		ApplyURL: "https://builtin.com/job/staff-devops-engineer/7934986",
 	}})
 
-	jobs, filtered, handled, err := parseBuiltInSiteSearchHTML(context.Background(), rawHTML, "https://builtin.com/jobs/remote?search=staff", "Site Search: Built In", "https://builtin.com/jobs/remote", criteria, nil, nil, existing, nil)
+	jobs, filtered, handled, err := parseBuiltInSiteSearchHTML(context.Background(), rawHTML, "https://builtin.com/jobs/remote?search=staff", "Site Search: Built In", "https://builtin.com/jobs/remote", criteria, nil, nil, existing, nil, nil)
 
 	if err != nil {
 		t.Fatalf("parseBuiltInSiteSearchHTML() error = %v, want nil", err)

@@ -9,3 +9,6 @@ type CompanyMetadata = domain.CompanyMetadata
 type JobIdentityMetadata = domain.JobIdentityMetadata
 type JobIdentityEvidence = domain.JobIdentityEvidence
 type CompanyHealthResult = domain.CompanyHealthResult
+type JobCandidate = domain.JobCandidate
+type JobCandidateDecision = domain.JobCandidateDecision
+type JobCandidateDecisionKey = domain.JobCandidateDecisionKey

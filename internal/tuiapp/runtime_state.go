@@ -31,6 +31,7 @@ var defaultRuntimeStores = appruntime.InMemoryStores()
 var runtimeJobStore JobStore = defaultRuntimeStores.Jobs
 var runtimeHealthStore HealthStore = defaultRuntimeStores.Health
 var runtimeCompanyIdentityStore CompanyIdentityStore = storage.NoopCompanyIdentityStore{}
+var runtimeCandidateStore CandidateStore = defaultRuntimeStores.Candidates
 var runtimeUpdateChecker = updatecheck.CheckLatestRelease
 
 func loadRuntimeJobs() ([]Job, error)  { return runtimeJobStore.LoadJobs() }

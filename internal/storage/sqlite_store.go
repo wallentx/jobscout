@@ -157,6 +157,49 @@ func (s *SQLiteStore) ensureMigrations() error {
 				ALTER TABLE jobs ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '';
 			`,
 		},
+		{
+			version: 7,
+			sql: `
+				CREATE TABLE IF NOT EXISTS job_candidates (
+					candidate_key TEXT PRIMARY KEY,
+					source TEXT NOT NULL DEFAULT '',
+					source_key TEXT NOT NULL DEFAULT '',
+					apply_url TEXT NOT NULL DEFAULT '',
+					canonical_apply_url TEXT NOT NULL DEFAULT '',
+					company TEXT NOT NULL DEFAULT '',
+					title TEXT NOT NULL DEFAULT '',
+					job_json TEXT NOT NULL,
+					active INTEGER NOT NULL DEFAULT 1,
+					first_seen_epoch INTEGER NOT NULL,
+					last_seen_epoch INTEGER NOT NULL
+				);
+
+				CREATE INDEX IF NOT EXISTS idx_job_candidates_source ON job_candidates(source);
+				CREATE INDEX IF NOT EXISTS idx_job_candidates_last_seen ON job_candidates(last_seen_epoch DESC);
+				CREATE INDEX IF NOT EXISTS idx_job_candidates_company_title ON job_candidates(company, title);
+
+				CREATE TABLE IF NOT EXISTS job_candidate_decisions (
+					candidate_key TEXT NOT NULL,
+					criteria_hash TEXT NOT NULL,
+					stage TEXT NOT NULL,
+					decision_version TEXT NOT NULL,
+					llm_provider TEXT NOT NULL DEFAULT '',
+					llm_model TEXT NOT NULL DEFAULT '',
+					decision TEXT NOT NULL,
+					reason TEXT NOT NULL DEFAULT '',
+					job_json TEXT NOT NULL DEFAULT '',
+					decided_at_epoch INTEGER NOT NULL,
+					expires_at_epoch INTEGER NOT NULL DEFAULT 0,
+					PRIMARY KEY(candidate_key, criteria_hash, stage, decision_version, llm_provider, llm_model),
+					FOREIGN KEY(candidate_key) REFERENCES job_candidates(candidate_key) ON DELETE CASCADE
+				);
+
+				CREATE INDEX IF NOT EXISTS idx_job_candidate_decisions_lookup
+					ON job_candidate_decisions(criteria_hash, stage, decision_version, llm_provider, llm_model, decision);
+				CREATE INDEX IF NOT EXISTS idx_job_candidate_decisions_decided_at
+					ON job_candidate_decisions(decided_at_epoch DESC);
+			`,
+		},
 	}
 
 	for _, migration := range migrations {
@@ -760,6 +803,349 @@ func (s *SQLiteStore) loadCompanyIdentityAliases(ctx context.Context, identity *
 		return fmt.Errorf("iterate company identity aliases for %s: %w", identity.Key, err)
 	}
 	return nil
+}
+
+func (s *SQLiteStore) UpsertJobCandidate(ctx context.Context, candidate domain.JobCandidate) error {
+	return s.UpsertJobCandidates(ctx, []domain.JobCandidate{candidate})
+}
+
+func (s *SQLiteStore) UpsertJobCandidates(ctx context.Context, candidates []domain.JobCandidate) error {
+	if len(candidates) == 0 {
+		return nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin upsert job candidates: %w", err)
+	}
+	stmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO job_candidates (
+			candidate_key,
+			source,
+			source_key,
+			apply_url,
+			canonical_apply_url,
+			company,
+			title,
+			job_json,
+			active,
+			first_seen_epoch,
+			last_seen_epoch
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(candidate_key) DO UPDATE SET
+			source = excluded.source,
+			source_key = excluded.source_key,
+			apply_url = excluded.apply_url,
+			canonical_apply_url = excluded.canonical_apply_url,
+			company = excluded.company,
+			title = excluded.title,
+			job_json = excluded.job_json,
+			active = excluded.active,
+			last_seen_epoch = excluded.last_seen_epoch
+	`)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("prepare upsert job candidates: %w", err)
+	}
+	defer func() {
+		_ = stmt.Close()
+	}()
+
+	for _, candidate := range candidates {
+		candidate.Key = strings.TrimSpace(candidate.Key)
+		if candidate.Key == "" {
+			continue
+		}
+		now := time.Now()
+		firstSeen := candidate.FirstSeen
+		if firstSeen.IsZero() {
+			firstSeen = now
+		}
+		lastSeen := candidate.LastSeen
+		if lastSeen.IsZero() {
+			lastSeen = now
+		}
+		if lastSeen.Before(firstSeen) {
+			lastSeen = firstSeen
+		}
+		candidate.Job.Metadata = domain.NormalizeJobMetadata(candidate.Job.Metadata)
+		payload, err := json.Marshal(candidate.Job)
+		if err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("marshal job candidate %s: %w", candidate.Key, err)
+		}
+		active := 0
+		if candidate.Active {
+			active = 1
+		}
+		if _, err := stmt.ExecContext(
+			ctx,
+			candidate.Key,
+			strings.TrimSpace(candidate.Source),
+			strings.TrimSpace(candidate.SourceKey),
+			strings.TrimSpace(candidate.ApplyURL),
+			strings.TrimSpace(candidate.CanonicalApplyURL),
+			strings.TrimSpace(candidate.Company),
+			strings.TrimSpace(candidate.Title),
+			string(payload),
+			active,
+			firstSeen.Unix(),
+			lastSeen.Unix(),
+		); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("upsert job candidate %s: %w", candidate.Key, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit upsert job candidates: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) GetJobCandidate(ctx context.Context, candidateKey string) (*domain.JobCandidate, error) {
+	candidateKey = strings.TrimSpace(candidateKey)
+	if candidateKey == "" {
+		return nil, nil
+	}
+	row := s.db.QueryRowContext(ctx, `
+		SELECT
+			candidate_key,
+			source,
+			source_key,
+			apply_url,
+			canonical_apply_url,
+			company,
+			title,
+			job_json,
+			active,
+			first_seen_epoch,
+			last_seen_epoch
+		FROM job_candidates
+		WHERE candidate_key = ?
+	`, candidateKey)
+	candidate, err := scanJobCandidate(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get job candidate %s: %w", candidateKey, err)
+	}
+	return candidate, nil
+}
+
+func scanJobCandidate(row *sql.Row) (*domain.JobCandidate, error) {
+	var candidate domain.JobCandidate
+	var jobJSON string
+	var active int
+	var firstSeenEpoch int64
+	var lastSeenEpoch int64
+	if err := row.Scan(
+		&candidate.Key,
+		&candidate.Source,
+		&candidate.SourceKey,
+		&candidate.ApplyURL,
+		&candidate.CanonicalApplyURL,
+		&candidate.Company,
+		&candidate.Title,
+		&jobJSON,
+		&active,
+		&firstSeenEpoch,
+		&lastSeenEpoch,
+	); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(jobJSON) != "" {
+		if err := json.Unmarshal([]byte(jobJSON), &candidate.Job); err != nil {
+			return nil, err
+		}
+		candidate.Job.Metadata = domain.NormalizeJobMetadata(candidate.Job.Metadata)
+	}
+	candidate.Active = active != 0
+	candidate.FirstSeen = time.Unix(firstSeenEpoch, 0)
+	candidate.LastSeen = time.Unix(lastSeenEpoch, 0)
+	return &candidate, nil
+}
+
+func (s *SQLiteStore) UpsertJobCandidateDecision(ctx context.Context, decision domain.JobCandidateDecision) error {
+	return s.UpsertJobCandidateDecisions(ctx, []domain.JobCandidateDecision{decision})
+}
+
+func (s *SQLiteStore) UpsertJobCandidateDecisions(ctx context.Context, decisions []domain.JobCandidateDecision) error {
+	if len(decisions) == 0 {
+		return nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin upsert job candidate decisions: %w", err)
+	}
+	stmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO job_candidate_decisions (
+			candidate_key,
+			criteria_hash,
+			stage,
+			decision_version,
+			llm_provider,
+			llm_model,
+			decision,
+			reason,
+			job_json,
+			decided_at_epoch,
+			expires_at_epoch
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(candidate_key, criteria_hash, stage, decision_version, llm_provider, llm_model)
+		DO UPDATE SET
+			decision = excluded.decision,
+			reason = excluded.reason,
+			job_json = excluded.job_json,
+			decided_at_epoch = excluded.decided_at_epoch,
+			expires_at_epoch = excluded.expires_at_epoch
+	`)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("prepare upsert job candidate decisions: %w", err)
+	}
+	defer func() {
+		_ = stmt.Close()
+	}()
+
+	for _, decision := range decisions {
+		key := normalizeCandidateDecisionKey(decision.JobCandidateDecisionKey)
+		if key.CandidateKey == "" || key.CriteriaHash == "" || key.Stage == "" || key.DecisionVersion == "" {
+			continue
+		}
+		decisionText := strings.TrimSpace(decision.Decision)
+		if decisionText == "" {
+			continue
+		}
+		decidedAt := decision.DecidedAt
+		if decidedAt.IsZero() {
+			decidedAt = time.Now()
+		}
+		expiresAtEpoch := int64(0)
+		if !decision.ExpiresAt.IsZero() {
+			expiresAtEpoch = decision.ExpiresAt.Unix()
+		}
+		decision.Job.Metadata = domain.NormalizeJobMetadata(decision.Job.Metadata)
+		payload, err := json.Marshal(decision.Job)
+		if err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("marshal job candidate decision %s: %w", key.CandidateKey, err)
+		}
+		if _, err := stmt.ExecContext(
+			ctx,
+			key.CandidateKey,
+			key.CriteriaHash,
+			key.Stage,
+			key.DecisionVersion,
+			key.LLMProvider,
+			key.LLMModel,
+			decisionText,
+			strings.TrimSpace(decision.Reason),
+			string(payload),
+			decidedAt.Unix(),
+			expiresAtEpoch,
+		); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("upsert job candidate decision %s: %w", key.CandidateKey, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit upsert job candidate decisions: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) GetJobCandidateDecision(ctx context.Context, key domain.JobCandidateDecisionKey) (*domain.JobCandidateDecision, error) {
+	key = normalizeCandidateDecisionKey(key)
+	if key.CandidateKey == "" || key.CriteriaHash == "" || key.Stage == "" || key.DecisionVersion == "" {
+		return nil, nil
+	}
+	row := s.db.QueryRowContext(ctx, `
+		SELECT
+			candidate_key,
+			criteria_hash,
+			stage,
+			decision_version,
+			llm_provider,
+			llm_model,
+			decision,
+			reason,
+			job_json,
+			decided_at_epoch,
+			expires_at_epoch
+		FROM job_candidate_decisions
+		WHERE candidate_key = ?
+			AND criteria_hash = ?
+			AND stage = ?
+			AND decision_version = ?
+			AND llm_provider = ?
+			AND llm_model = ?
+	`, key.CandidateKey, key.CriteriaHash, key.Stage, key.DecisionVersion, key.LLMProvider, key.LLMModel)
+
+	var decision domain.JobCandidateDecision
+	var jobJSON string
+	var decidedAtEpoch int64
+	var expiresAtEpoch int64
+	if err := row.Scan(
+		&decision.CandidateKey,
+		&decision.CriteriaHash,
+		&decision.Stage,
+		&decision.DecisionVersion,
+		&decision.LLMProvider,
+		&decision.LLMModel,
+		&decision.Decision,
+		&decision.Reason,
+		&jobJSON,
+		&decidedAtEpoch,
+		&expiresAtEpoch,
+	); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get job candidate decision %s: %w", key.CandidateKey, err)
+	}
+	if expiresAtEpoch > 0 && time.Unix(expiresAtEpoch, 0).Before(time.Now()) {
+		return nil, nil
+	}
+	if strings.TrimSpace(jobJSON) != "" {
+		if err := json.Unmarshal([]byte(jobJSON), &decision.Job); err != nil {
+			return nil, fmt.Errorf("decode job candidate decision %s job: %w", key.CandidateKey, err)
+		}
+		decision.Job.Metadata = domain.NormalizeJobMetadata(decision.Job.Metadata)
+	}
+	decision.DecidedAt = time.Unix(decidedAtEpoch, 0)
+	if expiresAtEpoch > 0 {
+		decision.ExpiresAt = time.Unix(expiresAtEpoch, 0)
+	}
+	return &decision, nil
+}
+
+func (s *SQLiteStore) PruneJobCandidateCache(ctx context.Context, olderThan time.Time) (int, error) {
+	if olderThan.IsZero() {
+		return 0, nil
+	}
+	result, err := s.db.ExecContext(ctx, `
+		DELETE FROM job_candidates
+		WHERE last_seen_epoch < ?
+	`, olderThan.Unix())
+	if err != nil {
+		return 0, fmt.Errorf("prune job candidate cache: %w", err)
+	}
+	removed, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("count pruned job candidates: %w", err)
+	}
+	return int(removed), nil
+}
+
+func normalizeCandidateDecisionKey(key domain.JobCandidateDecisionKey) domain.JobCandidateDecisionKey {
+	return domain.JobCandidateDecisionKey{
+		CandidateKey:    strings.TrimSpace(key.CandidateKey),
+		CriteriaHash:    strings.TrimSpace(key.CriteriaHash),
+		Stage:           strings.TrimSpace(key.Stage),
+		DecisionVersion: strings.TrimSpace(key.DecisionVersion),
+		LLMProvider:     strings.ToLower(strings.TrimSpace(key.LLMProvider)),
+		LLMModel:        strings.TrimSpace(key.LLMModel),
+	}
 }
 
 func normalizeCompanyKey(company string) string {

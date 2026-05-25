@@ -51,7 +51,7 @@ func applyLLMJobIdentityEnrichment(ctx context.Context, job *Job, page JobIdenti
 		return usage
 	}
 	acceptedIdentityAnchor := false
-	if website := strings.TrimSpace(result.CompanyWebsite); website != "" && domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) && looksLikeCompanyWebsite(website, page.URL) {
+	if website := strings.TrimSpace(result.CompanyWebsite); website != "" && domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) && looksLikeCompanyWebsite(website, page.URL) && !sourceProfileWebsiteCandidateBlocked(website, page.URL) {
 		website = normalizeCompanyWebsiteURL(website)
 		job.CompanyWebsite = website
 		setJobIdentityEvidence(job, "website", website, source, page.URL, confidenceOrDefault(result.WebsiteConfidence, "medium"), false, firstNonEmptyString(result.CompanyWebsiteReason, "Website extracted by LLM from supplied page text."))

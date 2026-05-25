@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-rod/rod"
+	"github.com/wallentx/jobscout/internal/storage"
 )
 
 const (
@@ -20,13 +21,18 @@ const (
 )
 
 func fetchAllJobs(ctx context.Context, appCfg *AppConfig, criteriaCfg *CriteriaConfig, progress func(string), existingJobs ...[]Job) ([]Job, FetchSummary, error) {
-	fetchStart := time.Now()
-	var allFetched []Job
-	summary := newFetchSummary()
 	var existing []Job
 	if len(existingJobs) > 0 {
 		existing = existingJobs[0]
 	}
+	return fetchAllJobsWithCandidateCache(ctx, appCfg, criteriaCfg, progress, existing, nil)
+}
+
+func fetchAllJobsWithCandidateCache(ctx context.Context, appCfg *AppConfig, criteriaCfg *CriteriaConfig, progress func(string), existingJobs []Job, candidateStore storage.CandidateStore) ([]Job, FetchSummary, error) {
+	fetchStart := time.Now()
+	var allFetched []Job
+	summary := newFetchSummary()
+	existing := existingJobs
 	existingIndex := newExistingJobIndex(existing)
 	defer func() {
 		logDebug(
@@ -44,6 +50,7 @@ func fetchAllJobs(ctx context.Context, appCfg *AppConfig, criteriaCfg *CriteriaC
 		}
 		return allFetched, summary, nil
 	}
+	pruneCandidateCache(ctx, candidateStore, appCfg)
 	if err := refreshLinkedInCriteriaHints(ctx, criteriaCfg); err != nil {
 		logDebug("linkedin criteria hint refresh failed: %v", err)
 	}
@@ -419,7 +426,7 @@ func fetchAllJobs(ctx context.Context, appCfg *AppConfig, criteriaCfg *CriteriaC
 			runBounded(ctx, len(tasks), maxConcurrentSiteSearchFetch, func(i int) {
 				task := tasks[i]
 				reportFetchProgress(progress, "Searching site target: %s", strings.TrimSpace(task.site))
-				results[i] = fetchSiteSearchTask(ctx, task, criteriaCfg, ensureSiteBrowser, browserSem, builtInDetails, builtInProfiles, existingIndex, blockedSiteSearches, blockedSiteDetails, candidateLimiter)
+				results[i] = fetchSiteSearchTask(ctx, task, criteriaCfg, ensureSiteBrowser, browserSem, builtInDetails, builtInProfiles, existingIndex, blockedSiteSearches, blockedSiteDetails, candidateLimiter, candidateStore)
 			})
 
 			for i, result := range results {
@@ -460,6 +467,16 @@ func fetchAllJobs(ctx context.Context, appCfg *AppConfig, criteriaCfg *CriteriaC
 	}()
 
 	wg.Wait()
+
+	if candidateStore != nil {
+		allFetched = hydrateJobsFromCandidateCache(ctx, candidateStore, allFetched)
+		upsertJobCandidates(ctx, candidateStore, allFetched)
+		for _, jobs := range summary.Filtered {
+			upsertJobCandidates(ctx, candidateStore, jobs)
+		}
+		allFetched = applyCachedDeterministicRejects(ctx, candidateStore, criteriaCfg, allFetched, &summary)
+		recordDeterministicCandidateDecisions(ctx, candidateStore, criteriaCfg, allFetched, summary.Filtered)
+	}
 
 	var skippedExisting []Job
 	allFetched, skippedExisting = skipExistingFetchedJobs(allFetched, existingIndex)
@@ -632,6 +649,10 @@ func FetchAllJobsSkippingExisting(ctx context.Context, appCfg *AppConfig, criter
 	return fetchAllJobs(ctx, appCfg, criteriaCfg, progress, existingJobs)
 }
 
+func FetchAllJobsSkippingExistingWithCandidateCache(ctx context.Context, appCfg *AppConfig, criteriaCfg *CriteriaConfig, existingJobs []Job, progress func(string), candidateStore storage.CandidateStore) ([]Job, FetchSummary, error) {
+	return fetchAllJobsWithCandidateCache(ctx, appCfg, criteriaCfg, progress, existingJobs, candidateStore)
+}
+
 type sourceFetchResult struct {
 	jobs     []Job
 	filtered map[string][]Job
@@ -707,7 +728,7 @@ func normalizedSiteSearchHost(rawURL string) string {
 	return strings.TrimPrefix(strings.ToLower(parsed.Hostname()), "www.")
 }
 
-func fetchSiteSearchTask(ctx context.Context, task siteSearchTask, criteria *CriteriaConfig, ensureBrowser func() (*rod.Browser, error), browserSem chan struct{}, builtInDetails *builtInDetailCache, builtInProfiles *sourceProfileEnricher, existing *existingJobIndex, blocked *siteSearchBlocklist, detailBlocked *siteSearchBlocklist, candidateLimiter *siteCandidateLimiter) sourceFetchResult {
+func fetchSiteSearchTask(ctx context.Context, task siteSearchTask, criteria *CriteriaConfig, ensureBrowser func() (*rod.Browser, error), browserSem chan struct{}, builtInDetails *builtInDetailCache, builtInProfiles *sourceProfileEnricher, existing *existingJobIndex, blocked *siteSearchBlocklist, detailBlocked *siteSearchBlocklist, candidateLimiter *siteCandidateLimiter, candidateStore storage.CandidateStore) sourceFetchResult {
 	var jobs []Job
 	var filtered map[string][]Job
 	var err error
@@ -723,7 +744,7 @@ func fetchSiteSearchTask(ctx context.Context, task siteSearchTask, criteria *Cri
 		return sourceFetchResult{}
 	}
 	logDebug("site search %s query %d/%d: trying static handler", task.site, task.queryIndex+1, task.queryCount)
-	jobs, filtered, handled, err = fetchBuiltInSiteSearch(ctx, task.targetURL, task.sourceName, task.site, criteria, builtInDetails, builtInProfiles, existing, candidateLimiter)
+	jobs, filtered, handled, err = fetchBuiltInSiteSearch(ctx, task.targetURL, task.sourceName, task.site, criteria, builtInDetails, builtInProfiles, existing, candidateLimiter, candidateStore)
 	if handled {
 		logDebug("site search %s query %d/%d: static handler completed with %d accepted and %d filtered", task.site, task.queryIndex+1, task.queryCount, len(jobs), countFilteredJobs(filtered))
 	} else if err != nil {
@@ -756,7 +777,7 @@ func fetchSiteSearchTask(ctx context.Context, task siteSearchTask, criteria *Cri
 			var browser *rod.Browser
 			browser, err = ensureBrowser()
 			if err == nil {
-				jobs, filtered, detailNotice, err = fetchGenericSiteSearch(ctx, browser, task.site, task.targetURL, task.sourceName, criteria, detailBlocked, candidateLimiter)
+				jobs, filtered, detailNotice, err = fetchGenericSiteSearch(ctx, browser, task.site, task.targetURL, task.sourceName, criteria, detailBlocked, candidateLimiter, candidateStore)
 				if detailNotice != "" {
 					logDebug("site search %s query %d/%d: %s", task.site, task.queryIndex+1, task.queryCount, detailNotice)
 				}

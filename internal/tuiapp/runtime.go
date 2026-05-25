@@ -24,6 +24,9 @@ func ConfigureRuntime(options appruntime.Options, stores appruntime.Stores, buil
 	if stores.CompanyIdentity != nil {
 		runtimeCompanyIdentityStore = stores.CompanyIdentity
 	}
+	if stores.Candidates != nil {
+		runtimeCandidateStore = stores.Candidates
+	}
 }
 
 func NewModel() tea.Model {

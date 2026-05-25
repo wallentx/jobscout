@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/wallentx/jobscout/internal/domain"
+	"github.com/wallentx/jobscout/internal/storage"
 
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
@@ -145,7 +146,7 @@ func FindSiteSearchBrowserBinary() string {
 	return findSiteSearchBrowserBinary()
 }
 
-func fetchGenericSiteSearch(ctx context.Context, browser *rod.Browser, target string, targetURL string, sourceName string, criteria *CriteriaConfig, detailBlocked *siteSearchBlocklist, candidateLimiter *siteCandidateLimiter) ([]Job, map[string][]Job, string, error) {
+func fetchGenericSiteSearch(ctx context.Context, browser *rod.Browser, target string, targetURL string, sourceName string, criteria *CriteriaConfig, detailBlocked *siteSearchBlocklist, candidateLimiter *siteCandidateLimiter, candidateStore storage.CandidateStore) ([]Job, map[string][]Job, string, error) {
 	candidates, err := probeSiteSearchCandidates(ctx, browser, targetURL, criteria)
 	if err != nil {
 		logDebug("site search %s: browser candidate probe failed: %v", target, err)
@@ -198,6 +199,11 @@ func fetchGenericSiteSearch(ctx context.Context, browser *rod.Browser, target st
 		}
 		job.SetDateAdded(time.Now().Unix())
 		enrichJobFromDescription(&job)
+		if cached, ok := cachedDeterministicRejectedJob(ctx, candidateStore, criteria, job); ok {
+			logDebug("site search %s: skipped cached deterministic rejection %s - %s", target, cached.Company, cached.Title)
+			filtered["cached rejection"] = append(filtered["cached rejection"], cached)
+			continue
+		}
 		if reason := titleScopeFilterReason(job.Title, criteria); reason != "" {
 			logDebug("site search %s: filtered candidate %s - %s before detail enrichment: %s", target, job.Company, job.Title, reason)
 			filtered[reason] = append(filtered[reason], job)
@@ -523,7 +529,7 @@ func builtInDetailResultForSource(result builtInDetailResult, sourceName string)
 	return result
 }
 
-func fetchBuiltInSiteSearch(ctx context.Context, targetURL string, sourceName string, sourceKey string, criteria *CriteriaConfig, detailCache *builtInDetailCache, profileEnricher *sourceProfileEnricher, existing *existingJobIndex, candidateLimiter *siteCandidateLimiter) ([]Job, map[string][]Job, bool, error) {
+func fetchBuiltInSiteSearch(ctx context.Context, targetURL string, sourceName string, sourceKey string, criteria *CriteriaConfig, detailCache *builtInDetailCache, profileEnricher *sourceProfileEnricher, existing *existingJobIndex, candidateLimiter *siteCandidateLimiter, candidateStore storage.CandidateStore) ([]Job, map[string][]Job, bool, error) {
 	parsed, err := url.Parse(strings.TrimSpace(targetURL))
 	if err != nil || parsed.Host == "" || !isBuiltInHost(parsed.Hostname()) {
 		return nil, nil, false, nil
@@ -537,10 +543,10 @@ func fetchBuiltInSiteSearch(ctx context.Context, targetURL string, sourceName st
 		}
 		return nil, nil, true, err
 	}
-	return parseBuiltInSiteSearchHTML(ctx, rawHTML, finalURL, sourceName, sourceKey, criteria, detailCache, profileEnricher, existing, candidateLimiter)
+	return parseBuiltInSiteSearchHTML(ctx, rawHTML, finalURL, sourceName, sourceKey, criteria, detailCache, profileEnricher, existing, candidateLimiter, candidateStore)
 }
 
-func parseBuiltInSiteSearchHTML(ctx context.Context, rawHTML string, finalURL string, sourceName string, sourceKey string, criteria *CriteriaConfig, detailCache *builtInDetailCache, profileEnricher *sourceProfileEnricher, existing *existingJobIndex, candidateLimiter *siteCandidateLimiter) ([]Job, map[string][]Job, bool, error) {
+func parseBuiltInSiteSearchHTML(ctx context.Context, rawHTML string, finalURL string, sourceName string, sourceKey string, criteria *CriteriaConfig, detailCache *builtInDetailCache, profileEnricher *sourceProfileEnricher, existing *existingJobIndex, candidateLimiter *siteCandidateLimiter, candidateStore storage.CandidateStore) ([]Job, map[string][]Job, bool, error) {
 	hrefs := extractHTMLHrefs(rawHTML)
 	listingJobs, cardCount := extractBuiltInListingJobs(rawHTML, finalURL, sourceName, criteria)
 	if cardCount > 0 {
@@ -550,7 +556,13 @@ func parseBuiltInSiteSearchHTML(ctx context.Context, rawHTML string, finalURL st
 			listingJobs = listingJobs[:keptCount]
 			logDebug("site search built-in %s: candidate limit kept=%d skipped=%d", finalURL, keptCount, len(skippedByLimit))
 		}
-		acceptedListingJobs, cardFiltered := filterBuiltInListingJobsWithProfiles(listingJobs, criteria)
+		listingJobs, cachedRejected := filterBuiltInListingJobsWithCachedRejects(ctx, candidateStore, criteria, listingJobs)
+		cardFiltered := make(map[string][]Job)
+		if len(cachedRejected) > 0 {
+			cardFiltered["cached rejection"] = append(cardFiltered["cached rejection"], cachedRejected...)
+		}
+		acceptedListingJobs, profileFiltered := filterBuiltInListingJobsWithProfiles(listingJobs, criteria)
+		cardFiltered = mergeFiltered(cardFiltered, profileFiltered)
 		if len(skippedByLimit) > 0 {
 			if cardFiltered == nil {
 				cardFiltered = make(map[string][]Job)
@@ -584,6 +596,11 @@ func parseBuiltInSiteSearchHTML(ctx context.Context, rawHTML string, finalURL st
 		logDebug("site search built-in %s: candidate limit kept=%d skipped=%d", finalURL, keptCount, len(links)-keptCount)
 		links = links[:keptCount]
 	}
+	preFiltered := make(map[string][]Job)
+	links, cachedRejected := filterBuiltInDetailLinksWithCachedRejects(ctx, candidateStore, criteria, sourceName, links)
+	if len(cachedRejected) > 0 {
+		preFiltered["cached rejection"] = append(preFiltered["cached rejection"], cachedRejected...)
+	}
 	logDebug("site search built-in %s: found %d job detail links", finalURL, len(links))
 
 	results := make([]builtInDetailResult, len(links))
@@ -601,7 +618,7 @@ func parseBuiltInSiteSearchHTML(ctx context.Context, rawHTML string, finalURL st
 	wg.Wait()
 
 	jobs := make([]Job, 0, len(links))
-	filtered := make(map[string][]Job)
+	filtered := preFiltered
 	for _, result := range results {
 		if !result.ok {
 			continue
@@ -618,6 +635,53 @@ func parseBuiltInSiteSearchHTML(ctx context.Context, rawHTML string, finalURL st
 	}
 	logDebug("site search built-in %s: accepted %d; filtered %d", finalURL, len(jobs), countFilteredJobs(filtered))
 	return jobs, filtered, true, nil
+}
+
+func filterBuiltInListingJobsWithCachedRejects(ctx context.Context, store storage.CandidateStore, criteria *CriteriaConfig, listingJobs []builtInListingJob) ([]builtInListingJob, []Job) {
+	if store == nil || len(listingJobs) == 0 {
+		return listingJobs, nil
+	}
+	kept := make([]builtInListingJob, 0, len(listingJobs))
+	rejected := make([]Job, 0)
+	for _, listingJob := range listingJobs {
+		cached, ok := cachedDeterministicRejectedJob(ctx, store, criteria, listingJob.job)
+		if ok {
+			rejected = append(rejected, cached)
+			continue
+		}
+		kept = append(kept, listingJob)
+	}
+	if len(rejected) > 0 {
+		logDebug("site search built-in listing cache: skipped %d cached deterministic rejections", len(rejected))
+	}
+	return kept, rejected
+}
+
+func filterBuiltInDetailLinksWithCachedRejects(ctx context.Context, store storage.CandidateStore, criteria *CriteriaConfig, sourceName string, links []string) ([]string, []Job) {
+	if store == nil || len(links) == 0 {
+		return links, nil
+	}
+	kept := make([]string, 0, len(links))
+	rejected := make([]Job, 0)
+	for _, link := range links {
+		job := Job{
+			Source:       sourceName,
+			ApplyURL:     link,
+			Status:       "Unopened",
+			Compensation: "Not listed",
+		}
+		job.SetDateAdded(time.Now().Unix())
+		cached, ok := cachedDeterministicRejectedJob(ctx, store, criteria, job)
+		if ok {
+			rejected = append(rejected, cached)
+			continue
+		}
+		kept = append(kept, link)
+	}
+	if len(rejected) > 0 {
+		logDebug("site search built-in detail cache: skipped %d cached deterministic rejections", len(rejected))
+	}
+	return kept, rejected
 }
 
 func skipExistingBuiltInListingJobs(listingJobs []builtInListingJob, existing *existingJobIndex) ([]builtInListingJob, []Job) {

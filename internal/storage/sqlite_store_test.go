@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 	"time"
@@ -207,6 +208,85 @@ func TestSQLiteStoreDeleteHealth(t *testing.T) {
 	}
 	if len(loadedCache) != 0 {
 		t.Fatalf("LoadHealthCache() = %#v, want empty after DeleteHealth calls", loadedCache)
+	}
+}
+
+func TestSQLiteStoreJobCandidateCacheRoundTrip(t *testing.T) {
+	store := newTestSQLiteStore(t)
+	ctx := context.Background()
+	now := time.Now().Add(-time.Hour)
+
+	candidate := JobCandidate{
+		Key:               "url:https://jobs.example/acme/platform-engineer",
+		Source:            "Site Search: Example",
+		SourceKey:         "url:https://jobs.example/acme/platform-engineer",
+		ApplyURL:          "https://jobs.example/acme/platform-engineer",
+		CanonicalApplyURL: "https://jobs.example/acme/platform-engineer",
+		Company:           "Acme",
+		Title:             "Platform Engineer",
+		Job: Job{
+			Company:        "Acme",
+			CompanyWebsite: "https://www.acme.example",
+			Title:          "Platform Engineer",
+			ApplyURL:       "https://jobs.example/acme/platform-engineer",
+			Source:         "Site Search: Example",
+		},
+		Active:    true,
+		FirstSeen: now,
+		LastSeen:  now,
+	}
+	if err := store.UpsertJobCandidate(ctx, candidate); err != nil {
+		t.Fatalf("UpsertJobCandidate() error = %v", err)
+	}
+
+	loaded, err := store.GetJobCandidate(ctx, candidate.Key)
+	if err != nil {
+		t.Fatalf("GetJobCandidate() error = %v", err)
+	}
+	if loaded == nil {
+		t.Fatal("GetJobCandidate() = nil, want candidate")
+	}
+	if loaded.Job.CompanyWebsite != "https://www.acme.example" {
+		t.Fatalf("loaded candidate website = %q; want cached website", loaded.Job.CompanyWebsite)
+	}
+
+	decision := JobCandidateDecision{
+		JobCandidateDecisionKey: JobCandidateDecisionKey{
+			CandidateKey:    candidate.Key,
+			CriteriaHash:    "criteria123",
+			Stage:           "deterministic",
+			DecisionVersion: "deterministic:v1",
+		},
+		Decision:  "rejected",
+		Reason:    "title excludes",
+		Job:       candidate.Job,
+		DecidedAt: now,
+	}
+	if err := store.UpsertJobCandidateDecision(ctx, decision); err != nil {
+		t.Fatalf("UpsertJobCandidateDecision() error = %v", err)
+	}
+
+	loadedDecision, err := store.GetJobCandidateDecision(ctx, decision.JobCandidateDecisionKey)
+	if err != nil {
+		t.Fatalf("GetJobCandidateDecision() error = %v", err)
+	}
+	if loadedDecision == nil || loadedDecision.Decision != "rejected" || loadedDecision.Reason != "title excludes" {
+		t.Fatalf("GetJobCandidateDecision() = %#v; want rejected title-excludes decision", loadedDecision)
+	}
+
+	removed, err := store.PruneJobCandidateCache(ctx, time.Now())
+	if err != nil {
+		t.Fatalf("PruneJobCandidateCache() error = %v", err)
+	}
+	if removed != 1 {
+		t.Fatalf("PruneJobCandidateCache() removed = %d; want 1", removed)
+	}
+	loaded, err = store.GetJobCandidate(ctx, candidate.Key)
+	if err != nil {
+		t.Fatalf("GetJobCandidate() after prune error = %v", err)
+	}
+	if loaded != nil {
+		t.Fatalf("GetJobCandidate() after prune = %#v; want nil", loaded)
 	}
 }
 

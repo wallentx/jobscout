@@ -89,7 +89,7 @@ func ApplyCachedIdentity(job *Job, record CompanyIdentityRecord) {
 	if job == nil {
 		return
 	}
-	if domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) && record.Website != "" && trustedRecordEvidence(record.Identity, "website", record.Website) {
+	if domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) && record.Website != "" && trustedRecordEvidence(record.Identity, "website", record.Website) && !recordWebsiteEvidenceBlocked(record) {
 		job.CompanyWebsite = record.Website
 		setCachedIdentityEvidence(job, "website", record.Website, copiedEvidence(record.Identity, "website"))
 	}
@@ -193,7 +193,7 @@ func trustedIdentityRecordFromJob(job Job) (CompanyIdentityRecord, int, int, int
 	websiteRank := 0
 	summaryRank := 0
 	industryRank := 0
-	if !domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) && trustedIdentityEvidence(job.CompanyIdentity, "website", job.CompanyWebsite) {
+	if !domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) && trustedIdentityEvidence(job.CompanyIdentity, "website", job.CompanyWebsite) && !jobWebsiteEvidenceBlocked(job) {
 		record.Website = job.CompanyWebsite
 		w := *job.CompanyIdentity.Website
 		identity.Website = &w
@@ -300,7 +300,7 @@ func applySameCompanyIdentity(job *Job, record CompanyIdentityRecord) int {
 		return 0
 	}
 	copied := 0
-	if domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) && record.Website != "" {
+	if domain.JobCompanyWebsiteMissingOrInvalid(job.CompanyWebsite) && record.Website != "" && !recordWebsiteEvidenceBlocked(record) {
 		job.CompanyWebsite = record.Website
 		setCopiedSameCompanyEvidence(job, "website", record.Website, copiedEvidence(record.Identity, "website"))
 		copied++
@@ -316,6 +316,20 @@ func applySameCompanyIdentity(job *Job, record CompanyIdentityRecord) int {
 		copied++
 	}
 	return copied
+}
+
+func recordWebsiteEvidenceBlocked(record CompanyIdentityRecord) bool {
+	if record.Identity == nil || record.Identity.Website == nil {
+		return false
+	}
+	return sourceProfileWebsiteCandidateBlocked(record.Website, record.Identity.Website.URL)
+}
+
+func jobWebsiteEvidenceBlocked(job Job) bool {
+	if job.CompanyIdentity == nil || job.CompanyIdentity.Website == nil {
+		return false
+	}
+	return sourceProfileWebsiteCandidateBlocked(job.CompanyWebsite, job.CompanyIdentity.Website.URL)
 }
 
 func copiedEvidence(identity *domain.JobIdentityMetadata, field string) *domain.JobIdentityEvidence {
