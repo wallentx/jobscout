@@ -34,12 +34,31 @@ type linkedInTypeaheadCacheEntry struct {
 
 type linkedInTypeaheadCache map[string]linkedInTypeaheadCacheEntry
 
-var linkedInTypeaheadMemoryCache = struct {
-	sync.Mutex
+type linkedinTypeaheadMemoryCache struct {
+	mu     sync.Mutex
 	path   string
 	loaded bool
 	cache  linkedInTypeaheadCache
-}{}
+}
+
+var linkedInTypeaheadMemoryCache = &linkedinTypeaheadMemoryCache{}
+
+func (c *linkedinTypeaheadMemoryCache) Get(cachePath string) (linkedInTypeaheadCache, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.loaded && c.path == cachePath {
+		return cloneLinkedInTypeaheadCache(c.cache), true
+	}
+	return nil, false
+}
+
+func (c *linkedinTypeaheadMemoryCache) Set(cachePath string, cache linkedInTypeaheadCache) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.path = cachePath
+	c.loaded = true
+	c.cache = cloneLinkedInTypeaheadCache(cache)
+}
 
 func refreshLinkedInCriteriaHints(ctx context.Context, criteria *CriteriaConfig) error {
 	if criteria == nil {
@@ -140,19 +159,15 @@ func loadLinkedInTypeaheadCache() (linkedInTypeaheadCache, error) {
 		return linkedInTypeaheadCache{}, nil
 	}
 
-	linkedInTypeaheadMemoryCache.Lock()
-	if linkedInTypeaheadMemoryCache.loaded && linkedInTypeaheadMemoryCache.path == cachePath {
-		cache := cloneLinkedInTypeaheadCache(linkedInTypeaheadMemoryCache.cache)
-		linkedInTypeaheadMemoryCache.Unlock()
+	if cache, ok := linkedInTypeaheadMemoryCache.Get(cachePath); ok {
 		return cache, nil
 	}
-	linkedInTypeaheadMemoryCache.Unlock()
 
 	data, err := os.ReadFile(cachePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			cache := linkedInTypeaheadCache{}
-			storeLinkedInTypeaheadMemoryCache(cachePath, cache)
+			linkedInTypeaheadMemoryCache.Set(cachePath, cache)
 			return cache, nil
 		}
 		return nil, err
@@ -164,7 +179,7 @@ func loadLinkedInTypeaheadCache() (linkedInTypeaheadCache, error) {
 	if cache == nil {
 		cache = linkedInTypeaheadCache{}
 	}
-	storeLinkedInTypeaheadMemoryCache(cachePath, cache)
+	linkedInTypeaheadMemoryCache.Set(cachePath, cache)
 	return cache, nil
 }
 
@@ -183,16 +198,8 @@ func saveLinkedInTypeaheadCache(cache linkedInTypeaheadCache) error {
 	if err := os.WriteFile(cachePath, data, 0600); err != nil {
 		return err
 	}
-	storeLinkedInTypeaheadMemoryCache(cachePath, cache)
+	linkedInTypeaheadMemoryCache.Set(cachePath, cache)
 	return nil
-}
-
-func storeLinkedInTypeaheadMemoryCache(cachePath string, cache linkedInTypeaheadCache) {
-	linkedInTypeaheadMemoryCache.Lock()
-	linkedInTypeaheadMemoryCache.path = cachePath
-	linkedInTypeaheadMemoryCache.loaded = true
-	linkedInTypeaheadMemoryCache.cache = cloneLinkedInTypeaheadCache(cache)
-	linkedInTypeaheadMemoryCache.Unlock()
 }
 
 func cloneLinkedInTypeaheadCache(cache linkedInTypeaheadCache) linkedInTypeaheadCache {

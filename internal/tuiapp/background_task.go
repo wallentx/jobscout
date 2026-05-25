@@ -319,8 +319,7 @@ func enrichAcceptedFetchCmd(taskID int, disableLLM bool, jobs []Job, progressCh 
 			appCfg = sessionFetchConfig(disableLLM, appCfg)
 		}
 
-		fetcher.ConfigureLLM(llmpkg.InitConfiguredLLMForTask, llmpkg.ExecuteLLMSearch, llmpkg.EnrichJobIdentityWithLLMUsage)
-		fetcher.ConfigureLLMWebSearch(llmpkg.ExecuteLLMWebSearch)
+		fetcher.RegisterLLMService(llmpkg.NewLLMService())
 		reportAcceptedFetchProgress(progressCh, "Enriching accepted jobs in the background...")
 		enriched := fetcher.EnrichJobsFromApplyPagesWithConfigStoreAndProgress(ctx, append([]Job(nil), jobs...), appCfg, runtimeCompanyIdentityStore, func(message string) {
 			reportAcceptedFetchProgress(progressCh, message)

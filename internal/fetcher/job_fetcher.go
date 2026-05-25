@@ -93,13 +93,14 @@ func fetchAllJobsWithCandidateCache(ctx context.Context, appCfg *AppConfig, crit
 
 	// 1. Fetch via LLM job search when enabled.
 	if appCfg.LLM.Enabled && appCfg.LLM.JobSearch {
-		if fetchAllJobsInitConfiguredLLM == nil || fetchAllJobsExecuteLLMSearch == nil {
+		llmSvc := getLLMService(ctx)
+		if !llmSvc.IsAvailable(ctx, "llm_job_search") {
 			mu.Lock()
 			setFetchSearchStatus(&summary, fetchSearchLLM, "disabled: LLM job search runner unavailable")
 			mu.Unlock()
 		} else {
 			reportFetchProgress(progress, "Preparing LLM job search...")
-			llm, restoreAuth, initErr := fetchAllJobsInitConfiguredLLM(ctx, appCfg, llmTaskJobSearch)
+			llm, restoreAuth, initErr := llmSvc.InitConfiguredLLM(ctx, appCfg, llmTaskJobSearch)
 			if initErr == nil {
 				defer restoreAuth()
 				promptBytes, err := fetchAllJobsReadFile(runtimeSearchPromptPath)
@@ -110,7 +111,7 @@ func fetchAllJobsWithCandidateCache(ctx context.Context, appCfg *AppConfig, crit
 					mu.Unlock()
 				} else {
 					reportFetchProgress(progress, "Running LLM job search...")
-					jobs, err := fetchAllJobsExecuteLLMSearch(ctx, llm, string(promptBytes))
+					jobs, err := llmSvc.ExecuteSearch(ctx, llm, string(promptBytes))
 					if err != nil {
 						mu.Lock()
 						summary.Notices = append(summary.Notices, fmt.Sprintf("LLM job search failed: %v", err))
@@ -155,7 +156,7 @@ func fetchAllJobsWithCandidateCache(ctx context.Context, appCfg *AppConfig, crit
 		switch {
 		case !appCfg.LLM.Enabled:
 			setFetchSearchStatus(&summary, fetchSearchLLMWeb, "disabled: LLM is disabled in config")
-		case fetchAllJobsExecuteLLMWebSearch == nil && (fetchAllJobsInitConfiguredLLM == nil || fetchAllJobsExecuteLLMSearch == nil):
+		case !getLLMService(ctx).IsAvailable(ctx, "llm_web_search"):
 			setFetchSearchStatus(&summary, fetchSearchLLMWeb, "disabled: LLM search runner unavailable")
 		case len(effectiveSources.LLMWebTargets) == 0:
 			setFetchSearchStatus(&summary, fetchSearchLLMWeb, "enabled, but no llm_web targets were configured or resolved")
@@ -508,15 +509,8 @@ func fetchAllJobsWithCandidateCache(ctx context.Context, appCfg *AppConfig, crit
 }
 
 func executeLLMWebSearchForFetch(ctx context.Context, appCfg *AppConfig, prompt string) ([]Job, error) {
-	if fetchAllJobsExecuteLLMWebSearch != nil {
-		return fetchAllJobsExecuteLLMWebSearch(ctx, appCfg, prompt)
-	}
-	llm, restoreAuth, err := fetchAllJobsInitConfiguredLLM(ctx, appCfg, llmTaskJobSearch)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize: %w", err)
-	}
-	defer restoreAuth()
-	return fetchAllJobsExecuteLLMSearch(ctx, llm, prompt)
+	llmSvc := getLLMService(ctx)
+	return llmSvc.ExecuteWebSearch(ctx, appCfg, prompt)
 }
 
 func markLLMWebJobsForValidation(jobs []Job) {
