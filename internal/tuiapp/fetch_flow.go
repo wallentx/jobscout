@@ -324,7 +324,7 @@ func fetchJobsWithOptionsCmd(runOptions fetchRunOptions, existingJobs []Job, pro
 		recordLLMJobFilteringBypassReasons(appCfg, criteriaCfg, &summary, beforeLLMFilter)
 		llmFilterStart := time.Now()
 		newJobs, notices := applyOptionalLLMJobFilteringWithFreshTimeout(appCfg, criteriaCfg, newJobs)
-		fetcher.RecordLLMFilterCandidateDecisions(context.Background(), runtimeCandidateStore, appCfg, criteriaCfg, beforeLLMFilter, newJobs, notices)
+		fetcher.RecordLLMFilterCandidateDecisions(ctx, runtimeCandidateStore, appCfg, criteriaCfg, beforeLLMFilter, newJobs, notices)
 		recordLLMJobFilteringOutcome(appCfg, &summary, beforeLLMFilter, newJobs, notices)
 		summary.Notices = append(summary.Notices, notices...)
 		logDebug(

@@ -69,7 +69,7 @@ Stored by `internal/domain/company_identity.go` and the
 
 ### Job Candidates
 
-Stored by `internal/domain/job_candidate.go` and the `job_candidates` tables.
+Stored by `internal/domain/job_candidate.go` and the `job_candidates` table.
 These rows are not shown on the board unless the fetch flow accepts them.
 
 | Field | Used For | Notes |
