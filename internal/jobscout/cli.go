@@ -125,8 +125,7 @@ func runFetchDryRun(options appruntime.Options, stores appruntime.Stores, jsonOu
 		existing = []domain.Job{}
 	}
 
-	fetcher.ConfigureLLM(llmpkg.InitConfiguredLLMForTask, llmpkg.ExecuteLLMSearch, llmpkg.EnrichJobIdentityWithLLMUsage)
-	fetcher.ConfigureLLMWebSearch(llmpkg.ExecuteLLMWebSearch)
+	fetcher.RegisterLLMService(llmpkg.NewLLMService())
 	newJobs, summary, err := fetcher.FetchAllJobsSkippingExisting(ctx, appCfg, criteriaCfg, existing, nil)
 	if err != nil {
 		if !jsonOutput {
@@ -224,8 +223,7 @@ func runRepairJobIdentityCLI(options appruntime.Options, stores appruntime.Store
 	repairJobs, repairIndexes := domain.IdentityRepairTargets(jobs)
 	fmt.Printf("Repairing identity data for %d of %d jobs.\n", len(repairJobs), len(jobs))
 	if len(repairJobs) > 0 {
-		fetcher.ConfigureLLM(llmpkg.InitConfiguredLLMForTask, llmpkg.ExecuteLLMSearch, llmpkg.EnrichJobIdentityWithLLMUsage)
-		fetcher.ConfigureLLMWebSearch(llmpkg.ExecuteLLMWebSearch)
+		fetcher.RegisterLLMService(llmpkg.NewLLMService())
 		repairJobs = fetcher.EnrichJobsFromApplyPagesWithConfigStoreAndProgress(ctx, repairJobs, appCfg, stores.CompanyIdentity, func(message string) {
 			fmt.Println(message)
 		}, nil)

@@ -219,8 +219,7 @@ func applyOptionalLLMJobFilteringWithFreshTimeout(appCfg *AppConfig, criteriaCfg
 }
 
 func fetchAllJobs(ctx context.Context, appCfg *AppConfig, criteriaCfg *CriteriaConfig, existingJobs []Job, progress func(string)) ([]Job, FetchSummary, error) {
-	fetcher.ConfigureLLM(llmpkg.InitConfiguredLLMForTask, llmpkg.ExecuteLLMSearch, llmpkg.EnrichJobIdentityWithLLMUsage)
-	fetcher.ConfigureLLMWebSearch(llmpkg.ExecuteLLMWebSearch)
+	fetcher.RegisterLLMService(llmpkg.NewLLMService())
 	return fetcher.FetchAllJobsSkippingExistingWithCandidateCache(ctx, appCfg, criteriaCfg, existingJobs, progress, runtimeCandidateStore)
 }
 

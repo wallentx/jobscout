@@ -106,14 +106,18 @@ func extractAndCheckSalary(text string, minBase int) bool {
 	// Remove commas for easier parsing: "$180,000" -> "$180000"
 	cleanText := strings.ReplaceAll(text, ",", "")
 
+	foundAnyNumber := false
+
 	// Look for explicitly high numbers (e.g., 180000)
 	reFull := regexp.MustCompile(`\b[1-9]\d{4,5}\b`)
 	matchesFull := reFull.FindAllString(cleanText, -1)
 	for _, m := range matchesFull {
 		var val int
-		_, _ = fmt.Sscanf(m, "%d", &val)
-		if val >= minBase {
-			return true
+		if _, err := fmt.Sscanf(m, "%d", &val); err == nil {
+			foundAnyNumber = true
+			if val >= minBase {
+				return true
+			}
 		}
 	}
 
@@ -122,14 +126,22 @@ func extractAndCheckSalary(text string, minBase int) bool {
 	matchesK := reK.FindAllStringSubmatch(cleanText, -1)
 	for _, m := range matchesK {
 		var val int
-		_, _ = fmt.Sscanf(m[1], "%d", &val)
-		if val*1000 >= minBase {
-			return true
+		if _, err := fmt.Sscanf(m[1], "%d", &val); err == nil {
+			foundAnyNumber = true
+			if val*1000 >= minBase {
+				return true
+			}
 		}
 	}
 
-	// We couldn't definitively prove it meets the criteria.
-	// We return false, meaning we aggressively filter out jobs missing compensation details.
+	// If we did not discover any numerical salary figures (e.g., "Competitive", "Depends on Experience"),
+	// we keep the job to avoid aggressively discarding unlisted opportunities.
+	if !foundAnyNumber {
+		return true
+	}
+
+	// If numerical figures were found, but ALL of them are strictly below the threshold,
+	// then we definitively prove it fails the criteria and filter it out.
 	return false
 }
 
