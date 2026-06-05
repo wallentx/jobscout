@@ -190,6 +190,7 @@ func TestSiteSearchURLForCriteriaBuildsAggregatorSearchURLs(t *testing.T) {
 	criteria.Filters.TitleIncludes = []string{"Software Engineer"}
 	criteria.Filters.WorkSettings.Remote = true
 	criteria.Filters.WorkSettings.Hybrid = true
+	criteria.Filters.WorkSettings.Hybrid = true
 	criteria.Candidate.YearsOfExperience = 5
 	criteria.Filters.MinBaseUSD = 120000
 
@@ -216,6 +217,36 @@ func TestSiteSearchURLForCriteriaBuildsAggregatorSearchURLs(t *testing.T) {
 				t.Fatalf("siteSearchURLForCriteria(%q) = %q; want %q", tt.target, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSiteSearchURLsForCompanyBuildsCompanyQueries(t *testing.T) {
+	criteria := &CriteriaConfig{}
+	criteria.Candidate.City = "Seattle"
+	criteria.Candidate.State = "WA"
+	criteria.Candidate.CountryCode = "US"
+	criteria.Filters.TitleRequires = []string{"Senior"}
+	criteria.Filters.TitleIncludes = []string{"Software Engineer"}
+	criteria.Filters.WorkSettings.Remote = true
+	criteria.Filters.WorkSettings.Hybrid = true
+
+	scope := companyFetchScope{Company: "GitHub", Website: "https://github.com"}
+	got := siteSearchURLsForCompany("https://www.indeed.com/jobs", criteria, scope, true)
+	want := []string{
+		"https://www.indeed.com/jobs?l=Seattle%2C+WA&q=GitHub+github.com+Senior+Software+Engineer",
+		"https://www.indeed.com/companies/search?q=GitHub",
+	}
+	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("siteSearchURLsForCompany(match criteria) = %#v; want %#v", got, want)
+	}
+
+	got = siteSearchURLsForCompany("https://www.indeed.com/jobs", criteria, scope, false)
+	want = []string{
+		"https://www.indeed.com/jobs?q=GitHub+github.com",
+		"https://www.indeed.com/companies/search?q=GitHub",
+	}
+	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("siteSearchURLsForCompany(all) = %#v; want %#v", got, want)
 	}
 }
 

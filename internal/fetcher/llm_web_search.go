@@ -48,6 +48,46 @@ func buildLLMWebSearchPrompt(criteria *CriteriaConfig, targets []string) (string
 	return b.String(), queries
 }
 
+func buildCompanyLLMWebSearchPrompt(criteria *CriteriaConfig, targets []string, company companyFetchScope, matchCriteria bool) (string, []string) {
+	queries := llmWebSearchQueriesForCompany(criteria, targets, company, matchCriteria, maxLLMWebSearchQueries)
+	if len(queries) == 0 {
+		return "", nil
+	}
+
+	var b strings.Builder
+	b.WriteString("Use provider-backed web search, if available, to find current public job postings.\n")
+	b.WriteString("If web search is not available in this runtime, return exactly [] with no explanation.\n")
+	b.WriteString("Do not answer with prose, caveats, markdown, or citations outside the JSON array.\n")
+	b.WriteString("When a provider web search tool is available, use it before deciding there are no matching jobs.\n")
+	fmt.Fprintf(&b, "Only include roles where the employer is %s.\n", strings.TrimSpace(company.Company))
+	if len(company.Aliases) > 0 {
+		fmt.Fprintf(&b, "Also treat these names as the same employer: %s.\n", strings.Join(company.Aliases, ", "))
+	}
+	if domain := company.websiteDomain(); domain != "" {
+		fmt.Fprintf(&b, "The company's official website domain is %s. Exclude roles whose source evidence points to a different company website.\n", domain)
+	}
+	b.WriteString("Search only these public-web queries:\n")
+	for _, query := range queries {
+		fmt.Fprintf(&b, "- %s\n", query)
+	}
+	if domains := llmWebSearchDomains(targets); len(domains) > 0 {
+		b.WriteString("\nAllowed source domains for providers that support domain filters:\n")
+		for _, domain := range domains {
+			fmt.Fprintf(&b, "- %s\n", domain)
+		}
+	}
+	if matchCriteria {
+		b.WriteString("\nOnly include roles that match the criteria below. Prefer direct employer or ATS application pages. Exclude stale, closed, unrelated, senior/lead/manager roles when those are excluded by criteria.\n")
+		b.WriteString("For each job, include the actual company website, a brief factual company summary, and the company industry when available.\n\n")
+		writeLLMWebCriteria(&b, criteria)
+	} else {
+		b.WriteString("\nReturn all current public roles for this company. Do not filter by candidate criteria.\n")
+		b.WriteString("Prefer direct employer or ATS application pages. For each job, include the actual company website, a brief factual company summary, and the company industry when available.\n")
+	}
+
+	return b.String(), queries
+}
+
 func llmWebSearchQueries(criteria *CriteriaConfig, targets []string, limit int) []string {
 	titleQueries := targetedSiteSearchQueries(criteria)
 	if len(titleQueries) == 0 {
@@ -66,6 +106,41 @@ func llmWebSearchQueries(criteria *CriteriaConfig, targets []string, limit int) 
 	for _, titleQuery := range titleQueries {
 		for _, target := range normalizedTargets {
 			query := strings.TrimSpace(target + " " + strings.TrimSpace(titleQuery))
+			if query == "" {
+				continue
+			}
+			key := strings.ToLower(query)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			queries = append(queries, query)
+			if limit > 0 && len(queries) >= limit {
+				return queries
+			}
+		}
+	}
+	return queries
+}
+
+func llmWebSearchQueriesForCompany(criteria *CriteriaConfig, targets []string, company companyFetchScope, matchCriteria bool, limit int) []string {
+	searches := companyTargetSearchQueries(company, criteria, matchCriteria)
+	if len(searches) == 0 {
+		return nil
+	}
+
+	queries := make([]string, 0)
+	seen := make(map[string]bool)
+	normalizedTargets := make([]string, 0, len(targets))
+	for _, rawTarget := range targets {
+		if target := llmWebSearchTarget(rawTarget); target != "" {
+			normalizedTargets = append(normalizedTargets, target)
+		}
+	}
+
+	for _, search := range searches {
+		for _, target := range normalizedTargets {
+			query := strings.TrimSpace(target + " " + strings.TrimSpace(search))
 			if query == "" {
 				continue
 			}

@@ -149,14 +149,12 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if m.isCommanding {
+		m.clearOperatorCommandResult()
 		switch msg.String() {
 		case "esc":
 			m.isCommanding = false
 			m.resetOperatorCommandPrompt()
 			m.commandInput.Blur()
-			m.commandResultTitle = ""
-			m.commandResultMessage = ""
-			m.commandResultError = false
 			return m, nil
 		case "tab":
 			m.applyOperatorCommandCompletion()
@@ -169,9 +167,6 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			var cmd2 tea.Cmd
 			m.commandInput, cmd2 = m.commandInput.Update(msg)
 			m.updateOperatorCommandTypedInput()
-			m.commandResultTitle = ""
-			m.commandResultMessage = ""
-			m.commandResultError = false
 			return m, cmd2
 		case "enter":
 			input := m.commandInput.Value()
@@ -188,9 +183,6 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				identity.Company = company
 				m.isCommanding = false
 				m.commandInput.Blur()
-				m.commandResultTitle = ""
-				m.commandResultMessage = ""
-				m.commandResultError = false
 				m.openCompanyHealthIdentityOverlay(identity, true, fmt.Sprintf("Loading health for %s...", company), nil, "")
 				return m, tea.Batch(loadCompanyHealthWithIdentity(identity, false), m.restartLoadingIndicator())
 			}
@@ -207,9 +199,6 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.fetchProgress = progressCh
 				m.isCommanding = false
 				m.commandInput.Blur()
-				m.commandResultTitle = ""
-				m.commandResultMessage = ""
-				m.commandResultError = false
 				m.activeFetch = activeFetchState{
 					expanded:     true,
 					animProgress: 1.0,
@@ -227,9 +216,6 @@ func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.prepareOperatorCommandTyping()
 			m.commandInput, cmd2 = m.commandInput.Update(msg)
 			m.updateOperatorCommandTypedInput()
-			m.commandResultTitle = ""
-			m.commandResultMessage = ""
-			m.commandResultError = false
 			return m, cmd2
 		}
 	}

@@ -7,7 +7,7 @@ func cleanCompanyName(name string) string {
 	n = strings.ReplaceAll(n, ",", "")
 	for _, suffix := range []string{
 		" inc", " inc.", " corp", " corp.", " corporation", " co", " co.",
-		" ltd", " ltd.", " limited", " plc", " ag", " sa", " se", " holdings", " group",
+		" ltd", " ltd.", " limited", " llc", " llc.", " plc", " ag", " sa", " se", " holdings", " group",
 	} {
 		if strings.HasSuffix(n, suffix) {
 			n = strings.TrimSpace(strings.TrimSuffix(n, suffix))

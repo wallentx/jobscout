@@ -2,10 +2,7 @@ package tuiapp
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
-
-	"github.com/wallentx/jobscout/internal/config"
 )
 
 type operatorCommandResult struct {
@@ -16,11 +13,10 @@ type operatorCommandResult struct {
 }
 
 type operatorFetchOptions struct {
-	SourceSelectionSet      bool
-	SourceSelection         []string
-	CandidateLimitPerSource *int
-	AcceptedLimit           *int
-	DisableLLM              bool
+	Company string
+	Aliases []string
+	Website string
+	All     bool
 }
 
 type operatorCommandSpec struct {
@@ -38,21 +34,6 @@ type operatorCommandCompletionSpec struct {
 type operatorCommandCompletion struct {
 	Label string
 	Value string
-}
-
-type fetchCommandHintDefaults struct {
-	CandidateLimitPerSource string
-	AcceptedLimit           string
-}
-
-var defaultFetchCommandHintValues = newFetchCommandHintDefaults()
-
-func newFetchCommandHintDefaults() fetchCommandHintDefaults {
-	fetch := config.DefaultAppConfig().Fetch
-	return fetchCommandHintDefaults{
-		CandidateLimitPerSource: strconv.Itoa(fetch.CandidateLimitPerSource),
-		AcceptedLimit:           strconv.Itoa(fetch.AcceptedLimit),
-	}
 }
 
 var operatorCommandSpecs = []operatorCommandSpec{
@@ -73,16 +54,6 @@ var operatorCommandSpecs = []operatorCommandSpec{
 	{
 		Name:    "fetch",
 		Execute: executeFetchCommand,
-	},
-	{
-		Name:    "help",
-		Aliases: []string{"?"},
-		Execute: operatorCommandHelp,
-		Completions: []operatorCommandCompletionSpec{
-			{Label: "debug", Insert: "debug"},
-			{Label: "fetch", Insert: "fetch"},
-			{Label: "health", Insert: "health"},
-		},
 	},
 }
 
@@ -192,29 +163,24 @@ func fetchCommandCompletions(input string) []operatorCommandCompletion {
 		return nil
 	}
 	rest = strings.TrimLeft(rest, " \t")
-
-	if base, prefix, ok := fetchCommandSourceValueCompletionContext(rest); ok {
-		return fetchCommandSourceCompletions(base, prefix)
-	}
-	if fetchCommandAwaitingNonSourceValue(rest) {
+	if strings.TrimSpace(rest) == "" || fetchCommandAwaitingFlagValue(rest) || commandCurrentTokenRequiresValue(rest, fetchFlagRequiresValue) {
 		return nil
 	}
 
 	base, prefix, ok := commandFlagCompletionContext(rest)
-	if !ok {
+	if !ok || !fetchRestHasCompany(rest) {
 		return nil
 	}
 
 	flags := []operatorCommandCompletionSpec{
-		{Label: "--sources", Insert: "--sources"},
-		{Label: "--candidate-limit", Insert: "--candidate-limit"},
-		{Label: "--accepted-limit", Insert: "--accepted-limit"},
-		{Label: "--no-llm", Insert: "--no-llm"},
+		{Label: "--aka", Insert: "--aka"},
+		{Label: "--website", Insert: "--website"},
+		{Label: "--all", Insert: "--all"},
 	}
 	usedFlags := fetchCommandUsedFlags(rest)
 	completions := make([]operatorCommandCompletion, 0, len(flags))
 	for _, flag := range flags {
-		if flag.Label != "--sources" && usedFlags[flag.Label] {
+		if flag.Label != "--aka" && usedFlags[flag.Label] {
 			continue
 		}
 		if matchOperatorCommandCompletion(prefix, flag.Label, flag.Insert) {
@@ -225,38 +191,6 @@ func fetchCommandCompletions(input string) []operatorCommandCompletion {
 		}
 	}
 	return completions
-}
-
-func fetchCommandSourceCompletions(base string, prefix string) []operatorCommandCompletion {
-	sources := []string{"rss", "site", "llm", "llm_web", "all"}
-	completions := make([]operatorCommandCompletion, 0, len(sources))
-	for _, source := range sources {
-		if !matchOperatorCommandCompletion(prefix, source, source) {
-			continue
-		}
-		completions = append(completions, operatorCommandCompletion{
-			Label: source,
-			Value: "fetch " + base + source,
-		})
-	}
-	return completions
-}
-
-func fetchCommandSourceValueCompletionContext(rest string) (base string, prefix string, ok bool) {
-	base, valuePrefix, flag, ok := commandValueCompletionContext(rest)
-	if !ok || flag != "--sources" {
-		return "", "", false
-	}
-	comma := strings.LastIndex(valuePrefix, ",")
-	if comma == -1 {
-		return base, valuePrefix, true
-	}
-	return base + valuePrefix[:comma+1], valuePrefix[comma+1:], true
-}
-
-func fetchCommandAwaitingNonSourceValue(rest string) bool {
-	_, _, flag, ok := commandValueCompletionContext(rest)
-	return ok && flag != "--sources"
 }
 
 func commandFlagCompletionContext(rest string) (base string, prefix string, ok bool) {
@@ -293,51 +227,15 @@ func commandCurrentTokenRequiresValue(rest string, requiresValue func(string) bo
 	return requiresValue(last)
 }
 
-func commandValueCompletionContext(rest string) (base string, prefix string, flag string, ok bool) {
-	trimmedRight := strings.TrimRight(rest, " \t")
-	args, err := parseOperatorCommandLine(rest)
-	if err != nil || len(args) == 0 {
-		return "", "", "", false
-	}
-
-	if strings.HasSuffix(rest, " ") || strings.HasSuffix(rest, "\t") {
-		lastFlag, _, _ := strings.Cut(args[len(args)-1], "=")
-		if !fetchFlagRequiresValue(lastFlag) {
-			return "", "", "", false
-		}
-		return rest, "", lastFlag, true
-	}
-
-	last := args[len(args)-1]
-	flag, value, hasValue := strings.Cut(last, "=")
-	if hasValue && fetchFlagRequiresValue(flag) {
-		start := strings.LastIndex(trimmedRight, last)
-		if start == -1 {
-			return "", "", "", false
-		}
-		return trimmedRight[:start] + flag + "=", value, flag, true
-	}
-	if fetchFlagRequiresValue(last) {
-		return trimmedRight + " ", "", last, true
-	}
-	if strings.HasPrefix(last, "-") {
-		return "", "", "", false
-	}
-	if len(args) < 2 {
-		return "", "", "", false
-	}
-	previousFlag, _, _ := strings.Cut(args[len(args)-2], "=")
-	if !fetchFlagRequiresValue(previousFlag) {
-		return "", "", "", false
-	}
-	start := strings.LastIndex(trimmedRight, last)
-	if start == -1 {
-		return "", "", "", false
-	}
-	return trimmedRight[:start], last, previousFlag, true
+func healthCommandAwaitingFlagValue(rest string) bool {
+	return commandAwaitingFlagValue(rest, healthFlagRequiresValue)
 }
 
-func healthCommandAwaitingFlagValue(rest string) bool {
+func fetchCommandAwaitingFlagValue(rest string) bool {
+	return commandAwaitingFlagValue(rest, fetchFlagRequiresValue)
+}
+
+func commandAwaitingFlagValue(rest string, requiresValue func(string) bool) bool {
 	if !strings.HasSuffix(rest, " ") && !strings.HasSuffix(rest, "\t") {
 		return false
 	}
@@ -349,10 +247,26 @@ func healthCommandAwaitingFlagValue(rest string) bool {
 	if hasValue && strings.TrimSpace(value) != "" {
 		return false
 	}
-	return healthFlagRequiresValue(flag)
+	return requiresValue(flag)
 }
 
 func healthRestHasCompany(rest string) bool {
+	args, err := parseOperatorCommandLine(rest)
+	if err != nil {
+		return false
+	}
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "--") {
+			return false
+		}
+		if strings.TrimSpace(arg) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func fetchRestHasCompany(rest string) bool {
 	args, err := parseOperatorCommandLine(rest)
 	if err != nil {
 		return false
@@ -381,7 +295,7 @@ func healthFlagRequiresValue(flag string) bool {
 func fetchFlagRequiresValue(flag string) bool {
 	flag, _, _ = strings.Cut(strings.TrimSpace(flag), "=")
 	switch flag {
-	case "--sources", "--candidate-limit", "--accepted-limit":
+	case "--aka", "--website":
 		return true
 	default:
 		return false
@@ -416,7 +330,7 @@ func fetchCommandUsedFlags(rest string) map[string]bool {
 		}
 		flag, _, _ := strings.Cut(arg, "=")
 		switch flag {
-		case "--sources", "--candidate-limit", "--accepted-limit", "--no-llm":
+		case "--aka", "--website", "--all":
 			used[flag] = true
 		}
 	}
@@ -523,6 +437,12 @@ func (m *model) resetOperatorCommandPrompt() {
 	m.resetOperatorCommandCompletion()
 }
 
+func (m *model) clearOperatorCommandResult() {
+	m.commandResultTitle = ""
+	m.commandResultMessage = ""
+	m.commandResultError = false
+}
+
 func (m *model) prepareOperatorCommandTyping() {
 	if m.commandCompletionActive {
 		m.commandTypedInput = m.commandInput.Value()
@@ -563,7 +483,13 @@ func operatorCommandGhostHint(input string) string {
 	}
 	rest = strings.TrimLeft(rest, " \t")
 	if strings.EqualFold(command, "fetch") {
-		return fetchCommandValueHint(rest)
+		if strings.TrimSpace(rest) == "" {
+			return "<company>"
+		}
+		if hint := fetchCommandValueHint(rest); hint != "" {
+			return hint
+		}
+		return ""
 	}
 	if !strings.EqualFold(command, "health") {
 		return ""
@@ -577,25 +503,21 @@ func operatorCommandGhostHint(input string) string {
 	return ""
 }
 
-func fetchCommandValueHint(rest string) string {
-	_, prefix, flag, ok := commandValueCompletionContext(rest)
-	if !ok {
-		return ""
-	}
-	if strings.TrimSpace(prefix) != "" {
-		return ""
-	}
-	switch flag {
-	case "--candidate-limit":
-		return commandValueHintText(rest, defaultFetchCommandHintValues.CandidateLimitPerSource)
-	case "--accepted-limit":
-		return commandValueHintText(rest, defaultFetchCommandHintValues.AcceptedLimit)
-	default:
-		return ""
-	}
+func healthCommandValueHint(rest string) string {
+	return commandFlagValueHint(rest, healthFlagRequiresValue, map[string]string{
+		"--aka":     "<name>",
+		"--website": "<url>",
+	})
 }
 
-func healthCommandValueHint(rest string) string {
+func fetchCommandValueHint(rest string) string {
+	return commandFlagValueHint(rest, fetchFlagRequiresValue, map[string]string{
+		"--aka":     "<name>",
+		"--website": "<url>",
+	})
+}
+
+func commandFlagValueHint(rest string, requiresValue func(string) bool, hints map[string]string) string {
 	args, err := parseOperatorCommandLine(rest)
 	if err != nil || len(args) == 0 {
 		return ""
@@ -605,17 +527,14 @@ func healthCommandValueHint(rest string) string {
 	if hasValue && strings.TrimSpace(value) != "" {
 		return ""
 	}
-	if !healthFlagRequiresValue(flag) {
+	if !requiresValue(flag) {
 		return ""
 	}
-	switch flag {
-	case "--aka":
-		return commandValueHintText(rest, "<name>")
-	case "--website":
-		return commandValueHintText(rest, "<url>")
-	default:
+	hint := hints[flag]
+	if hint == "" {
 		return ""
 	}
+	return commandValueHintText(rest, hint)
 }
 
 func commandValueHintText(rest string, hint string) string {
@@ -684,51 +603,6 @@ func isOperatorCommandSpace(r rune) bool {
 	return r == ' ' || r == '\t' || r == '\n' || r == '\r'
 }
 
-func operatorCommandHelp(args []string) (operatorCommandResult, error) {
-	if len(args) > 0 && strings.EqualFold(args[0], "debug") {
-		return operatorCommandResult{
-			Title: "Command Help",
-			Message: strings.Join([]string{
-				"debug status",
-				"debug on",
-				"debug off",
-				"debug path \"./debug.log\"",
-			}, "\n"),
-		}, nil
-	}
-	if len(args) > 0 && strings.EqualFold(args[0], "health") {
-		return operatorCommandResult{
-			Title: "Command Help",
-			Message: strings.Join([]string{
-				"health <company> [--aka <name>] [--website <url>]",
-				"Fetch company health info for any company name.",
-				"Use repeated --aka values for alternate company names.",
-			}, "\n"),
-		}, nil
-	}
-	if len(args) > 0 && strings.EqualFold(args[0], "fetch") {
-		return operatorCommandResult{
-			Title: "Command Help",
-			Message: strings.Join([]string{
-				"fetch [--sources <list>] [--candidate-limit <n>] [--accepted-limit <n>] [--no-llm]",
-				"Run a one-shot job fetch with optional source and limit overrides.",
-				"Sources: rss, site, llm, llm_web, all.",
-			}, "\n"),
-		}, nil
-	}
-	return operatorCommandResult{
-		Title: "Commands",
-		Message: strings.Join([]string{
-			"debug status  Show debug state",
-			"debug on      Enable debug output",
-			"debug off     Disable debug output",
-			"debug path    Set debug log path",
-			"fetch         Fetch jobs with optional overrides",
-			"health        Fetch company health info",
-		}, "\n"),
-	}, nil
-}
-
 func executeFetchCommand(args []string) (operatorCommandResult, error) {
 	options, err := parseFetchCommandOptions(args)
 	if err != nil {
@@ -739,132 +613,77 @@ func executeFetchCommand(args []string) (operatorCommandResult, error) {
 
 func parseFetchCommandOptions(args []string) (operatorFetchOptions, error) {
 	var options operatorFetchOptions
+	var companyParts []string
+	seenOption := false
+	websiteSet := false
 	for i := 0; i < len(args); i++ {
 		arg := strings.TrimSpace(args[i])
 		if arg == "" {
 			continue
 		}
+		if !strings.HasPrefix(arg, "--") {
+			if seenOption {
+				return operatorFetchOptions{}, fmt.Errorf("unexpected fetch argument %q after options", arg)
+			}
+			companyParts = append(companyParts, arg)
+			continue
+		}
+
+		seenOption = true
 		flag, value, hasValue := strings.Cut(arg, "=")
 		switch flag {
-		case "--sources":
+		case "--aka":
 			if !hasValue {
 				i++
 				if i >= len(args) {
-					return operatorFetchOptions{}, fmt.Errorf("usage: fetch [--sources <list>] [--candidate-limit <n>] [--accepted-limit <n>] [--no-llm]")
+					return operatorFetchOptions{}, fmt.Errorf("usage: fetch <company> [--aka <name>] [--website <url>] [--all]")
 				}
 				value = args[i]
 			}
-			sources, allSources, err := parseFetchCommandSources(value)
-			if err != nil {
-				return operatorFetchOptions{}, err
+			value = strings.TrimSpace(value)
+			if value == "" {
+				return operatorFetchOptions{}, fmt.Errorf("--aka cannot be empty")
 			}
-			options.SourceSelectionSet = true
-			if allSources {
-				options.SourceSelection = nil
-			} else {
-				options.SourceSelection = appendFetchCommandSources(options.SourceSelection, sources...)
+			options.Aliases = appendUniqueFetchAlias(options.Aliases, value)
+		case "--website":
+			if websiteSet {
+				return operatorFetchOptions{}, fmt.Errorf("--website can only be provided once")
 			}
-		case "--candidate-limit":
-			limit, err := parseFetchCommandNonNegativeInt(flag, value, hasValue, args, &i)
-			if err != nil {
-				return operatorFetchOptions{}, err
+			if !hasValue {
+				i++
+				if i >= len(args) {
+					return operatorFetchOptions{}, fmt.Errorf("usage: fetch <company> [--aka <name>] [--website <url>] [--all]")
+				}
+				value = args[i]
 			}
-			options.CandidateLimitPerSource = &limit
-		case "--accepted-limit":
-			limit, err := parseFetchCommandNonNegativeInt(flag, value, hasValue, args, &i)
-			if err != nil {
-				return operatorFetchOptions{}, err
+			options.Website = strings.TrimSpace(value)
+			if options.Website == "" {
+				return operatorFetchOptions{}, fmt.Errorf("--website cannot be empty")
 			}
-			options.AcceptedLimit = &limit
-		case "--no-llm":
+			websiteSet = true
+		case "--all":
 			if hasValue {
-				return operatorFetchOptions{}, fmt.Errorf("--no-llm does not accept a value")
+				return operatorFetchOptions{}, fmt.Errorf("--all does not accept a value")
 			}
-			options.DisableLLM = true
+			options.All = true
 		default:
-			if strings.HasPrefix(arg, "-") {
-				return operatorFetchOptions{}, fmt.Errorf("unknown fetch option %q", flag)
-			}
-			return operatorFetchOptions{}, fmt.Errorf("unexpected fetch argument %q", arg)
+			return operatorFetchOptions{}, fmt.Errorf("unknown fetch option %q", flag)
 		}
 	}
-	if options.DisableLLM && fetchCommandSourcesRequireLLM(options.SourceSelection) {
-		return operatorFetchOptions{}, fmt.Errorf("--no-llm cannot be combined with llm or llm_web sources")
+	options.Company = strings.TrimSpace(strings.Join(companyParts, " "))
+	if options.Company == "" {
+		return operatorFetchOptions{}, fmt.Errorf("usage: fetch <company> [--aka <name>] [--website <url>] [--all]")
 	}
 	return options, nil
 }
 
-func parseFetchCommandNonNegativeInt(flag string, value string, hasValue bool, args []string, idx *int) (int, error) {
-	if !hasValue {
-		*idx = *idx + 1
-		if *idx >= len(args) {
-			return 0, fmt.Errorf("%s requires a non-negative integer", flag)
-		}
-		value = args[*idx]
-	}
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return 0, fmt.Errorf("%s requires a non-negative integer", flag)
-	}
-	parsed, err := strconv.Atoi(value)
-	if err != nil || parsed < 0 {
-		return 0, fmt.Errorf("%s requires a non-negative integer", flag)
-	}
-	return parsed, nil
-}
-
-func parseFetchCommandSources(value string) ([]string, bool, error) {
-	raw := strings.TrimSpace(value)
-	if raw == "" {
-		return nil, false, fmt.Errorf("--sources requires a comma-separated source list")
-	}
-	var sources []string
-	for _, part := range strings.Split(raw, ",") {
-		source := strings.TrimSpace(strings.ToLower(strings.ReplaceAll(part, "-", "_")))
-		if source == "" {
-			continue
-		}
-		switch source {
-		case "rss", "site", "llm", "llm_web":
-			sources = appendFetchCommandSources(sources, source)
-		case "all":
-			return nil, true, nil
-		default:
-			return nil, false, fmt.Errorf("--sources includes unsupported source %q; valid sources are rss, site, llm, llm_web, all", strings.TrimSpace(part))
+func appendUniqueFetchAlias(aliases []string, alias string) []string {
+	for _, existing := range aliases {
+		if strings.EqualFold(existing, alias) {
+			return aliases
 		}
 	}
-	if len(sources) == 0 {
-		return nil, false, fmt.Errorf("--sources requires at least one source")
-	}
-	return sources, false, nil
-}
-
-func appendFetchCommandSources(sources []string, additions ...string) []string {
-	for _, source := range additions {
-		if source == "all" {
-			return nil
-		}
-		seen := false
-		for _, existing := range sources {
-			if existing == source {
-				seen = true
-				break
-			}
-		}
-		if !seen {
-			sources = append(sources, source)
-		}
-	}
-	return sources
-}
-
-func fetchCommandSourcesRequireLLM(sources []string) bool {
-	for _, source := range sources {
-		if source == "llm" || source == "llm_web" {
-			return true
-		}
-	}
-	return false
+	return append(aliases, alias)
 }
 
 func executeHealthCommand(args []string) (operatorCommandResult, error) {

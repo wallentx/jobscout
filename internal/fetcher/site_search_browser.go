@@ -912,6 +912,108 @@ func siteSearchURLsForCriteria(target string, criteria *CriteriaConfig) []string
 	return []string{u.String()}
 }
 
+func siteSearchURLsForCompany(target string, criteria *CriteriaConfig, company companyFetchScope, matchCriteria bool) []string {
+	targetURL := siteSearchURL(target)
+	if targetURL == "" {
+		return nil
+	}
+	u, err := url.Parse(targetURL)
+	if err != nil {
+		return []string{targetURL}
+	}
+
+	searches := companyTargetSearchQueries(company, criteria, matchCriteria)
+	if len(searches) == 0 {
+		return nil
+	}
+	searchCriteria := criteria
+	if !matchCriteria {
+		searchCriteria = nil
+	}
+	searchKey := ""
+	switch {
+	case isBuiltInHost(u.Hostname()):
+		if u.Path == "" || u.Path == "/" {
+			u.Path = "/jobs"
+		}
+		query := u.Query()
+		if query.Get("search") == "" {
+			searchKey = "search"
+		}
+		if query.Get("country") == "" {
+			if country := builtInCountryParam(searchCriteria); country != "" {
+				query.Set("country", country)
+			}
+		}
+		if searchCriteria != nil && searchCriteria.Filters.WorkSettings.Remote && isBuiltInNationalHost(u.Hostname()) && query.Get("allLocations") == "" {
+			query.Set("allLocations", "true")
+		}
+		u.RawQuery = query.Encode()
+	case isIndeedHost(u.Hostname()):
+		if u.Path == "" || u.Path == "/" {
+			u.Path = "/jobs"
+		}
+		query := u.Query()
+		if query.Get("q") == "" {
+			searchKey = "q"
+		}
+		if query.Get("l") == "" {
+			if location := siteSearchLocation(searchCriteria); location != "" {
+				query.Set("l", location)
+			}
+		}
+		u.RawQuery = query.Encode()
+	case isLinkedInHost(u.Hostname()):
+		if u.Path == "" || u.Path == "/" || u.Path == "/jobs" {
+			u.Path = "/jobs/search"
+		}
+		query := u.Query()
+		if query.Get("keywords") == "" {
+			searchKey = "keywords"
+		}
+		if query.Get("location") == "" {
+			if location := linkedInLocationQuery(searchCriteria); location != "" {
+				query.Set("location", location)
+			}
+		}
+		if query.Get("f_PP") == "" {
+			if geoID := linkedInGeoID(searchCriteria); geoID != "" {
+				query.Set("f_PP", geoID)
+			}
+		}
+		if query.Get("f_WT") == "" {
+			if workplaceTypes := linkedInWorkplaceTypes(searchCriteria); workplaceTypes != "" {
+				query.Set("f_WT", workplaceTypes)
+			}
+		}
+		if query.Get("f_E") == "" {
+			if experienceLevels := linkedInExperienceLevels(searchCriteria); experienceLevels != "" {
+				query.Set("f_E", experienceLevels)
+			}
+		}
+		if query.Get("f_SB2") == "" {
+			if salaryBucket := linkedInSalaryBucket(searchCriteria); salaryBucket != "" {
+				query.Set("f_SB2", salaryBucket)
+			}
+		}
+		u.RawQuery = query.Encode()
+	default:
+		return []string{u.String()}
+	}
+	var urls []string
+	if searchKey != "" {
+		urls = siteSearchURLsWithQueryValues(u, searchKey, searches)
+	} else {
+		urls = []string{u.String()}
+	}
+	if isIndeedHost(u.Hostname()) {
+		for _, companyURL := range indeedCompanySearchURLs(company) {
+			urls = appendUniqueString(urls, companyURL)
+		}
+	}
+	return urls
+}
+
 func siteSearchURLsWithQueryValues(base *url.URL, key string, values []string) []string {
 	if base == nil {
 		return nil
@@ -960,6 +1062,69 @@ func targetedSiteSearchQueries(criteria *CriteriaConfig) []string {
 		}
 	}
 	return queries
+}
+
+func companyTargetSearchQueries(company companyFetchScope, criteria *CriteriaConfig, matchCriteria bool) []string {
+	names := company.names()
+	if len(names) == 0 {
+		return nil
+	}
+	domain := company.websiteDomain()
+	baseQueries := make([]string, 0, len(names))
+	for _, name := range names {
+		query := strings.TrimSpace(name)
+		if domain != "" {
+			query = strings.TrimSpace(query + " " + domain)
+		}
+		baseQueries = appendUniqueString(baseQueries, query)
+	}
+	if !matchCriteria {
+		return baseQueries
+	}
+	titleQueries := targetedSiteSearchQueries(criteria)
+	if len(titleQueries) == 0 {
+		return baseQueries
+	}
+	queries := make([]string, 0, len(baseQueries)*len(titleQueries))
+	seen := make(map[string]bool)
+	for _, baseQuery := range baseQueries {
+		for _, titleQuery := range titleQueries {
+			query := strings.TrimSpace(baseQuery + " " + strings.TrimSpace(titleQuery))
+			if query == "" {
+				continue
+			}
+			key := strings.ToLower(query)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			queries = append(queries, query)
+		}
+	}
+	if len(queries) == 0 {
+		return baseQueries
+	}
+	return queries
+}
+
+func indeedCompanySearchURLs(company companyFetchScope) []string {
+	names := company.names()
+	if len(names) == 0 {
+		return nil
+	}
+	urls := make([]string, 0, len(names))
+	for _, name := range names {
+		u := url.URL{
+			Scheme: "https",
+			Host:   "www.indeed.com",
+			Path:   "/companies/search",
+		}
+		query := u.Query()
+		query.Set("q", name)
+		u.RawQuery = query.Encode()
+		urls = appendUniqueString(urls, u.String())
+	}
+	return urls
 }
 
 func combinedTitleSearchQuery(prefix string, title string) string {

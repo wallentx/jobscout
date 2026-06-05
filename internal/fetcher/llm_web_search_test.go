@@ -52,6 +52,32 @@ func TestBuildLLMWebSearchPromptIncludesProviderWebInstruction(t *testing.T) {
 	}
 }
 
+func TestBuildCompanyLLMWebSearchPromptTargetsCompany(t *testing.T) {
+	criteria := &CriteriaConfig{}
+	criteria.Filters.TitleIncludes = []string{"Software Engineer"}
+
+	scope := companyFetchScope{Company: "GitHub", Website: "https://github.com"}
+	prompt, queries := buildCompanyLLMWebSearchPrompt(criteria, []string{"site:jobs.ashbyhq.com"}, scope, true)
+	wantQueries := []string{"site:jobs.ashbyhq.com GitHub github.com Software Engineer"}
+	if strings.Join(queries, "\x00") != strings.Join(wantQueries, "\x00") {
+		t.Fatalf("buildCompanyLLMWebSearchPrompt(match criteria) queries = %#v; want %#v", queries, wantQueries)
+	}
+	for _, want := range []string{"Only include roles where the employer is GitHub", "github.com", "GitHub github.com Software Engineer"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("buildCompanyLLMWebSearchPrompt(match criteria) prompt missing %q in:\n%s", want, prompt)
+		}
+	}
+
+	prompt, queries = buildCompanyLLMWebSearchPrompt(criteria, []string{"site:jobs.ashbyhq.com"}, scope, false)
+	wantQueries = []string{"site:jobs.ashbyhq.com GitHub github.com"}
+	if strings.Join(queries, "\x00") != strings.Join(wantQueries, "\x00") {
+		t.Fatalf("buildCompanyLLMWebSearchPrompt(all) queries = %#v; want %#v", queries, wantQueries)
+	}
+	if strings.Contains(prompt, "Target titles: Software Engineer") {
+		t.Fatalf("buildCompanyLLMWebSearchPrompt(all) prompt includes criteria title:\n%s", prompt)
+	}
+}
+
 func TestLLMWebSearchDomainsNormalizesTargets(t *testing.T) {
 	got := llmWebSearchDomains([]string{
 		"site:job-boards.greenhouse.io",
