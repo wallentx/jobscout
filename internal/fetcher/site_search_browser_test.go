@@ -190,7 +190,6 @@ func TestSiteSearchURLForCriteriaBuildsAggregatorSearchURLs(t *testing.T) {
 	criteria.Filters.TitleIncludes = []string{"Software Engineer"}
 	criteria.Filters.WorkSettings.Remote = true
 	criteria.Filters.WorkSettings.Hybrid = true
-	criteria.Filters.WorkSettings.Hybrid = true
 	criteria.Candidate.YearsOfExperience = 5
 	criteria.Filters.MinBaseUSD = 120000
 

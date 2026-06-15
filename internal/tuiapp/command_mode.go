@@ -251,22 +251,14 @@ func commandAwaitingFlagValue(rest string, requiresValue func(string) bool) bool
 }
 
 func healthRestHasCompany(rest string) bool {
-	args, err := parseOperatorCommandLine(rest)
-	if err != nil {
-		return false
-	}
-	for _, arg := range args {
-		if strings.HasPrefix(arg, "--") {
-			return false
-		}
-		if strings.TrimSpace(arg) != "" {
-			return true
-		}
-	}
-	return false
+	return restHasPositionalArg(rest)
 }
 
 func fetchRestHasCompany(rest string) bool {
+	return restHasPositionalArg(rest)
+}
+
+func restHasPositionalArg(rest string) bool {
 	args, err := parseOperatorCommandLine(rest)
 	if err != nil {
 		return false

@@ -1085,7 +1085,7 @@ func companyTargetSearchQueries(company companyFetchScope, criteria *CriteriaCon
 	if len(titleQueries) == 0 {
 		return baseQueries
 	}
-	queries := make([]string, 0, len(baseQueries)*len(titleQueries))
+	queries := make([]string, 0)
 	seen := make(map[string]bool)
 	for _, baseQuery := range baseQueries {
 		for _, titleQuery := range titleQueries {
