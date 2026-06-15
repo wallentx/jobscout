@@ -100,44 +100,7 @@ func (m model) View() string {
 
 	var helpView string
 	if m.isCommanding {
-		commandStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Bold(true)
-		commandHintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-		commandResultTitleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
-		commandResultBodyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-		if m.commandResultError {
-			commandResultTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
-		}
-		lines := []string{}
-		if m.commandResultMessage != "" {
-			resultBody := strings.ReplaceAll(m.commandResultMessage, "\n", " • ")
-			lines = append(lines, commandResultTitleStyle.Render(m.commandResultTitle)+helpValueStyle.Render(" ")+commandResultBodyStyle.Render(resultBody))
-		} else {
-			lines = append(lines, " ")
-		}
-		commandLine := commandStyle.Render(":") + " " + m.commandInputInlineView(m.operatorCommandGhostHint(), commandHintStyle)
-		lines = append(lines, commandLine)
-		lines = append(lines, commandHintStyle.Render("Tab Select/Cycle • Space Confirm • Enter Run • Esc Cancel"))
-		if pool := m.operatorCommandPool(); len(pool) > 0 {
-			commandPoolSelectedStyle := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("230")).
-				Background(lipgloss.Color("60")).
-				Bold(true)
-			parts := make([]string, 0, len(pool))
-			for i, completion := range pool {
-				label := completion.Label
-				if m.commandCompletionActive && i == m.commandCompletionIdx {
-					label = commandPoolSelectedStyle.Render(label)
-				} else {
-					label = commandHintStyle.Render(label)
-				}
-				parts = append(parts, label)
-			}
-			lines = append(lines, strings.Join(parts, "  "))
-		}
-		helpText := strings.Join(lines, "\n")
-		helpView = helpStyle.
-			Width(m.termWidth - 4).
-			Render(helpText)
+		helpView = m.commandFooterView()
 	} else if m.isFiltering {
 		searchStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true)
 		helpText := searchStyle.Render("Search: ") + m.textInput.View() + "  (Enter: Apply • Esc: Clear)"
@@ -187,7 +150,7 @@ func (m model) View() string {
 		helpView = helpStyle.Width(m.termWidth - 4).Render(helpText)
 	}
 
-	baseView := tableView + "\n" + helpView + "\n"
+	baseView := composeTableAndHelpView(tableView, helpView, m.termHeight, m.isCommanding)
 	if activity := m.backgroundTaskActivityView(); activity != "" {
 		baseView = placeOverlay(0, 0, activity, baseView)
 	}
@@ -227,6 +190,68 @@ func (m model) View() string {
 	}
 
 	return viewWithOverlays
+}
+
+func (m model) commandFooterView() string {
+	commandStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Bold(true)
+	commandHintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	commandResultTitleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+	commandResultBodyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	if m.commandResultError {
+		commandResultTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
+	}
+
+	lines := []string{}
+	if m.commandResultMessage != "" {
+		resultBody := strings.ReplaceAll(m.commandResultMessage, "\n", " • ")
+		lines = append(lines, commandResultTitleStyle.Render(m.commandResultTitle)+helpValueStyle.Render(" ")+commandResultBodyStyle.Render(resultBody))
+	}
+
+	commandLine := commandStyle.Render(":") + " " + m.commandInputInlineView(m.operatorCommandGhostHint(), commandHintStyle)
+	lines = append(lines, commandLine)
+	completionLine := ""
+	if pool := m.operatorCommandPool(); len(pool) > 0 {
+		commandPoolSelectedStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("230")).
+			Background(lipgloss.Color("60")).
+			Bold(true)
+		parts := make([]string, 0, len(pool))
+		for i, completion := range pool {
+			label := completion.Label
+			if m.commandCompletionActive && i == m.commandCompletionIdx {
+				label = commandPoolSelectedStyle.Render(label)
+			} else {
+				label = commandHintStyle.Render(label)
+			}
+			parts = append(parts, label)
+		}
+		completionLine = strings.Join(parts, "  ")
+	}
+	lines = append(lines, completionLine)
+	lines = append(lines, strings.Join([]string{
+		formatHelpItem("Tab", "Select/Cycle"),
+		formatHelpItem("Space", "Confirm"),
+		formatHelpItem("Enter", "Run"),
+		formatHelpItem("Esc", "Cancel"),
+	}, " • "))
+
+	return helpStyle.
+		Width(m.termWidth - 4).
+		Render(strings.Join(lines, "\n"))
+}
+
+func composeTableAndHelpView(tableView string, helpView string, termHeight int, pinHelpToBottom bool) string {
+	if !pinHelpToBottom {
+		return tableView + "\n" + helpView + "\n"
+	}
+	gap := 1
+	if termHeight > 0 {
+		gap = termHeight - lipgloss.Height(tableView) - lipgloss.Height(helpView) + 1
+		if gap < 1 {
+			gap = 1
+		}
+	}
+	return tableView + strings.Repeat("\n", gap) + helpView
 }
 
 func (m model) commandInputInlineView(ghost string, ghostStyle lipgloss.Style) string {

@@ -26,6 +26,10 @@ type fetchRunOptions struct {
 	SourceSelection         []string
 	CandidateLimitPerSource *int
 	AcceptedLimit           *int
+	Company                 string
+	Aliases                 []string
+	Website                 string
+	MatchCriteria           bool
 }
 
 func defaultFetchRunOptions(disableLLM bool) fetchRunOptions {
@@ -35,22 +39,21 @@ func defaultFetchRunOptions(disableLLM bool) fetchRunOptions {
 		SourceSelection:         append([]string(nil), runtimeSourceSelection...),
 		CandidateLimitPerSource: cloneRuntimeIntPtr(runtimeCandidateLimitPerSource),
 		AcceptedLimit:           cloneRuntimeIntPtr(runtimeAcceptedLimit),
+		MatchCriteria:           true,
 	}
 }
 
 func commandFetchRunOptions(sessionDisableLLM bool, commandOptions operatorFetchOptions) fetchRunOptions {
-	runOptions := defaultFetchRunOptions(sessionDisableLLM || commandOptions.DisableLLM)
-	if commandOptions.SourceSelectionSet {
-		runOptions.SourceSelectionSet = true
-		runOptions.SourceSelection = append([]string(nil), commandOptions.SourceSelection...)
-	}
-	if commandOptions.CandidateLimitPerSource != nil {
-		runOptions.CandidateLimitPerSource = cloneRuntimeIntPtr(commandOptions.CandidateLimitPerSource)
-	}
-	if commandOptions.AcceptedLimit != nil {
-		runOptions.AcceptedLimit = cloneRuntimeIntPtr(commandOptions.AcceptedLimit)
-	}
+	runOptions := defaultFetchRunOptions(sessionDisableLLM)
+	runOptions.Company = strings.TrimSpace(commandOptions.Company)
+	runOptions.Aliases = append([]string(nil), commandOptions.Aliases...)
+	runOptions.Website = strings.TrimSpace(commandOptions.Website)
+	runOptions.MatchCriteria = !commandOptions.All
 	return runOptions
+}
+
+func (o fetchRunOptions) companyTargeted() bool {
+	return strings.TrimSpace(o.Company) != ""
 }
 
 func sessionFetchConfig(disableLLM bool, appCfg *AppConfig) *AppConfig {
@@ -72,6 +75,21 @@ func fetchConfigForRun(appCfg *AppConfig, runOptions fetchRunOptions) *AppConfig
 		cfgCopy.LLM.JobFiltering = false
 		cfgCopy.LLM.CompanyHealth = false
 	}
+	if runOptions.companyTargeted() {
+		cfgCopy.Sources.RSS.Enabled = false
+		cfgCopy.Sources.APIs = append([]config.APISource(nil), cfgCopy.Sources.APIs...)
+		for i := range cfgCopy.Sources.APIs {
+			cfgCopy.Sources.APIs[i].Enabled = false
+		}
+		cfgCopy.Sources.Remotive.Enabled = false
+		cfgCopy.Sources.Enabled = cfgCopy.Sources.SiteSearch.Enabled
+		cfgCopy.Sources.BuiltinsEnabled = cfgCopy.Sources.SiteSearch.Enabled
+		if !cfgCopy.LLM.Enabled {
+			cfgCopy.LLM.JobSearch = false
+			cfgCopy.LLM.JobFiltering = false
+			cfgCopy.Sources.LLMWeb.Enabled = false
+		}
+	}
 	return &cfgCopy
 }
 
@@ -80,6 +98,12 @@ func fetchStartMessage(disableLLM bool) string {
 }
 
 func fetchStartMessageForOptions(runOptions fetchRunOptions) string {
+	if runOptions.companyTargeted() {
+		if runOptions.MatchCriteria {
+			return fmt.Sprintf("Searching %s openings that match your criteria...", strings.TrimSpace(runOptions.Company))
+		}
+		return fmt.Sprintf("Searching all public openings at %s...", strings.TrimSpace(runOptions.Company))
+	}
 	appCfg, err := config.LoadAppConfig(runtimeConfigPath)
 	if err != nil {
 		return "Fetching jobs with your current configuration..."
@@ -223,6 +247,19 @@ func fetchAllJobs(ctx context.Context, appCfg *AppConfig, criteriaCfg *CriteriaC
 	return fetcher.FetchAllJobsSkippingExistingWithCandidateCache(ctx, appCfg, criteriaCfg, existingJobs, progress, runtimeCandidateStore)
 }
 
+func fetchJobsForRun(ctx context.Context, appCfg *AppConfig, criteriaCfg *CriteriaConfig, existingJobs []Job, progress func(string), runOptions fetchRunOptions) ([]Job, FetchSummary, error) {
+	fetcher.RegisterLLMService(llmpkg.NewLLMService())
+	if runOptions.companyTargeted() {
+		return fetcher.FetchCompanyJobsSkippingExistingWithCandidateCache(ctx, appCfg, criteriaCfg, fetcher.CompanyFetchOptions{
+			Company:       runOptions.Company,
+			Aliases:       append([]string(nil), runOptions.Aliases...),
+			Website:       runOptions.Website,
+			MatchCriteria: runOptions.MatchCriteria,
+		}, existingJobs, progress, runtimeCandidateStore)
+	}
+	return fetcher.FetchAllJobsSkippingExistingWithCandidateCache(ctx, appCfg, criteriaCfg, existingJobs, progress, runtimeCandidateStore)
+}
+
 func setupPreviewNotice(existingCount int, previewCount int, added int) string {
 	switch {
 	case previewCount == 0 && existingCount > 0:
@@ -286,7 +323,7 @@ func fetchJobsWithOptionsCmd(runOptions fetchRunOptions, existingJobs []Job, pro
 		}
 
 		sourceFetchStart := time.Now()
-		newJobs, summary, err := fetchAllJobs(ctx, appCfg, criteriaCfg, existingJobs, func(message string) {
+		newJobs, summary, err := fetchJobsForRun(ctx, appCfg, criteriaCfg, existingJobs, func(message string) {
 			if strings.TrimSpace(message) == "" {
 				return
 			}
@@ -294,7 +331,7 @@ func fetchJobsWithOptionsCmd(runOptions fetchRunOptions, existingJobs []Job, pro
 			case progressCh <- message:
 			default:
 			}
-		})
+		}, runOptions)
 		if err != nil {
 			return fetchJobsMsg{err: err}
 		}
@@ -307,33 +344,41 @@ func fetchJobsWithOptionsCmd(runOptions fetchRunOptions, existingJobs []Job, pro
 			time.Since(sourceFetchStart).Round(time.Millisecond),
 		)
 
-		newJobs = fetcher.ApplyCachedLLMFilterDecisions(ctx, runtimeCandidateStore, appCfg, criteriaCfg, newJobs, &summary)
-		if llmJobFilteringShouldRun(appCfg, newJobs) {
-			select {
-			case progressCh <- "Running LLM job filtering before review...":
-			default:
-			}
-		} else {
+		if runOptions.companyTargeted() && !runOptions.MatchCriteria {
 			select {
 			case progressCh <- "Preparing fetch results for review...":
 			default:
 			}
+			logDebug("fetch finalization: skipped LLM job filtering for company fetch --all")
+		} else {
+			newJobs = fetcher.ApplyCachedLLMFilterDecisions(ctx, runtimeCandidateStore, appCfg, criteriaCfg, newJobs, &summary)
+			if llmJobFilteringShouldRun(appCfg, newJobs) {
+				select {
+				case progressCh <- "Running LLM job filtering before review...":
+				default:
+				}
+			} else {
+				select {
+				case progressCh <- "Preparing fetch results for review...":
+				default:
+				}
+			}
+			beforeLLMFilter := append([]Job(nil), newJobs...)
+			recordLLMJobFilteringBypassReasons(appCfg, criteriaCfg, &summary, beforeLLMFilter)
+			llmFilterStart := time.Now()
+			newJobs, notices := applyOptionalLLMJobFilteringWithFreshTimeout(appCfg, criteriaCfg, newJobs)
+			fetcher.RecordLLMFilterCandidateDecisions(ctx, runtimeCandidateStore, appCfg, criteriaCfg, beforeLLMFilter, newJobs, notices)
+			recordLLMJobFilteringOutcome(appCfg, &summary, beforeLLMFilter, newJobs, notices)
+			summary.Notices = append(summary.Notices, notices...)
+			logDebug(
+				"fetch finalization: llm filtering complete before=%d after=%d dropped=%d notices=%d duration=%s",
+				len(beforeLLMFilter),
+				len(newJobs),
+				len(beforeLLMFilter)-len(newJobs),
+				len(notices),
+				time.Since(llmFilterStart).Round(time.Millisecond),
+			)
 		}
-		beforeLLMFilter := append([]Job(nil), newJobs...)
-		recordLLMJobFilteringBypassReasons(appCfg, criteriaCfg, &summary, beforeLLMFilter)
-		llmFilterStart := time.Now()
-		newJobs, notices := applyOptionalLLMJobFilteringWithFreshTimeout(appCfg, criteriaCfg, newJobs)
-		fetcher.RecordLLMFilterCandidateDecisions(ctx, runtimeCandidateStore, appCfg, criteriaCfg, beforeLLMFilter, newJobs, notices)
-		recordLLMJobFilteringOutcome(appCfg, &summary, beforeLLMFilter, newJobs, notices)
-		summary.Notices = append(summary.Notices, notices...)
-		logDebug(
-			"fetch finalization: llm filtering complete before=%d after=%d dropped=%d notices=%d duration=%s",
-			len(beforeLLMFilter),
-			len(newJobs),
-			len(beforeLLMFilter)-len(newJobs),
-			len(notices),
-			time.Since(llmFilterStart).Round(time.Millisecond),
-		)
 		newJobs = removeExistingJobsBeforeReview(newJobs, existingJobs, &summary)
 		logDebug("fetch finalization: review handoff jobs=%d total_duration=%s", len(newJobs), time.Since(fetchStart).Round(time.Millisecond))
 

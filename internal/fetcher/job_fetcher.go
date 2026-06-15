@@ -20,6 +20,50 @@ const (
 	maxConcurrentBrowserSearch   = 1
 )
 
+type CompanyFetchOptions struct {
+	Company       string
+	Aliases       []string
+	Website       string
+	MatchCriteria bool
+}
+
+type companyFetchScope struct {
+	Company       string
+	Aliases       []string
+	Website       string
+	MatchCriteria bool
+}
+
+func (s companyFetchScope) active() bool {
+	return strings.TrimSpace(s.Company) != ""
+}
+
+func (s companyFetchScope) names() []string {
+	names := make([]string, 0, 1+len(s.Aliases))
+	names = appendUniqueCompanyTargetName(names, s.Company)
+	for _, alias := range s.Aliases {
+		names = appendUniqueCompanyTargetName(names, alias)
+	}
+	return names
+}
+
+func (s companyFetchScope) websiteDomain() string {
+	return companyWebsiteDomainForSearch(normalizeCompanyTargetWebsite(s.Website))
+}
+
+func appendUniqueCompanyTargetName(names []string, name string) []string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return names
+	}
+	for _, existing := range names {
+		if strings.EqualFold(existing, name) {
+			return names
+		}
+	}
+	return append(names, name)
+}
+
 func fetchAllJobs(ctx context.Context, appCfg *AppConfig, criteriaCfg *CriteriaConfig, progress func(string), existingJobs ...[]Job) ([]Job, FetchSummary, error) {
 	var existing []Job
 	if len(existingJobs) > 0 {
@@ -29,11 +73,21 @@ func fetchAllJobs(ctx context.Context, appCfg *AppConfig, criteriaCfg *CriteriaC
 }
 
 func fetchAllJobsWithCandidateCache(ctx context.Context, appCfg *AppConfig, criteriaCfg *CriteriaConfig, progress func(string), existingJobs []Job, candidateStore storage.CandidateStore) ([]Job, FetchSummary, error) {
+	return fetchAllJobsWithCandidateCacheAndScope(ctx, appCfg, criteriaCfg, progress, existingJobs, candidateStore, companyFetchScope{})
+}
+
+func fetchAllJobsWithCandidateCacheAndScope(ctx context.Context, appCfg *AppConfig, criteriaCfg *CriteriaConfig, progress func(string), existingJobs []Job, candidateStore storage.CandidateStore, companyScope companyFetchScope) ([]Job, FetchSummary, error) {
 	fetchStart := time.Now()
 	var allFetched []Job
 	summary := newFetchSummary()
 	existing := existingJobs
 	existingIndex := newExistingJobIndex(existing)
+	sourceCriteria := criteriaCfg
+	filterCriteria := criteriaCfg
+	if companyScope.active() && !companyScope.MatchCriteria {
+		sourceCriteria = nil
+		filterCriteria = nil
+	}
 	defer func() {
 		logDebug(
 			"fetch complete: total=%d filtered=%d rejected=%d notices=%d duration=%s",
@@ -51,7 +105,7 @@ func fetchAllJobsWithCandidateCache(ctx context.Context, appCfg *AppConfig, crit
 		return allFetched, summary, nil
 	}
 	pruneCandidateCache(ctx, candidateStore, appCfg)
-	if err := refreshLinkedInCriteriaHints(ctx, criteriaCfg); err != nil {
+	if err := refreshLinkedInCriteriaHints(ctx, sourceCriteria); err != nil {
 		logDebug("linkedin criteria hint refresh failed: %v", err)
 	}
 	policy := fetchPolicyFromConfig(appCfg)
@@ -61,7 +115,7 @@ func fetchAllJobsWithCandidateCache(ctx context.Context, appCfg *AppConfig, crit
 		fetches, hits, htmlEntries, probeEntries := urlVisits.Stats()
 		logDebug("url visit registry summary: fetches=%d hits=%d html_entries=%d probe_entries=%d", fetches, hits, htmlEntries, probeEntries)
 	}()
-	effectiveSources := resolveEffectiveSources(appCfg, criteriaCfg)
+	effectiveSources := resolveEffectiveSources(appCfg, sourceCriteria)
 	randomizeResolvedSources(&effectiveSources)
 	logDebug(
 		"fetch start: llm_enabled=%t llm_job_search=%t llm_job_filtering=%t llm_company_health=%t sources_enabled=%t rss_enabled=%t rss_feeds=%d api_sources=%d site_enabled=%t site_targets=%d llm_web_enabled=%t llm_web_targets=%d",
@@ -78,7 +132,10 @@ func fetchAllJobsWithCandidateCache(ctx context.Context, appCfg *AppConfig, crit
 		appCfg.Sources.LLMWeb.Enabled,
 		len(effectiveSources.LLMWebTargets),
 	)
-	logDebug("source resolution: role_families=%s", debugRoleFamilies(effectiveRoleFamilies(appCfg, criteriaCfg)))
+	if companyScope.active() {
+		logDebug("company fetch: company=%q aliases=%s website=%q match_criteria=%t", companyScope.Company, debugStringList(companyScope.Aliases), companyScope.Website, companyScope.MatchCriteria)
+	}
+	logDebug("source resolution: role_families=%s", debugRoleFamilies(effectiveRoleFamilies(appCfg, sourceCriteria)))
 	logDebug("source resolution: rss=%s", debugRSSSources(effectiveSources.RSSFeeds))
 	logDebug("source resolution: api=%s", debugAPISources(effectiveSources.APISources))
 	logDebug("source resolution: site_targets=%s", debugStringList(effectiveSources.SiteTargets))
@@ -103,15 +160,23 @@ func fetchAllJobsWithCandidateCache(ctx context.Context, appCfg *AppConfig, crit
 			llm, restoreAuth, initErr := llmSvc.InitConfiguredLLM(ctx, appCfg, LLMTaskJobSearch)
 			if initErr == nil {
 				defer restoreAuth()
-				promptBytes, err := fetchAllJobsReadFile(runtimeSearchPromptPath)
-				if err != nil {
-					mu.Lock()
-					summary.Notices = append(summary.Notices, fmt.Sprintf("Could not read SEARCH_PROMPT.md: %v", err))
-					setFetchSearchStatus(&summary, fetchSearchLLM, fmt.Sprintf("failed before execution: %v", err))
-					mu.Unlock()
+				prompt := ""
+				if companyScope.active() {
+					prompt = buildCompanyLLMSearchPrompt(sourceCriteria, companyScope, companyScope.MatchCriteria)
 				} else {
+					promptBytes, err := fetchAllJobsReadFile(runtimeSearchPromptPath)
+					if err != nil {
+						mu.Lock()
+						summary.Notices = append(summary.Notices, fmt.Sprintf("Could not read SEARCH_PROMPT.md: %v", err))
+						setFetchSearchStatus(&summary, fetchSearchLLM, fmt.Sprintf("failed before execution: %v", err))
+						mu.Unlock()
+					} else {
+						prompt = string(promptBytes)
+					}
+				}
+				if strings.TrimSpace(prompt) != "" {
 					reportFetchProgress(progress, "Running LLM job search...")
-					jobs, err := llmSvc.ExecuteSearch(ctx, llm, string(promptBytes))
+					jobs, err := llmSvc.ExecuteSearch(ctx, llm, prompt)
 					if err != nil {
 						mu.Lock()
 						summary.Notices = append(summary.Notices, fmt.Sprintf("LLM job search failed: %v", err))
@@ -161,7 +226,10 @@ func fetchAllJobsWithCandidateCache(ctx context.Context, appCfg *AppConfig, crit
 		case len(effectiveSources.LLMWebTargets) == 0:
 			setFetchSearchStatus(&summary, fetchSearchLLMWeb, "enabled, but no llm_web targets were configured or resolved")
 		default:
-			prompt, queries := buildLLMWebSearchPrompt(criteriaCfg, effectiveSources.LLMWebTargets)
+			prompt, queries := buildLLMWebSearchPrompt(sourceCriteria, effectiveSources.LLMWebTargets)
+			if companyScope.active() {
+				prompt, queries = buildCompanyLLMWebSearchPrompt(sourceCriteria, effectiveSources.LLMWebTargets, companyScope, companyScope.MatchCriteria)
+			}
 			if strings.TrimSpace(prompt) == "" {
 				setFetchSearchStatus(&summary, fetchSearchLLMWeb, "enabled, but no llm_web queries could be built")
 				break
@@ -185,7 +253,7 @@ func fetchAllJobsWithCandidateCache(ctx context.Context, appCfg *AppConfig, crit
 			var dropped map[string][]string
 			var filtered map[string][]Job
 			markLLMWebJobsForValidation(jobs)
-			jobs, filtered = filterLLMWebJobsBeforeEnrichment(jobs, criteriaCfg)
+			jobs, filtered = filterLLMWebJobsBeforeEnrichment(jobs, filterCriteria)
 			jobs = enrichLLMWebJobsBeforeValidation(ctx, appCfg, jobs, progress)
 			jobs, dropped = validateFetchedJobs(ctx, jobs)
 			mu.Lock()
@@ -225,7 +293,7 @@ func fetchAllJobsWithCandidateCache(ctx context.Context, appCfg *AppConfig, crit
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if appCfg.Sources.RSS.Enabled {
+		if appCfg.Sources.RSS.Enabled && !companyScope.active() {
 			if len(effectiveSources.RSSFeeds) == 0 {
 				mu.Lock()
 				setFetchSearchStatus(&summary, fetchSearchRSS, "enabled, but no RSS feeds were configured or resolved")
@@ -236,7 +304,7 @@ func fetchAllJobsWithCandidateCache(ctx context.Context, appCfg *AppConfig, crit
 				runBounded(ctx, len(effectiveSources.RSSFeeds), maxConcurrentRSSFetch, func(i int) {
 					source := effectiveSources.RSSFeeds[i]
 					reportFetchProgress(progress, "Checking RSS feed: %s", source.Name)
-					jobs, filtered, err := fetchRSS(ctx, source, criteriaCfg)
+					jobs, filtered, err := fetchRSS(ctx, source, filterCriteria)
 					if err != nil {
 						results[i].err = err
 						results[i].notice = fmt.Sprintf("Failed to fetch RSS %s: %v", source.Name, err)
@@ -279,7 +347,11 @@ func fetchAllJobsWithCandidateCache(ctx context.Context, appCfg *AppConfig, crit
 			}
 		} else {
 			mu.Lock()
-			setFetchSearchStatus(&summary, fetchSearchRSS, "disabled in config")
+			if companyScope.active() {
+				setFetchSearchStatus(&summary, fetchSearchRSS, "disabled for company fetch")
+			} else {
+				setFetchSearchStatus(&summary, fetchSearchRSS, "disabled in config")
+			}
 			mu.Unlock()
 		}
 	}()
@@ -299,13 +371,16 @@ func fetchAllJobsWithCandidateCache(ctx context.Context, appCfg *AppConfig, crit
 				apiSources = append(apiSources, source)
 			}
 		}
+		if companyScope.active() {
+			apiSources = nil
+		}
 		apiSourceCount = len(apiSources)
 		logDebug("api search: fetching %d sources with concurrency=%d", len(apiSources), maxConcurrentAPIFetch)
 		results := make([]sourceFetchResult, len(apiSources))
 		runBounded(ctx, len(apiSources), maxConcurrentAPIFetch, func(i int) {
 			source := apiSources[i]
 			reportFetchProgress(progress, "Checking configured source: %s", source.Name)
-			jobs, filtered, err := fetchJobsFromAPISource(ctx, source, criteriaCfg)
+			jobs, filtered, err := fetchJobsFromAPISource(ctx, source, filterCriteria)
 			if err != nil {
 				results[i].err = err
 				results[i].notice = fmt.Sprintf("Failed to fetch configured source %s: %v", source.Name, err)
@@ -337,6 +412,8 @@ func fetchAllJobsWithCandidateCache(ctx context.Context, appCfg *AppConfig, crit
 
 		mu.Lock()
 		switch {
+		case companyScope.active():
+			setFetchSearchStatus(&summary, fetchSearchAPI, "disabled for company fetch")
 		case len(appCfg.Sources.APIs) == 0:
 			setFetchSearchStatus(&summary, fetchSearchAPI, "enabled, but no configured sources were available")
 		case apiSourceCount == 0:
@@ -400,7 +477,10 @@ func fetchAllJobsWithCandidateCache(ctx context.Context, appCfg *AppConfig, crit
 				}
 
 				sourceName := formatSearchSource(fetchSearchSite, strings.TrimSpace(site))
-				targetURLs := siteSearchURLsForCriteria(site, criteriaCfg)
+				targetURLs := siteSearchURLsForCriteria(site, sourceCriteria)
+				if companyScope.active() {
+					targetURLs = siteSearchURLsForCompany(site, sourceCriteria, companyScope, companyScope.MatchCriteria)
+				}
 				logDebug("site search target %d/%d %s: target URLs %s", i+1, len(effectiveSources.SiteTargets), site, debugStringList(targetURLs))
 				if len(targetURLs) == 0 {
 					logDebug("site search %s: skipped because no searchable target URL could be resolved", site)
@@ -427,7 +507,7 @@ func fetchAllJobsWithCandidateCache(ctx context.Context, appCfg *AppConfig, crit
 			runBounded(ctx, len(tasks), maxConcurrentSiteSearchFetch, func(i int) {
 				task := tasks[i]
 				reportFetchProgress(progress, "Searching site target: %s", strings.TrimSpace(task.site))
-				results[i] = fetchSiteSearchTask(ctx, task, criteriaCfg, ensureSiteBrowser, browserSem, builtInDetails, builtInProfiles, existingIndex, blockedSiteSearches, blockedSiteDetails, candidateLimiter, candidateStore)
+				results[i] = fetchSiteSearchTask(ctx, task, filterCriteria, ensureSiteBrowser, browserSem, builtInDetails, builtInProfiles, existingIndex, blockedSiteSearches, blockedSiteDetails, candidateLimiter, candidateStore)
 			})
 
 			for i, result := range results {
@@ -471,12 +551,29 @@ func fetchAllJobsWithCandidateCache(ctx context.Context, appCfg *AppConfig, crit
 
 	if candidateStore != nil {
 		allFetched = hydrateJobsFromCandidateCache(ctx, candidateStore, allFetched)
+	}
+
+	if companyScope.active() {
+		var companyFiltered []Job
+		allFetched, companyFiltered = filterJobsByCompanyTarget(allFetched, companyScope)
+		if len(companyFiltered) > 0 {
+			mu.Lock()
+			if summary.Filtered == nil {
+				summary.Filtered = make(map[string][]Job)
+			}
+			summary.Filtered["company target"] = append(summary.Filtered["company target"], companyFiltered...)
+			mu.Unlock()
+			logDebug("company fetch: filtered %d jobs that did not match company=%q", len(companyFiltered), companyScope.Company)
+		}
+	}
+
+	if candidateStore != nil {
 		upsertJobCandidates(ctx, candidateStore, allFetched)
 		for _, jobs := range summary.Filtered {
 			upsertJobCandidates(ctx, candidateStore, jobs)
 		}
-		allFetched = applyCachedDeterministicRejects(ctx, candidateStore, criteriaCfg, allFetched, &summary)
-		recordDeterministicCandidateDecisions(ctx, candidateStore, criteriaCfg, allFetched, summary.Filtered)
+		allFetched = applyCachedDeterministicRejects(ctx, candidateStore, filterCriteria, allFetched, &summary)
+		recordDeterministicCandidateDecisions(ctx, candidateStore, filterCriteria, allFetched, summary.Filtered)
 	}
 
 	var skippedExisting []Job
@@ -533,6 +630,112 @@ func markLLMJobsForValidation(jobs []Job) {
 		}
 		jobs[i].Source = formatSearchSource(fetchSearchLLM, source)
 	}
+}
+
+func buildCompanyLLMSearchPrompt(criteria *CriteriaConfig, company companyFetchScope, matchCriteria bool) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Find current public job openings where the employer is %s.\n", strings.TrimSpace(company.Company))
+	if len(company.Aliases) > 0 {
+		fmt.Fprintf(&b, "Also treat these names as the same employer: %s.\n", strings.Join(company.Aliases, ", "))
+	}
+	if domain := company.websiteDomain(); domain != "" {
+		fmt.Fprintf(&b, "The company's official website domain is %s. Exclude roles whose source evidence points to a different company website.\n", domain)
+	}
+	b.WriteString("\n")
+	if matchCriteria {
+		b.WriteString("Only include roles that match the candidate criteria below.\n\n")
+		writeLLMWebCriteria(&b, criteria)
+	} else {
+		b.WriteString("Return all current public roles for this company. Do not filter by candidate criteria.\n")
+	}
+	b.WriteString("\nOutput Instructions\n")
+	b.WriteString("- Return current opportunities only.\n")
+	b.WriteString("- Only include roles where the employer is the requested company.\n")
+	b.WriteString("- Prefer direct application links.\n")
+	b.WriteString("- If available, include the actual company's website, not the job board or application host.\n")
+	b.WriteString("- If available, include a brief factual summary of what the company does.\n")
+	b.WriteString("- If available, include the company's industry.\n")
+	b.WriteString("- Include enough detail to explain why each role matches.\n")
+	b.WriteString("- Return each result with company, title, remote, compensation, apply_url, description, company_website, company_summary, company_industry, and why_matches fields.\n")
+	return b.String()
+}
+
+func filterJobsByCompanyTarget(jobs []Job, company companyFetchScope) ([]Job, []Job) {
+	if !company.active() || len(jobs) == 0 {
+		return jobs, nil
+	}
+	kept := make([]Job, 0, len(jobs))
+	filtered := make([]Job, 0)
+	for _, job := range jobs {
+		if jobMatchesCompanyTarget(job, company) {
+			kept = append(kept, job)
+			continue
+		}
+		filtered = append(filtered, job)
+	}
+	return kept, filtered
+}
+
+func jobMatchesCompanyTarget(job Job, company companyFetchScope) bool {
+	if !company.active() {
+		return true
+	}
+	if strings.TrimSpace(company.Website) != "" && strings.TrimSpace(job.CompanyWebsite) != "" && !companyWebsitesMatch(job.CompanyWebsite, company.Website) {
+		logDebug("company fetch: rejected %s - %s because discovered website %q conflicts with requested website %q", job.Company, job.Title, job.CompanyWebsite, company.Website)
+		return false
+	}
+	for _, name := range company.names() {
+		targetKey := companyTargetMatchKey(name)
+		if targetKey == "" {
+			continue
+		}
+		jobKey := companyTargetMatchKey(job.Company)
+		if jobKey != "" && jobKey == targetKey {
+			return true
+		}
+		if strings.TrimSpace(job.CompanyWebsite) != "" && candidateWebsiteMatchesCompany(job.CompanyWebsite, name) {
+			return true
+		}
+	}
+	if strings.TrimSpace(company.Website) != "" && strings.TrimSpace(job.CompanyWebsite) != "" && companyWebsitesMatch(job.CompanyWebsite, company.Website) {
+		return true
+	}
+	return false
+}
+
+func companyTargetMatchKey(company string) string {
+	return strings.ReplaceAll(Slugify(CleanCompanyName(company)), "-", "")
+}
+
+func companyWebsitesMatch(candidate string, expected string) bool {
+	candidate = normalizeCompanyTargetWebsite(candidate)
+	expected = normalizeCompanyTargetWebsite(expected)
+	candidateURL, err := url.Parse(strings.TrimSpace(candidate))
+	if err != nil || candidateURL.Host == "" {
+		return false
+	}
+	expectedURL, err := url.Parse(strings.TrimSpace(expected))
+	if err != nil || expectedURL.Host == "" {
+		return false
+	}
+	return companyHostRoot(candidateURL.Hostname()) == companyHostRoot(expectedURL.Hostname())
+}
+
+func normalizeCompanyTargetWebsite(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if parsed, err := url.Parse(raw); err == nil && parsed.Host != "" {
+		return normalizeCompanyWebsiteURL(raw)
+	}
+	if !strings.Contains(raw, "://") {
+		withScheme := "https://" + raw
+		if parsed, err := url.Parse(withScheme); err == nil && parsed.Host != "" {
+			return normalizeCompanyWebsiteURL(withScheme)
+		}
+	}
+	return raw
 }
 
 func filterLLMWebJobsBeforeEnrichment(jobs []Job, criteria *CriteriaConfig) ([]Job, map[string][]Job) {
@@ -645,6 +848,29 @@ func FetchAllJobsSkippingExisting(ctx context.Context, appCfg *AppConfig, criter
 
 func FetchAllJobsSkippingExistingWithCandidateCache(ctx context.Context, appCfg *AppConfig, criteriaCfg *CriteriaConfig, existingJobs []Job, progress func(string), candidateStore storage.CandidateStore) ([]Job, FetchSummary, error) {
 	return fetchAllJobsWithCandidateCache(ctx, appCfg, criteriaCfg, progress, existingJobs, candidateStore)
+}
+
+func FetchCompanyJobsSkippingExistingWithCandidateCache(ctx context.Context, appCfg *AppConfig, criteriaCfg *CriteriaConfig, options CompanyFetchOptions, existingJobs []Job, progress func(string), candidateStore storage.CandidateStore) ([]Job, FetchSummary, error) {
+	company := strings.TrimSpace(options.Company)
+	if company == "" {
+		return nil, newFetchSummary(), fmt.Errorf("company fetch requires a company")
+	}
+	cfg := appCfg
+	if cfg != nil {
+		cfgCopy := *cfg
+		cfgCopy.Sources.RSS.Enabled = false
+		cfgCopy.Sources.APIs = append([]APISource(nil), cfgCopy.Sources.APIs...)
+		for i := range cfgCopy.Sources.APIs {
+			cfgCopy.Sources.APIs[i].Enabled = false
+		}
+		cfg = &cfgCopy
+	}
+	return fetchAllJobsWithCandidateCacheAndScope(ctx, cfg, criteriaCfg, progress, existingJobs, candidateStore, companyFetchScope{
+		Company:       company,
+		Aliases:       append([]string(nil), options.Aliases...),
+		Website:       normalizeCompanyTargetWebsite(options.Website),
+		MatchCriteria: options.MatchCriteria,
+	})
 }
 
 type sourceFetchResult struct {

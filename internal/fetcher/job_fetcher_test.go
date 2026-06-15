@@ -2338,3 +2338,21 @@ func TestFetchAllJobsCombinesLLMAndRSSSources(t *testing.T) {
 		t.Fatalf("jobs[1].Company = %q; want Unknown", jobs[1].Company)
 	}
 }
+
+func TestJobMatchesCompanyTargetUsesWebsiteAndAliases(t *testing.T) {
+	scope := companyFetchScope{
+		Company: "GitHub",
+		Aliases: []string{"GitHub Inc"},
+		Website: "https://github.com",
+	}
+
+	if !jobMatchesCompanyTarget(Job{Company: "GitHub Inc"}, scope) {
+		t.Fatal("jobMatchesCompanyTarget() rejected alias company without website")
+	}
+	if !jobMatchesCompanyTarget(Job{Company: "Other", CompanyWebsite: "https://github.com/about"}, scope) {
+		t.Fatal("jobMatchesCompanyTarget() rejected matching provided website")
+	}
+	if jobMatchesCompanyTarget(Job{Company: "GitHub", CompanyWebsite: "https://gitlab.com"}, scope) {
+		t.Fatal("jobMatchesCompanyTarget() accepted conflicting discovered website")
+	}
+}
