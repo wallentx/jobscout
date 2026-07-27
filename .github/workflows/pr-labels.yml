@@ -67,7 +67,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Label pull request
-        uses: actions/labeler@v6
+        uses: actions/labeler@v7
         with:
           configuration-path: .github/labeler.yml
           pr-number: ${{ github.event_name == 'workflow_dispatch' && steps.pr-numbers.outputs.value || github.event.pull_request.number }}
