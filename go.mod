@@ -14,7 +14,7 @@ require (
 	golang.org/x/mod v0.38.0
 	golang.org/x/net v0.57.0
 	golang.org/x/term v0.45.0
-	google.golang.org/genai v1.64.0
+	google.golang.org/genai v1.65.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.54.0
 )
