@@ -28,9 +28,9 @@ GOSEC := $(shell command -v gosec 2>/dev/null || printf '%s' '$(TOOLS_BIN)/gosec
 GOVULNCHECK := $(shell command -v govulncheck 2>/dev/null || printf '%s' '$(TOOLS_BIN)/govulncheck')
 
 GOIMPORTS_PKG := golang.org/x/tools/cmd/goimports@v0.42.0
-STATICCHECK_PKG := honnef.co/go/tools/cmd/staticcheck@v0.7.0
-GOLANGCI_LINT_PKG := github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4
-ERRCHECK_PKG := github.com/kisielk/errcheck@v1.10.0
+STATICCHECK_PKG := honnef.co/go/tools/cmd/staticcheck@v0.8.1
+GOLANGCI_LINT_PKG := github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
+ERRCHECK_PKG := github.com/kisielk/errcheck@v1.20.0
 GOSEC_PKG := github.com/securego/gosec/v2/cmd/gosec@v2.24.6
 GOVULNCHECK_PKG := golang.org/x/vuln/cmd/govulncheck@v1.3.0
 
@@ -281,15 +281,15 @@ $(TOOLS_BIN)/goimports: | $(TOOLS_BIN)
 	$(call PRINT_STEP,installing goimports)
 	@env GOBIN="$(TOOLS_BIN)" $(GO) install $(GOIMPORTS_PKG)
 
-$(TOOLS_BIN)/staticcheck: | $(TOOLS_BIN)
+$(TOOLS_BIN)/staticcheck: Makefile | $(TOOLS_BIN)
 	$(call PRINT_STEP,installing staticcheck)
 	@env GOBIN="$(TOOLS_BIN)" $(GO) install $(STATICCHECK_PKG)
 
-$(TOOLS_BIN)/golangci-lint: | $(TOOLS_BIN)
+$(TOOLS_BIN)/golangci-lint: Makefile | $(TOOLS_BIN)
 	$(call PRINT_STEP,installing golangci-lint)
 	@env GOBIN="$(TOOLS_BIN)" $(GO) install $(GOLANGCI_LINT_PKG)
 
-$(TOOLS_BIN)/errcheck: | $(TOOLS_BIN)
+$(TOOLS_BIN)/errcheck: Makefile | $(TOOLS_BIN)
 	$(call PRINT_STEP,installing errcheck)
 	@env GOBIN="$(TOOLS_BIN)" $(GO) install $(ERRCHECK_PKG)
 
