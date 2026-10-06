@@ -46,13 +46,13 @@ func OpenStores(paths Paths) (Stores, func(), error) {
 		return Stores{}, func() {}, err
 	}
 	return Stores{
-			Jobs:            sqliteStore,
-			Health:          sqliteStore,
-			CompanyIdentity: sqliteStore,
-			Candidates:      sqliteStore,
-		}, func() {
-			_ = sqliteStore.Close()
-		}, nil
+		Jobs:            sqliteStore,
+		Health:          sqliteStore,
+		CompanyIdentity: sqliteStore,
+		Candidates:      sqliteStore,
+	}, func() {
+		_ = sqliteStore.Close()
+	}, nil
 }
 
 func ensureParentDir(path string) error {

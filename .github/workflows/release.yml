@@ -154,18 +154,19 @@ jobs:
           checkout: false
 
       - name: Set up Go
+        id: setup-go
         uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          go-version: '1.27.1'
           cache: true
 
       - name: Cache Go tools
         uses: actions/cache@v6
         with:
           path: .tools
-          key: ${{ runner.os }}-${{ runner.arch }}-go-tools-${{ hashFiles('Makefile', 'go.mod') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-go-tools-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('Makefile', 'go.mod') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-go-tools-
+            ${{ runner.os }}-${{ runner.arch }}-go-tools-${{ steps.setup-go.outputs.go-version }}-
 
       - name: Run release gate
         env:
@@ -221,7 +222,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          go-version: '1.27.1'
           cache: true
 
       - name: Build release archive
