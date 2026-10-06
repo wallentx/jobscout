@@ -18,9 +18,13 @@ you intentionally need to bypass local checks.
 
 ## Requirements
 
-- Go 1.26.1 or newer
+- Go 1.27.1 for formatting and contributor checks, matching CI
 - `make`
 - network access the first time the Makefile installs local Go tool helpers
+
+Use `go` and `gofmt` from the Go 1.27.1 installation on your `PATH`.
+Formatter output can differ between Go versions. The minimum Go version for
+building and installing the CLI is declared in `go.mod`.
 
 ## Useful Commands
 
