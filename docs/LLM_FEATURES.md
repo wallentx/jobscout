@@ -14,6 +14,7 @@ Supported provider names:
 - `openai`
 - `anthropic`
 - `openrouter`
+- `cheaperinference`
 - `ollama`
 
 Hosted providers usually need a provider token. Use an environment variable or

@@ -165,7 +165,7 @@ func defaultAppConfig() AppConfig {
 	cfg.LLM.JobFiltering = true
 	cfg.LLM.CompanyHealth = true
 	cfg.LLM.FallbackToNonLLM = true
-	cfg.LLM.PreferredOrder = []string{"gemini", "openai", "openrouter", "anthropic", "ollama"}
+	cfg.LLM.PreferredOrder = []string{"gemini", "openai", "openrouter", "cheaperinference", "anthropic", "ollama"}
 	cfg.LLM.Auth.Mode = llmAuthModeEnv
 	cfg.LLM.Auth.EnvVar = envVarForProvider(cfg.LLM.Provider)
 	cfg.LLM.Providers = defaultLLMProviders()
@@ -238,6 +238,21 @@ func defaultLLMProviders() map[string]LLMProviderConfig {
 			Auth: LLMAuthConfig{
 				Mode:   llmAuthModeEnv,
 				EnvVar: "OPENROUTER_API_KEY",
+			},
+		},
+		"cheaperinference": {
+			Model:    "gpt-5.4-mini",
+			Endpoint: "https://api.cheaperinference.com/v1",
+			Models: map[string]string{
+				llmTaskJobSearch:      "gpt-5.4-mini",
+				llmTaskCompanyHealth:  "gpt-5.4-mini",
+				llmTaskFiltering:      "gpt-5.4-mini",
+				llmTaskJobIdentity:    "gpt-5.4-mini",
+				llmTaskResumeCriteria: "gpt-5.4-mini",
+			},
+			Auth: LLMAuthConfig{
+				Mode:   llmAuthModeEnv,
+				EnvVar: "CHEAPERINFERENCE_API_KEY",
 			},
 		},
 		"ollama": {

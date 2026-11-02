@@ -472,6 +472,37 @@ func TestDefaultModelForProviderReturnsFirstForOpenRouter(t *testing.T) {
 	}
 }
 
+func TestDefaultLLMProvidersIncludesCheaperInference(t *testing.T) {
+	providers := DefaultLLMProviders()
+	cfg, ok := providers["cheaperinference"]
+	if !ok {
+		t.Fatal("DefaultLLMProviders() does not contain cheaperinference")
+	}
+	if cfg.Model != "gpt-5.4-mini" {
+		t.Fatalf("DefaultLLMProviders()[cheaperinference].Model = %q, want gpt-5.4-mini", cfg.Model)
+	}
+	if cfg.Endpoint != "https://api.cheaperinference.com/v1" {
+		t.Fatalf("DefaultLLMProviders()[cheaperinference].Endpoint = %q, want https://api.cheaperinference.com/v1", cfg.Endpoint)
+	}
+	if cfg.Auth.EnvVar != "CHEAPERINFERENCE_API_KEY" {
+		t.Fatalf("DefaultLLMProviders()[cheaperinference].Auth.EnvVar = %q, want CHEAPERINFERENCE_API_KEY", cfg.Auth.EnvVar)
+	}
+}
+
+func TestEnvVarForProviderReturnsCheaperInferenceKey(t *testing.T) {
+	envVar := EnvVarForProvider("cheaperinference")
+	if envVar != "CHEAPERINFERENCE_API_KEY" {
+		t.Fatalf("EnvVarForProvider(cheaperinference) = %q, want CHEAPERINFERENCE_API_KEY", envVar)
+	}
+}
+
+func TestDefaultModelForProviderReturnsFirstForCheaperInference(t *testing.T) {
+	model := DefaultModelForProvider("cheaperinference")
+	if model != "gpt-5.4-mini" {
+		t.Fatalf("DefaultModelForProvider(cheaperinference) = %q, want gpt-5.4-mini", model)
+	}
+}
+
 func TestEvaluateRuntimeCapabilitiesUsesConfiguredRuntimePath(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")

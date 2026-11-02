@@ -522,3 +522,29 @@ func TestIsOpenRouterChatModelFiltersNonChatFamilies(t *testing.T) {
 		})
 	}
 }
+
+func TestIsCheaperInferenceChatModelFiltersByTypeAndEndpoint(t *testing.T) {
+	chat := []string{"/v1/chat/completions", "/v1/completions", "/v1/responses", "/v1/messages"}
+	tests := []struct {
+		name      string
+		modelType string
+		endpoints []string
+		want      bool
+	}{
+		{name: "text chat model", modelType: "text", endpoints: chat, want: true},
+		{name: "responses only text model", modelType: "text", endpoints: []string{"/v1/responses"}, want: false},
+		{name: "embedding model", modelType: "embedding", endpoints: []string{"/v1/embeddings"}, want: false},
+		{name: "image model", modelType: "image", endpoints: []string{"/v1/images/generations"}, want: false},
+		{name: "speech model", modelType: "speech", endpoints: nil, want: false},
+		{name: "missing type", modelType: "", endpoints: chat, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isCheaperInferenceChatModel(tt.modelType, tt.endpoints)
+			if got != tt.want {
+				t.Fatalf("isCheaperInferenceChatModel(%q, %#v) = %t, want %t", tt.modelType, tt.endpoints, got, tt.want)
+			}
+		})
+	}
+}

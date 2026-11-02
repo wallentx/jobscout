@@ -192,6 +192,9 @@ func fetchAvailableLLMModelInfos(ctx context.Context, cfg AppConfig) ([]llmModel
 	case "openrouter":
 		models, err := fetchOpenRouterModels(ctx, &cfg)
 		return modelInfosFromIDs(models), err
+	case "cheaperinference":
+		models, err := fetchCheaperInferenceModels(ctx)
+		return modelInfosFromIDs(models), err
 	case "ollama":
 		models, err := fetchOllamaModels(ctx, providerCfg)
 		return modelInfosFromIDs(models), err
@@ -754,6 +757,45 @@ func isOpenRouterChatModel(id string) bool {
 		}
 	}
 	return true
+}
+
+// fetchCheaperInferenceModels reads the public Cheaper Inference model catalog.
+// The catalog needs no key and reports each model's type and endpoints, so
+// only text models served on chat completions are returned.
+func fetchCheaperInferenceModels(ctx context.Context) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.cheaperinference.com/public/models", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp struct {
+		Models []struct {
+			ID                 string   `json:"id"`
+			ModelType          string   `json:"model_type"`
+			SupportedEndpoints []string `json:"supported_endpoints"`
+		} `json:"models"`
+	}
+	if err := doModelListRequest(req, &resp); err != nil {
+		return nil, err
+	}
+
+	models := make([]string, 0, len(resp.Models))
+	for _, model := range resp.Models {
+		id := strings.TrimSpace(model.ID)
+		if id == "" || !isCheaperInferenceChatModel(model.ModelType, model.SupportedEndpoints) {
+			continue
+		}
+		models = appendUniqueString(models, id)
+	}
+	sort.Strings(models)
+	return models, nil
+}
+
+func isCheaperInferenceChatModel(modelType string, endpoints []string) bool {
+	if !strings.EqualFold(strings.TrimSpace(modelType), "text") {
+		return false
+	}
+	return slices.Contains(endpoints, "/v1/chat/completions")
 }
 
 func modelInfosFromIDs(ids []string) []llmModelInfo {

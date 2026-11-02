@@ -162,6 +162,23 @@ func initLLM(ctx context.Context, provider string, providerCfg LLMProviderConfig
 		}
 		model, err := openai.New(opts...)
 		return capLLMMaxTokens(model, provider, providerCfg), err
+	case "cheaperinference":
+		apiKey := os.Getenv("CHEAPERINFERENCE_API_KEY")
+		if apiKey == "" {
+			return nil, fmt.Errorf("CHEAPERINFERENCE_API_KEY environment variable is not set")
+		}
+		opts := []openai.Option{
+			openai.WithToken(apiKey),
+			openai.WithBaseURL("https://api.cheaperinference.com/v1"),
+		}
+		if endpoint := strings.TrimSpace(providerCfg.Endpoint); endpoint != "" {
+			opts = append(opts, openai.WithBaseURL(endpoint))
+		}
+		if modelName != "" {
+			opts = append(opts, openai.WithModel(modelName))
+		}
+		model, err := openai.New(opts...)
+		return capLLMMaxTokens(model, provider, providerCfg), err
 	case "ollama":
 		opts := []ollama.Option{}
 		if modelName != "" {
@@ -173,7 +190,7 @@ func initLLM(ctx context.Context, provider string, providerCfg LLMProviderConfig
 		model, err := ollama.New(opts...)
 		return capLLMMaxTokens(model, provider, providerCfg), err
 	default:
-		return nil, fmt.Errorf("unsupported LLM provider: %s. Supported providers: openai, anthropic, gemini, openrouter, ollama", provider)
+		return nil, fmt.Errorf("unsupported LLM provider: %s. Supported providers: openai, anthropic, gemini, openrouter, cheaperinference, ollama", provider)
 	}
 }
 

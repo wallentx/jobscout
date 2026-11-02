@@ -24,7 +24,8 @@ Last reviewed: 2026-05-23.
 - Resume inputs include text-like files, Markdown, JSON, YAML, CSV, DOCX, ODT,
   RTF, PDF with `pdftotext` or `mutool`, and legacy DOC with `antiword` or
   `catdoc`.
-- LLM setup supports Gemini, OpenAI, Anthropic, OpenRouter, and Ollama.
+- LLM setup supports Gemini, OpenAI, Anthropic, OpenRouter, Cheaper Inference,
+  and Ollama.
 - LLM auth supports environment-variable and command-based auth in setup.
   Literal token mode exists for legacy/config compatibility.
 - Model setup discovers provider models when possible, filters unsupported,

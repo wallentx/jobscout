@@ -30,7 +30,7 @@ title jobscout component view
 
 Person(user, "Job seeker", "Runs jobscout in a terminal")
 System_Ext(jobSources, "Job sources", "RSS feeds, job boards, configured source targets")
-System_Ext(llmProviders, "LLM providers", "Gemini, OpenAI, Anthropic, OpenRouter, Ollama")
+System_Ext(llmProviders, "LLM providers", "Gemini, OpenAI, Anthropic, OpenRouter, Cheaper Inference, Ollama")
 System_Ext(healthSources, "Company health data", "Wikipedia/Wikidata, SEC, Google News RSS, Hacker News, stock history, Layoffs.fyi, company and review pages")
 System_Ext(githubReleases, "GitHub Releases", "Optional update check")
 
