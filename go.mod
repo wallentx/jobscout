@@ -12,9 +12,9 @@ require (
 	github.com/mmcdole/gofeed v1.5.0
 	github.com/tmc/langchaingo v0.1.15
 	golang.org/x/mod v0.42.0
-	golang.org/x/net v0.61.0
+	golang.org/x/net v0.62.0
 	golang.org/x/term v0.47.0
-	google.golang.org/genai v1.76.0
+	google.golang.org/genai v1.77.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.61.0
 )
