@@ -1,7 +1,13 @@
 package llm
 
 import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"slices"
+	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -546,5 +552,113 @@ func TestIsCheaperInferenceChatModelFiltersByTypeAndEndpoint(t *testing.T) {
 				t.Fatalf("isCheaperInferenceChatModel(%q, %#v) = %t, want %t", tt.modelType, tt.endpoints, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestCheaperInferenceModelDiscoveryUsesConfiguredAuthentication(t *testing.T) {
+	tests := []struct {
+		name string
+		auth LLMAuthConfig
+		want string
+	}{
+		{name: "environment", auth: LLMAuthConfig{Mode: llmAuthModeEnv, EnvVar: "CHEAPERINFERENCE_API_KEY"}, want: "env-token"},
+		{name: "literal", auth: LLMAuthConfig{Mode: llmAuthModeLiteral, Value: "literal-token"}, want: "literal-token"},
+		{name: "command", auth: LLMAuthConfig{Mode: llmAuthModeCommand, Command: "printf command-token"}, want: "command-token"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("CHEAPERINFERENCE_API_KEY", "env-token")
+			var requests atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				if r.Method != http.MethodGet || r.URL.Path != "/custom/v1/models" {
+					t.Errorf("request = %s %s, want GET /custom/v1/models", r.Method, r.URL.Path)
+				}
+				if got := r.Header.Get("Authorization"); got != "Bearer "+tt.want {
+					t.Errorf("Authorization = %q, want Bearer %s", got, tt.want)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprint(w, `{"data":[
+					{"id":" z-model ","type":"text","supported_endpoints":["/v1/chat/completions"]},
+					{"id":"a-model","type":"text","supported_endpoints":["/v1/chat/completions"]},
+					{"id":"a-model","type":"text","supported_endpoints":["/v1/chat/completions"]},
+					{"id":"embedding","type":"embedding","supported_endpoints":["/v1/chat/completions"]},
+					{"id":"responses-only","type":"text","supported_endpoints":["/v1/responses"]},
+					{"id":"  ","type":"text","supported_endpoints":["/v1/chat/completions"]}
+				]}`)
+			}))
+			defer server.Close()
+
+			cfg := defaultAppConfig()
+			cfg.LLM.Enabled = true
+			cfg.LLM.Provider = "cheaperinference"
+			cfg.LLM.Auth = LLMAuthConfig{}
+			provider := cfg.LLM.Providers["cheaperinference"]
+			provider.Endpoint = server.URL + "/custom/v1/"
+			provider.Auth = tt.auth
+			cfg.LLM.Providers["cheaperinference"] = provider
+
+			infos, err := fetchAvailableLLMModelInfos(context.Background(), cfg)
+			if err != nil {
+				t.Fatalf("fetchAvailableLLMModelInfos() error = %v", err)
+			}
+			var ids []string
+			for _, info := range infos {
+				ids = append(ids, info.ID)
+			}
+			if want := []string{"a-model", "z-model"}; !slices.Equal(ids, want) {
+				t.Errorf("model IDs = %q, want %q", ids, want)
+			}
+			if got := requests.Load(); got != 1 {
+				t.Errorf("requests = %d, want 1", got)
+			}
+		})
+	}
+}
+
+func TestCheaperInferenceModelDiscoveryReportsHTTPFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+	}))
+	defer server.Close()
+
+	cfg := defaultAppConfig()
+	cfg.LLM.Enabled = true
+	cfg.LLM.Provider = "cheaperinference"
+	cfg.LLM.Auth = LLMAuthConfig{}
+	provider := cfg.LLM.Providers["cheaperinference"]
+	provider.Endpoint = server.URL
+	provider.Auth = LLMAuthConfig{Mode: llmAuthModeLiteral, Value: "test-token"}
+	cfg.LLM.Providers["cheaperinference"] = provider
+
+	_, err := fetchAvailableLLMModelInfos(context.Background(), cfg)
+	if err == nil || !strings.Contains(err.Error(), "403") {
+		t.Fatalf("fetchAvailableLLMModelInfos() error = %v, want HTTP 403", err)
+	}
+}
+
+func TestCheaperInferenceModelDiscoveryRequiresCredential(t *testing.T) {
+	t.Setenv("CHEAPERINFERENCE_API_KEY", "")
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+	}))
+	defer server.Close()
+
+	cfg := defaultAppConfig()
+	cfg.LLM.Enabled = true
+	cfg.LLM.Provider = "cheaperinference"
+	cfg.LLM.Auth = LLMAuthConfig{}
+	provider := cfg.LLM.Providers["cheaperinference"]
+	provider.Endpoint = server.URL
+	provider.Auth = LLMAuthConfig{Mode: llmAuthModeEnv, EnvVar: "CHEAPERINFERENCE_API_KEY"}
+	cfg.LLM.Providers["cheaperinference"] = provider
+
+	_, err := fetchAvailableLLMModelInfos(context.Background(), cfg)
+	if err == nil {
+		t.Fatal("fetchAvailableLLMModelInfos() succeeded without a credential")
+	}
+	if got := requests.Load(); got != 0 {
+		t.Errorf("requests = %d, want 0 without a credential", got)
 	}
 }

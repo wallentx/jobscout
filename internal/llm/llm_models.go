@@ -193,7 +193,7 @@ func fetchAvailableLLMModelInfos(ctx context.Context, cfg AppConfig) ([]llmModel
 		models, err := fetchOpenRouterModels(ctx, &cfg)
 		return modelInfosFromIDs(models), err
 	case "cheaperinference":
-		models, err := fetchCheaperInferenceModels(ctx)
+		models, err := fetchCheaperInferenceModels(ctx, &cfg)
 		return modelInfosFromIDs(models), err
 	case "ollama":
 		models, err := fetchOllamaModels(ctx, providerCfg)
@@ -759,28 +759,40 @@ func isOpenRouterChatModel(id string) bool {
 	return true
 }
 
-// fetchCheaperInferenceModels reads the public Cheaper Inference model catalog.
-// The catalog needs no key and reports each model's type and endpoints, so
-// only text models served on chat completions are returned.
-func fetchCheaperInferenceModels(ctx context.Context) ([]string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.cheaperinference.com/public/models", nil)
+// fetchCheaperInferenceModels reads chat models available to the configured key.
+func fetchCheaperInferenceModels(ctx context.Context, cfg *AppConfig) ([]string, error) {
+	apiKey, _, err := resolveLLMAuth(cfg)
 	if err != nil {
 		return nil, err
 	}
+	_, providerCfg, ok := effectiveLLMProvider(cfg)
+	if !ok {
+		return nil, fmt.Errorf("no effective llm provider is configured")
+	}
+	endpoint := strings.TrimSpace(providerCfg.Endpoint)
+	if endpoint == "" {
+		endpoint = "https://api.cheaperinference.com/v1"
+	}
+	endpoint = strings.TrimRight(endpoint, "/") + "/models"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
 
 	var resp struct {
-		Models []struct {
+		Data []struct {
 			ID                 string   `json:"id"`
-			ModelType          string   `json:"model_type"`
+			ModelType          string   `json:"type"`
 			SupportedEndpoints []string `json:"supported_endpoints"`
-		} `json:"models"`
+		} `json:"data"`
 	}
 	if err := doModelListRequest(req, &resp); err != nil {
 		return nil, err
 	}
 
-	models := make([]string, 0, len(resp.Models))
-	for _, model := range resp.Models {
+	models := make([]string, 0, len(resp.Data))
+	for _, model := range resp.Data {
 		id := strings.TrimSpace(model.ID)
 		if id == "" || !isCheaperInferenceChatModel(model.ModelType, model.SupportedEndpoints) {
 			continue
