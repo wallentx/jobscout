@@ -46,7 +46,7 @@ func joinOrFallback(items []string, fallback string) string {
 }
 
 func providerOptions() []string {
-	return []string{"gemini", "openai", "anthropic", "openrouter", "ollama"}
+	return []string{"gemini", "openai", "anthropic", "openrouter", "cheaperinference", "ollama"}
 }
 
 func ProviderOptions() []string {
@@ -61,6 +61,8 @@ func modelOptionsForProvider(provider string) []string {
 		return []string{"claude-opus-4-1-20250805", "claude-sonnet-4-20250514", "claude-3-7-sonnet-latest", "claude-3-5-haiku-latest"}
 	case "openrouter":
 		return []string{"deepseek/deepseek-v4-flash"}
+	case "cheaperinference":
+		return []string{"gpt-5.4-mini"}
 	case "ollama":
 		return []string{"llama3", "mistral", "qwen2.5"}
 	default:
@@ -92,6 +94,8 @@ func envVarForProvider(provider string) string {
 		return "ANTHROPIC_API_KEY"
 	case "openrouter":
 		return "OPENROUTER_API_KEY"
+	case "cheaperinference":
+		return "CHEAPERINFERENCE_API_KEY"
 	case "ollama":
 		return ""
 	default:
